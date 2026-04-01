@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Area, ComposedChart
@@ -7,7 +7,9 @@ import {
   Scale, Target, TrendingDown, TrendingUp, Calendar, Plus,
   ChevronLeft, Settings, Trash2, Award, Flame, ArrowDown,
   ArrowUp, Minus, Edit3, Check, X, Home, Utensils, Dumbbell,
-  User, ChevronRight, Clock, Droplets, Zap, Activity
+  User, ChevronRight, Clock, Droplets, Zap, Activity,
+  Sun, Moon, Sunrise, Star, Heart, BarChart3, AlertCircle,
+  Sparkles, Trophy, CheckCircle2
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════
@@ -48,7 +50,6 @@ const calcBMI = (weight, heightCm) => {
   return Math.round((weight / (h * h)) * 10) / 10;
 };
 
-// Period average helper
 const periodAvg = (entries, daysBack) => {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - daysBack);
@@ -57,7 +58,6 @@ const periodAvg = (entries, daysBack) => {
   return Math.round((filtered.reduce((s, e) => s + e.weight, 0) / filtered.length) * 100) / 100;
 };
 
-// Period change: compare last N days avg vs previous N days avg
 const periodChange = (entries, days) => {
   const now = new Date();
   const midpoint = new Date(); midpoint.setDate(now.getDate() - days);
@@ -75,7 +75,7 @@ const bmiCategory = (bmi) => {
   if (bmi < 18.5) return "Sottopeso";
   if (bmi < 25) return "Normopeso";
   if (bmi < 30) return "Sovrappeso";
-  return "Obesità";
+  return "Obesit\u00e0";
 };
 
 const bmiColor = (bmi) => {
@@ -84,6 +84,36 @@ const bmiColor = (bmi) => {
   if (bmi < 25) return "#02C39A";
   if (bmi < 30) return "#F0B429";
   return "#E85D4E";
+};
+
+// Time-based greeting
+const getGreeting = () => {
+  const h = new Date().getHours();
+  if (h < 6) return { text: "Buonanotte", icon: Moon };
+  if (h < 12) return { text: "Buongiorno", icon: Sunrise };
+  if (h < 18) return { text: "Buon pomeriggio", icon: Sun };
+  return { text: "Buonasera", icon: Moon };
+};
+
+// Get day name in Italian
+const getDayName = (dateStr) => {
+  return new Date(dateStr).toLocaleDateString("it-IT", { weekday: "short" });
+};
+
+// Motivational tips (rotate daily)
+const dailyTips = [
+  { text: "Pesati sempre alla stessa ora per risultati pi\u00f9 precisi, preferibilmente al mattino a digiuno.", icon: Clock },
+  { text: "Le oscillazioni giornaliere di 0.5-1 kg sono normali. Guarda sempre il trend settimanale.", icon: Activity },
+  { text: "Bere 2L di acqua al giorno aiuta il metabolismo e riduce la ritenzione idrica.", icon: Droplets },
+  { text: "Il sonno influenza il peso: dormire 7-8 ore regola gli ormoni della fame.", icon: Moon },
+  { text: "Non saltare i pasti: mangiare regolarmente mantiene stabile il metabolismo.", icon: Utensils },
+  { text: "Lo stress aumenta il cortisolo, che favorisce l'accumulo di grasso addominale.", icon: Heart },
+  { text: "Anche una camminata di 30 minuti al giorno fa una grande differenza nel lungo periodo.", icon: Activity },
+];
+
+const getDailyTip = () => {
+  const dayOfYear = Math.floor((new Date() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+  return dailyTips[dayOfYear % dailyTips.length];
 };
 
 /* ═══════════════════════════════════════════
@@ -130,6 +160,7 @@ const T = {
   textMuted: "#9CA3AF",
   border: "#F0F0F0",
   gradient: "linear-gradient(135deg, #028090, #02C39A)",
+  gradientWarm: "linear-gradient(135deg, #F0B429, #E85D4E)",
   shadow: "0 2px 16px rgba(0,0,0,0.06)",
   shadowLg: "0 8px 32px rgba(0,0,0,0.08)",
 };
@@ -163,56 +194,6 @@ const Header = ({ title, subtitle, showBack, onBack, right }) => (
     </div>
   </div>
 );
-
-const StatCard = ({ icon: Icon, label, value, unit, sub, color = T.teal, compact = false }) => (
-  <div style={{
-    background: T.card, borderRadius: 16, padding: compact ? "12px 14px" : "16px 18px",
-    boxShadow: T.shadow, display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0,
-  }}>
-    <div style={{
-      width: compact ? 36 : 44, height: compact ? 36 : 44, borderRadius: 12,
-      background: `${color}12`, display: "flex", alignItems: "center",
-      justifyContent: "center", flexShrink: 0,
-    }}>
-      <Icon size={compact ? 17 : 20} color={color} />
-    </div>
-    <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 2 }}>{label}</div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
-        <span style={{ fontSize: compact ? 18 : 24, fontWeight: 800, color: T.text }}>{value}</span>
-        {unit && <span style={{ fontSize: 12, color: T.textSec, fontWeight: 500 }}>{unit}</span>}
-      </div>
-      {sub && <div style={{ fontSize: 10, color, fontWeight: 600, marginTop: 1 }}>{sub}</div>}
-    </div>
-  </div>
-);
-
-const MilestoneBar = ({ current, start, goal }) => {
-  if (!goal || !start || !current) return null;
-  const total = Math.abs(start - goal);
-  if (total === 0) return null;
-  const progress = Math.abs(start - current);
-  const pct = Math.min(Math.max((progress / total) * 100, 0), 100);
-
-  return (
-    <div style={{ background: T.card, borderRadius: 16, padding: "16px 18px", boxShadow: T.shadow }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Progresso</span>
-        <span style={{ fontSize: 14, fontWeight: 800, color: T.teal }}>{Math.round(pct)}%</span>
-      </div>
-      <div style={{ position: "relative", height: 8, background: T.tealLight, borderRadius: 4 }}>
-        <div style={{
-          height: "100%", borderRadius: 4, width: `${pct}%`,
-          background: T.gradient, transition: "width 0.6s cubic-bezier(0.4,0,0.2,1)",
-        }} />
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-        <span style={{ fontSize: 11, color: T.textMuted }}>{start} kg (inizio)</span>
-        <span style={{ fontSize: 11, color: T.teal, fontWeight: 700 }}>{goal} kg (obiettivo)</span>
-      </div>
-    </div>
-  );
-};
 
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
@@ -329,6 +310,108 @@ const BottomNav = ({ active, onNavigate, onAdd }) => {
 };
 
 /* ═══════════════════════════════════════════
+   CIRCULAR PROGRESS COMPONENT
+   ═══════════════════════════════════════════ */
+
+const CircularProgress = ({ percentage, size = 64, strokeWidth = 5, color = T.teal }) => {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percentage / 100) * circumference;
+
+  return (
+    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+      <circle cx={size / 2} cy={size / 2} r={radius}
+        fill="none" stroke={`${color}15`} strokeWidth={strokeWidth} />
+      <circle cx={size / 2} cy={size / 2} r={radius}
+        fill="none" stroke={color} strokeWidth={strokeWidth}
+        strokeDasharray={circumference} strokeDashoffset={offset}
+        strokeLinecap="round"
+        style={{ transition: "stroke-dashoffset 1s ease-in-out" }} />
+    </svg>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   STREAK CALENDAR WIDGET
+   ═══════════════════════════════════════════ */
+
+const StreakCalendar = ({ entries, streak }) => {
+  const last7 = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const iso = toISO(d);
+    const hasEntry = entries.some(e => e.date === iso);
+    last7.push({ date: iso, day: getDayName(iso), hasEntry, isToday: i === 0 });
+  }
+
+  return (
+    <div style={{
+      background: T.card, borderRadius: 20, padding: "18px 16px",
+      boxShadow: T.shadow,
+    }} className="animate-card animate-card-5">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 12,
+            background: streak >= 3 ? `${T.gold}18` : `${T.textMuted}10`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }} className={streak >= 5 ? "streak-glow" : ""}>
+            <Flame size={20} color={streak >= 3 ? T.gold : T.textMuted} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>Streak</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: T.text }}>
+              {streak} {streak === 1 ? "giorno" : "giorni"}
+            </div>
+          </div>
+        </div>
+        {streak >= 7 && (
+          <div style={{
+            background: `${T.gold}15`, padding: "4px 10px", borderRadius: 8,
+            fontSize: 10, fontWeight: 700, color: T.gold,
+          }}>
+            <Trophy size={11} style={{ verticalAlign: -1, marginRight: 3 }} />
+            Record!
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 6, justifyContent: "space-between" }}>
+        {last7.map((day, i) => (
+          <div key={i} style={{ textAlign: "center", flex: 1 }}>
+            <div style={{
+              fontSize: 9, color: day.isToday ? T.teal : T.textMuted,
+              fontWeight: day.isToday ? 700 : 500, textTransform: "uppercase",
+              marginBottom: 6,
+            }}>
+              {day.day}
+            </div>
+            <div style={{
+              width: 32, height: 32, borderRadius: 10, margin: "0 auto",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: day.hasEntry
+                ? (day.isToday ? T.gradient : `${T.mint}18`)
+                : (day.isToday ? `${T.coral}12` : T.bg),
+              border: day.isToday ? "none" : "none",
+              transition: "all 0.3s ease",
+            }}>
+              {day.hasEntry ? (
+                <CheckCircle2 size={14} color={day.isToday ? "#fff" : T.mint} strokeWidth={2.5} />
+              ) : day.isToday ? (
+                <Plus size={12} color={T.coral} strokeWidth={2.5} />
+              ) : (
+                <div style={{ width: 6, height: 6, borderRadius: 3, background: "#D1D5DB" }} />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
    MAIN APP
    ═══════════════════════════════════════════ */
 
@@ -392,11 +475,31 @@ export default function WeightTrackerApp() {
     }
     const weeklyRate = reg ? Math.round(reg.slope * 7 * 100) / 100 : null;
 
+    // Best weight (lowest if goal is lower, highest if goal is higher)
+    const bestWeight = settings.goalWeight && latest.weight > settings.goalWeight
+      ? Math.min(...sorted.map(e => e.weight))
+      : Math.max(...sorted.map(e => e.weight));
+
+    // Consistency: days tracked out of last 30
+    const thirtyAgo = new Date(); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
+    const daysTracked = sorted.filter(e => new Date(e.date) >= thirtyAgo).length;
+    const consistency = Math.round((daysTracked / 30) * 100);
+
+    // Today vs yesterday
+    const todayEntry = sorted.find(e => e.date === today());
+    const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayEntry = sorted.find(e => e.date === toISO(yesterdayDate));
+    const vsYesterday = todayEntry && yesterdayEntry
+      ? Math.round((todayEntry.weight - yesterdayEntry.weight) * 100) / 100
+      : null;
+
     return {
       current: latest.weight, trend: latestSmoothed?.trend, weekChange, bmi, streak,
       predictedDate, weeklyRate,
       totalChange: Math.round((latest.weight - sorted[0].weight) * 100) / 100,
       totalEntries: sorted.length,
+      bestWeight, consistency, daysTracked,
+      todayLogged: !!todayEntry, vsYesterday,
     };
   }, [sorted, smoothed, settings]);
 
@@ -426,7 +529,6 @@ export default function WeightTrackerApp() {
 
   const goTo = useCallback((s) => { setScreen(s); setShowConfirmDelete(null); setEditingEntry(null); }, []);
 
-  // Active tab for bottom nav
   const activeTab = ["dashboard", "food", "fitness", "profile"].includes(screen) ? screen : "dashboard";
 
   /* ═══════════════════════════════════════
@@ -572,11 +674,11 @@ export default function WeightTrackerApp() {
                     <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                       <span style={{ fontSize: 18, fontWeight: 800, color: T.text }}>{entry.weight}</span>
                       <span style={{ fontSize: 13, color: T.textSec }}>kg</span>
-                      {diff !== null && (
+                      {diff !== null && diff !== 0 && (
                         <span style={{
                           fontSize: 11, fontWeight: 700, marginLeft: 6, padding: "2px 8px", borderRadius: 8,
-                          background: diff < 0 ? "#02C39A15" : diff > 0 ? "#E85D4E15" : "#F0F0F0",
-                          color: diff < 0 ? T.mint : diff > 0 ? T.coral : T.textSec,
+                          background: diff < 0 ? "#02C39A15" : "#E85D4E15",
+                          color: diff < 0 ? T.mint : T.coral,
                         }}>
                           {diff > 0 ? "+" : ""}{diff}
                         </span>
@@ -638,14 +740,14 @@ export default function WeightTrackerApp() {
   if (screen === "fitness") {
     return (
       <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
-        <Header title="Fitness" subtitle="Attività" />
+        <Header title="Fitness" subtitle="Attivit\u00e0" />
         <ComingSoonScreen
           icon={Dumbbell} title="Traccia il tuo Allenamento" color={T.purple}
           description="Registra camminate, sessioni in palestra e monitora i tuoi progressi fitness."
           features={[
             { icon: Activity, title: "Camminata & Corsa", desc: "Passi, distanza e calorie bruciate" },
             { icon: Dumbbell, title: "Palestra", desc: "Esercizi, serie, ripetizioni e carichi" },
-            { icon: Flame, title: "Calorie Bruciate", desc: "Stima automatica per attività" },
+            { icon: Flame, title: "Calorie Bruciate", desc: "Stima automatica per attivit\u00e0" },
             { icon: TrendingUp, title: "Progressi Forza", desc: "Traccia i tuoi personal record" },
           ]}
         />
@@ -662,7 +764,6 @@ export default function WeightTrackerApp() {
       <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif", paddingBottom: 100 }}>
         <Header title="Profilo" subtitle="Impostazioni" />
         <div style={{ padding: "16px 20px" }}>
-          {/* Profile card */}
           <div style={{
             background: T.gradient, borderRadius: 20, padding: "24px 20px", marginBottom: 16,
             display: "flex", alignItems: "center", gap: 16,
@@ -681,7 +782,6 @@ export default function WeightTrackerApp() {
             </div>
           </div>
 
-          {/* Settings fields */}
           <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 8 }}>
             Dati personali
           </div>
@@ -746,7 +846,6 @@ export default function WeightTrackerApp() {
             </div>
           ))}
 
-          {/* Stats summary */}
           <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 20 }}>
             Riepilogo
           </div>
@@ -754,10 +853,10 @@ export default function WeightTrackerApp() {
             background: T.card, borderRadius: 14, padding: "16px", boxShadow: T.shadow,
           }}>
             {[
-              { label: "Peso attuale", value: `${metrics.current || "—"} kg` },
-              { label: "BMI", value: metrics.bmi ? `${metrics.bmi} (${bmiCategory(metrics.bmi)})` : "—" },
-              { label: "Variazione totale", value: metrics.totalChange ? `${metrics.totalChange > 0 ? "+" : ""}${metrics.totalChange} kg` : "—" },
-              { label: "Ritmo settimanale", value: metrics.weeklyRate ? `${metrics.weeklyRate > 0 ? "+" : ""}${metrics.weeklyRate} kg/sett` : "—" },
+              { label: "Peso attuale", value: `${metrics.current || "\u2014"} kg` },
+              { label: "BMI", value: metrics.bmi ? `${metrics.bmi} (${bmiCategory(metrics.bmi)})` : "\u2014" },
+              { label: "Variazione totale", value: metrics.totalChange ? `${metrics.totalChange > 0 ? "+" : ""}${metrics.totalChange} kg` : "\u2014" },
+              { label: "Ritmo settimanale", value: metrics.weeklyRate ? `${metrics.weeklyRate > 0 ? "+" : ""}${metrics.weeklyRate} kg/sett` : "\u2014" },
             ].map((item, i, arr) => (
               <div key={i} style={{
                 display: "flex", justifyContent: "space-between", padding: "10px 0",
@@ -774,7 +873,7 @@ export default function WeightTrackerApp() {
             background: T.tealLight, textAlign: "center",
           }}>
             <div style={{ fontSize: 12, color: T.teal, fontWeight: 600 }}>
-              Weight Tracker v1.0 — I tuoi dati restano sul tuo dispositivo
+              Weight Tracker v2.0 \u2014 I tuoi dati restano sul tuo dispositivo
             </div>
           </div>
         </div>
@@ -787,7 +886,6 @@ export default function WeightTrackerApp() {
      DASHBOARD HELPERS
      ═══════════════════════════════════════ */
 
-  // Compute period comparisons
   const comparisons = useMemo(() => {
     const weekChg = periodChange(sorted, 7);
     const monthChg = periodChange(sorted, 30);
@@ -826,32 +924,97 @@ export default function WeightTrackerApp() {
   }, [sorted, comparisons, metrics, settings]);
 
   const moodColors = { great: T.mint, good: T.teal, neutral: T.textSec, attention: T.gold };
-  const moodIcons = { great: Award, good: TrendingDown, neutral: Activity, attention: ArrowUp };
+  const moodIcons = { great: Award, good: TrendingDown, neutral: Activity, attention: AlertCircle };
   const SummaryIcon = moodIcons[summaryMessage.mood] || Activity;
+
+  const greeting = getGreeting();
+  const GreetingIcon = greeting.icon;
+  const tip = getDailyTip();
+  const TipIcon = tip.icon;
+
+  // Progress percentage
+  const progressPct = useMemo(() => {
+    if (!settings.goalWeight || !settings.startWeight || !metrics.current) return 0;
+    const total = Math.abs(settings.startWeight - settings.goalWeight);
+    const done = Math.abs(settings.startWeight - metrics.current);
+    return total > 0 ? Math.min(Math.max((done / total) * 100, 0), 100) : 0;
+  }, [settings, metrics]);
 
   /* ═══════════════════════════════════════
      SCREEN: DASHBOARD (Default)
      ═══════════════════════════════════════ */
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
-      <Header title="Dashboard" subtitle={`Ciao, ${settings.name}`}
-        right={
+
+      {/* ── HEADER with greeting ── */}
+      <div style={{
+        padding: "16px 20px 8px", background: T.bg,
+        position: "sticky", top: 0, zIndex: 10,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12,
+              background: T.gradient,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <span style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>
+                {settings.name.charAt(0).toUpperCase()}
+              </span>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: T.textMuted, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}>
+                <GreetingIcon size={12} /> {greeting.text}
+              </div>
+              <h1 style={{ fontSize: 22, fontWeight: 800, color: T.text, margin: 0, letterSpacing: -0.5 }}>
+                {settings.name}
+              </h1>
+            </div>
+          </div>
           <button onClick={() => goTo("profile")} style={{
             background: T.card, border: "none", borderRadius: 12, padding: 10,
             cursor: "pointer", boxShadow: T.shadow,
-          }}>
+          }} className="touch-card">
             <Settings size={20} color={T.teal} />
           </button>
-        }
-      />
+        </div>
+      </div>
 
       <div style={{ padding: "8px 20px 120px", display: "flex", flexDirection: "column", gap: 14 }}>
 
-        {/* ── 1. SMART SUMMARY ── */}
+        {/* ── 1. DAILY CHECK-IN PROMPT (if not logged today) ── */}
+        {!metrics.todayLogged && (
+          <div
+            onClick={() => goTo("add")}
+            className="animate-card animate-card-1 touch-card"
+            style={{
+              background: `linear-gradient(135deg, ${T.coral}12, ${T.gold}12)`,
+              borderRadius: 18, padding: "16px 18px",
+              border: `1px dashed ${T.gold}60`,
+              cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 14,
+            }}
+          >
+            <div style={{
+              width: 44, height: 44, borderRadius: 14,
+              background: `${T.gold}20`,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <Scale size={22} color={T.gold} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Non ti sei ancora pesato oggi</div>
+              <div style={{ fontSize: 12, color: T.textSec, marginTop: 2 }}>Tocca per registrare il peso di oggi</div>
+            </div>
+            <ChevronRight size={18} color={T.textMuted} />
+          </div>
+        )}
+
+        {/* ── 2. SMART SUMMARY ── */}
         <div style={{
           background: T.card, borderRadius: 20, padding: "18px 20px",
           boxShadow: T.shadow, borderLeft: `4px solid ${moodColors[summaryMessage.mood]}`,
-        }}>
+        }} className="animate-card animate-card-1">
           <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
             <div style={{
               width: 40, height: 40, borderRadius: 12, flexShrink: 0,
@@ -871,67 +1034,65 @@ export default function WeightTrackerApp() {
           </div>
         </div>
 
-        {/* ── 2. WEIGHT & GOAL OVERVIEW ── */}
+        {/* ── 3. WEIGHT & GOAL OVERVIEW with circular progress ── */}
         <div style={{
-          background: T.gradient, borderRadius: 20, padding: "22px 20px",
+          background: T.gradient, borderRadius: 22, padding: "22px 20px",
           boxShadow: "0 4px 24px rgba(2,128,144,0.2)",
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        }} className="animate-card animate-card-2">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
               <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Peso attuale</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
-                <span style={{ fontSize: 38, fontWeight: 800, color: "#fff" }}>{metrics.current || "—"}</span>
+                <span style={{ fontSize: 42, fontWeight: 800, color: "#fff" }}>{metrics.current || "\u2014"}</span>
                 <span style={{ fontSize: 16, color: "rgba(255,255,255,0.7)", fontWeight: 600 }}>kg</span>
               </div>
               {metrics.trend && (
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 4, fontWeight: 500 }}>
-                  Trend reale: {metrics.trend} kg
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 2, fontWeight: 500 }}>
+                  Trend: {metrics.trend} kg
+                </div>
+              )}
+              {metrics.vsYesterday !== null && (
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  fontSize: 12, fontWeight: 700, color: "#fff", marginTop: 6,
+                  background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: 8,
+                }}>
+                  {metrics.vsYesterday < 0 ? <ArrowDown size={12} /> : metrics.vsYesterday > 0 ? <ArrowUp size={12} /> : <Minus size={12} />}
+                  {Math.abs(metrics.vsYesterday)} kg vs ieri
                 </div>
               )}
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>Obiettivo</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 4, justifyContent: "flex-end" }}>
-                <span style={{ fontSize: 28, fontWeight: 800, color: "#fff" }}>{settings.goalWeight || "—"}</span>
-                <span style={{ fontSize: 14, color: "rgba(255,255,255,0.7)", fontWeight: 600 }}>kg</span>
+
+            {/* Circular progress + goal */}
+            <div style={{ textAlign: "center", position: "relative" }}>
+              <CircularProgress percentage={Math.round(progressPct)} size={72} strokeWidth={5} color="#fff" />
+              <div style={{
+                position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "#fff" }}>{Math.round(progressPct)}%</div>
+              </div>
+              <div style={{ marginTop: 6, fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>
+                Obiettivo: {settings.goalWeight} kg
               </div>
               {metrics.current && settings.goalWeight && (
                 <div style={{
-                  fontSize: 12, fontWeight: 700, color: "#fff", marginTop: 6,
-                  background: "rgba(255,255,255,0.2)", padding: "3px 10px", borderRadius: 8,
-                  display: "inline-block",
+                  fontSize: 11, fontWeight: 700, color: "#fff", marginTop: 2,
+                  background: "rgba(255,255,255,0.2)", padding: "2px 8px", borderRadius: 6,
                 }}>
-                  {Math.abs(Math.round((metrics.current - settings.goalWeight) * 10) / 10)} kg rimanenti
+                  -{Math.abs(Math.round((metrics.current - settings.goalWeight) * 10) / 10)} kg
                 </div>
               )}
             </div>
           </div>
-          {/* Mini progress bar inside gradient card */}
-          {settings.goalWeight && settings.startWeight && metrics.current && (() => {
-            const total = Math.abs(settings.startWeight - settings.goalWeight);
-            const done = Math.abs(settings.startWeight - metrics.current);
-            const pct = total > 0 ? Math.min(Math.max((done / total) * 100, 0), 100) : 0;
-            return (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)" }}>Progresso</span>
-                  <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>{Math.round(pct)}%</span>
-                </div>
-                <div style={{ height: 6, background: "rgba(255,255,255,0.2)", borderRadius: 3 }}>
-                  <div style={{ height: "100%", borderRadius: 3, width: `${pct}%`, background: "#fff", transition: "width 0.6s" }} />
-                </div>
-              </div>
-            );
-          })()}
         </div>
 
-        {/* ── 3. PREDICTION (if available) ── */}
+        {/* ── 4. PREDICTION (if available) ── */}
         {metrics.predictedDate && (
           <div style={{
             background: T.card, borderRadius: 18, padding: "16px 20px",
             boxShadow: T.shadow, display: "flex", alignItems: "center", gap: 14,
             border: `1px solid ${T.tealLight}`,
-          }}>
+          }} className="animate-card animate-card-3">
             <div style={{
               width: 44, height: 44, borderRadius: 14, background: `${T.mint}15`,
               display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
@@ -954,8 +1115,9 @@ export default function WeightTrackerApp() {
           </div>
         )}
 
-        {/* ── 4. CHART ── */}
-        <div style={{ background: T.card, borderRadius: 20, padding: "18px 14px 10px", boxShadow: T.shadow }}>
+        {/* ── 5. CHART ── */}
+        <div style={{ background: T.card, borderRadius: 20, padding: "18px 14px 10px", boxShadow: T.shadow }}
+             className="animate-card animate-card-4">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, padding: "0 4px" }}>
             <span style={{ fontSize: 15, fontWeight: 800, color: T.text }}>Andamento Peso</span>
             <div style={{ display: "flex", gap: 4 }}>
@@ -970,7 +1132,7 @@ export default function WeightTrackerApp() {
             </div>
           </div>
           <div style={{ fontSize: 11, color: T.textMuted, padding: "0 4px", marginBottom: 10 }}>
-            La linea grigia \u00e8 il peso sulla bilancia. La linea teal \u00e8 il trend reale, che filtra le oscillazioni quotidiane.
+            La linea grigia {"\u00e8"} il peso sulla bilancia. La linea teal {"\u00e8"} il trend reale, che filtra le oscillazioni quotidiane.
           </div>
 
           <ResponsiveContainer width="100%" height={200}>
@@ -1009,15 +1171,19 @@ export default function WeightTrackerApp() {
           </div>
         </div>
 
-        {/* ── 5. CONFRONTI TEMPORALI ── */}
-        <div style={{ background: T.card, borderRadius: 20, padding: "18px 20px", boxShadow: T.shadow }}>
+        {/* ── 6. STREAK CALENDAR ── */}
+        <StreakCalendar entries={sorted} streak={metrics.streak || 0} />
+
+        {/* ── 7. CONFRONTI TEMPORALI ── */}
+        <div style={{ background: T.card, borderRadius: 20, padding: "18px 20px", boxShadow: T.shadow }}
+             className="animate-card animate-card-6">
           <div style={{ fontSize: 15, fontWeight: 800, color: T.text, marginBottom: 4 }}>Confronti</div>
           <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 14 }}>
             Come sta andando rispetto ai periodi precedenti
           </div>
 
           <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-            {/* This week vs last week */}
+            {/* Week */}
             <div style={{ flex: 1, background: T.bg, borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 8 }}>
                 Settimana
@@ -1026,27 +1192,29 @@ export default function WeightTrackerApp() {
                 <>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 4 }}>
                     <span style={{ fontSize: 20, fontWeight: 800, color: T.text }}>{comparisons.avgThisWeek}</span>
-                    <span style={{ fontSize: 11, color: T.textMuted }}>kg media</span>
+                    <span style={{ fontSize: 11, color: T.textMuted }}>kg</span>
                   </div>
                   <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 6 }}>
-                    vs {comparisons.avgLastWeek} kg sett. scorsa
+                    vs {comparisons.avgLastWeek} kg scorsa
                   </div>
                   {comparisons.weekChg !== null && (
                     <div style={{
-                      fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 8, display: "inline-block",
+                      fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 8, display: "inline-flex",
+                      alignItems: "center", gap: 3,
                       background: comparisons.weekChg <= 0 ? "#02C39A15" : "#E85D4E15",
                       color: comparisons.weekChg <= 0 ? T.mint : T.coral,
                     }}>
+                      {comparisons.weekChg <= 0 ? <ArrowDown size={11} /> : <ArrowUp size={11} />}
                       {comparisons.weekChg > 0 ? "+" : ""}{comparisons.weekChg} kg
                     </div>
                   )}
                 </>
               ) : (
-                <div style={{ fontSize: 12, color: T.textMuted }}>Servono almeno 2 settimane di dati</div>
+                <div style={{ fontSize: 12, color: T.textMuted }}>Servono 2 settimane di dati</div>
               )}
             </div>
 
-            {/* This month vs last month */}
+            {/* Month */}
             <div style={{ flex: 1, background: T.bg, borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 8 }}>
                 Mese
@@ -1055,83 +1223,192 @@ export default function WeightTrackerApp() {
                 <>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 4 }}>
                     <span style={{ fontSize: 20, fontWeight: 800, color: T.text }}>{comparisons.avgThisMonth}</span>
-                    <span style={{ fontSize: 11, color: T.textMuted }}>kg media</span>
+                    <span style={{ fontSize: 11, color: T.textMuted }}>kg</span>
                   </div>
                   <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 6 }}>
-                    vs {comparisons.avgLastMonth} kg mese scorso
+                    vs {comparisons.avgLastMonth} kg scorso
                   </div>
                   {comparisons.monthChg !== null && (
                     <div style={{
-                      fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 8, display: "inline-block",
+                      fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 8, display: "inline-flex",
+                      alignItems: "center", gap: 3,
                       background: comparisons.monthChg <= 0 ? "#02C39A15" : "#E85D4E15",
                       color: comparisons.monthChg <= 0 ? T.mint : T.coral,
                     }}>
+                      {comparisons.monthChg <= 0 ? <ArrowDown size={11} /> : <ArrowUp size={11} />}
                       {comparisons.monthChg > 0 ? "+" : ""}{comparisons.monthChg} kg
                     </div>
                   )}
                 </>
               ) : (
-                <div style={{ fontSize: 12, color: T.textMuted }}>Servono almeno 2 mesi di dati</div>
+                <div style={{ fontSize: 12, color: T.textMuted }}>Servono 2 mesi di dati</div>
               )}
             </div>
           </div>
+        </div>
 
-          {/* Extra stats row */}
-          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-            {[
-              { icon: Flame, label: "Streak", value: `${metrics.streak || 0} gg`, color: T.gold },
-              { icon: Activity, label: "BMI", value: metrics.bmi ? `${metrics.bmi}` : "—", sub: bmiCategory(metrics.bmi), color: bmiColor(metrics.bmi) },
-              { icon: TrendingDown, label: "Ritmo", value: metrics.weeklyRate ? `${metrics.weeklyRate > 0 ? "+" : ""}${metrics.weeklyRate}` : "—", sub: "kg/sett", color: metrics.weeklyRate <= 0 ? T.mint : T.coral },
-            ].map((item, i) => (
-              <div key={i} style={{
-                flex: 1, background: T.bg, borderRadius: 12, padding: "12px",
-                textAlign: "center",
+        {/* ── 8. STATS ROW (BMI, Rate, Best, Consistency) ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
+             className="animate-card animate-card-7">
+          {/* BMI */}
+          <div style={{
+            background: T.card, borderRadius: 16, padding: "14px 16px", boxShadow: T.shadow,
+          }} className="touch-card">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: 10, background: `${bmiColor(metrics.bmi)}15`,
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                <item.icon size={16} color={item.color} style={{ marginBottom: 4 }} />
-                <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, marginBottom: 2 }}>{item.label}</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{item.value}</div>
-                {item.sub && <div style={{ fontSize: 9, color: item.color, fontWeight: 600, marginTop: 1 }}>{item.sub}</div>}
+                <Activity size={15} color={bmiColor(metrics.bmi)} />
               </div>
-            ))}
+              <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: "uppercase" }}>BMI</div>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{metrics.bmi || "\u2014"}</div>
+            <div style={{ fontSize: 10, color: bmiColor(metrics.bmi), fontWeight: 600, marginTop: 2 }}>
+              {bmiCategory(metrics.bmi)}
+            </div>
+          </div>
+
+          {/* Weekly Rate */}
+          <div style={{
+            background: T.card, borderRadius: 16, padding: "14px 16px", boxShadow: T.shadow,
+          }} className="touch-card">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: 10,
+                background: `${metrics.weeklyRate <= 0 ? T.mint : T.coral}15`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <TrendingDown size={15} color={metrics.weeklyRate <= 0 ? T.mint : T.coral} />
+              </div>
+              <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: "uppercase" }}>Ritmo</div>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>
+              {metrics.weeklyRate ? `${metrics.weeklyRate > 0 ? "+" : ""}${metrics.weeklyRate}` : "\u2014"}
+            </div>
+            <div style={{ fontSize: 10, color: T.textSec, fontWeight: 600, marginTop: 2 }}>kg/settimana</div>
+          </div>
+
+          {/* Best Weight */}
+          <div style={{
+            background: T.card, borderRadius: 16, padding: "14px 16px", boxShadow: T.shadow,
+          }} className="touch-card">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: 10, background: `${T.purple}15`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <Star size={15} color={T.purple} />
+              </div>
+              <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: "uppercase" }}>Miglior peso</div>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{metrics.bestWeight || "\u2014"}</div>
+            <div style={{ fontSize: 10, color: T.purple, fontWeight: 600, marginTop: 2 }}>kg raggiunto</div>
+          </div>
+
+          {/* Consistency */}
+          <div style={{
+            background: T.card, borderRadius: 16, padding: "14px 16px", boxShadow: T.shadow,
+          }} className="touch-card">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: 10, background: `${T.teal}15`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <BarChart3 size={15} color={T.teal} />
+              </div>
+              <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, textTransform: "uppercase" }}>Costanza</div>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: T.text }}>{metrics.consistency || 0}%</div>
+            <div style={{ fontSize: 10, color: T.teal, fontWeight: 600, marginTop: 2 }}>
+              {metrics.daysTracked || 0}/30 giorni
+            </div>
           </div>
         </div>
 
-        {/* ── 6. RECENT ENTRIES ── */}
-        <div style={{ background: T.card, borderRadius: 20, padding: "16px 18px", boxShadow: T.shadow }}>
+        {/* ── 9. DAILY TIP ── */}
+        <div style={{
+          background: `linear-gradient(135deg, ${T.teal}08, ${T.mint}08)`,
+          borderRadius: 18, padding: "16px 18px",
+          border: `1px solid ${T.tealLight}`,
+        }} className="animate-card animate-card-7">
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10, background: `${T.teal}15`,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <Sparkles size={16} color={T.teal} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: T.teal, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
+                Consiglio del giorno
+              </div>
+              <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5, fontWeight: 500 }}>
+                {tip.text}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 10. RECENT ENTRIES ── */}
+        <div style={{ background: T.card, borderRadius: 20, padding: "16px 18px", boxShadow: T.shadow }}
+             className="animate-card animate-card-8">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <span style={{ fontSize: 15, fontWeight: 800, color: T.text }}>Ultime Registrazioni</span>
             <button onClick={() => goTo("history")} style={{
               background: T.tealLight, border: "none", fontSize: 11, color: T.teal,
               fontWeight: 700, cursor: "pointer", padding: "5px 12px", borderRadius: 8,
               display: "flex", alignItems: "center", gap: 3,
-            }}>
+            }} className="touch-card">
               Tutte <ChevronRight size={13} />
             </button>
           </div>
-          {[...sorted].reverse().slice(0, 5).map((entry, idx) => {
-            const prev = idx < [...sorted].reverse().length - 1 ? [...sorted].reverse()[idx + 1] : null;
-            const diff = prev ? Math.round((entry.weight - prev.weight) * 100) / 100 : null;
-            return (
-              <div key={entry.id} style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                padding: "11px 0", borderBottom: idx < 4 ? `1px solid ${T.border}` : "none",
-              }}>
-                <span style={{ fontSize: 12, color: T.textMuted, fontWeight: 500 }}>{formatDate(entry.date)}</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {diff !== null && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 6,
-                      background: diff < 0 ? "#02C39A12" : diff > 0 ? "#E85D4E12" : "transparent",
-                      color: diff < 0 ? T.mint : diff > 0 ? T.coral : T.textMuted,
-                    }}>
-                      {diff > 0 ? "+" : ""}{diff}
-                    </span>
-                  )}
-                  <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{entry.weight} kg</span>
+          {(() => {
+            const recentReversed = [...sorted].reverse().slice(0, 5);
+            return recentReversed.map((entry, idx) => {
+              const next = idx < recentReversed.length - 1 ? recentReversed[idx + 1] : null;
+              const diff = next ? Math.round((entry.weight - next.weight) * 100) / 100 : null;
+              const isToday = entry.date === today();
+              const isYesterday = (() => {
+                const y = new Date(); y.setDate(y.getDate() - 1);
+                return entry.date === toISO(y);
+              })();
+
+              return (
+                <div key={entry.id} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "11px 0", borderBottom: idx < recentReversed.length - 1 ? `1px solid ${T.border}` : "none",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{
+                      width: 8, height: 8, borderRadius: 4,
+                      background: isToday ? T.mint : isYesterday ? T.teal : T.border,
+                    }} />
+                    <div>
+                      <span style={{ fontSize: 12, color: isToday ? T.teal : T.textMuted, fontWeight: isToday ? 700 : 500 }}>
+                        {isToday ? "Oggi" : isYesterday ? "Ieri" : formatDate(entry.date)}
+                      </span>
+                      {entry.note && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>{entry.note}</div>}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {diff !== null && diff !== 0 && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 6,
+                        display: "inline-flex", alignItems: "center", gap: 2,
+                        background: diff < 0 ? "#02C39A12" : "#E85D4E12",
+                        color: diff < 0 ? T.mint : T.coral,
+                      }}>
+                        {diff < 0 ? <ArrowDown size={9} /> : <ArrowUp size={9} />}
+                        {Math.abs(diff)}
+                      </span>
+                    )}
+                    <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{entry.weight} kg</span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
 
       </div>
