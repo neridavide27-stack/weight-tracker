@@ -37,3 +37,59 @@ html { scroll-behavior: smooth; }
 ::selection {
   background: rgba(2, 128, 144, 0.2);
 }
+
+/* Card entrance animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes streakGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240, 180, 41, 0.3); }
+  50% { box-shadow: 0 0 12px 4px rgba(240, 180, 41, 0.15); }
+}
+
+.animate-card {
+  animation: fadeInUp 0.45s ease-out both;
+}
+
+.animate-card-1 { animation-delay: 0.05s; }
+.animate-card-2 { animation-delay: 0.1s; }
+.animate-card-3 { animation-delay: 0.15s; }
+.animate-card-4 { animation-delay: 0.2s; }
+.animate-card-5 { animation-delay: 0.25s; }
+.animate-card-6 { animation-delay: 0.3s; }
+.animate-card-7 { animation-delay: 0.35s; }
+.animate-card-8 { animation-delay: 0.4s; }
+
+.streak-glow {
+  animation: streakGlow 2s ease-in-out infinite;
+}
+
+.pulse-once {
+  animation: pulse 0.5s ease-in-out;
+}
+
+/* Smooth touch interactions */
+.touch-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.touch-card:active {
+  transform: scale(0.98);
+  box-shadow: 0 1px 8px rgba(0,0,0,0.04) !important;
+}
