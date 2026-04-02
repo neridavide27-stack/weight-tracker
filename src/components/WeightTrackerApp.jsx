@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
+import FoodSection from "./FoodSection";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Area, ComposedChart, ReferenceArea
@@ -780,22 +781,12 @@ export default function WeightTrackerApp() {
   }
 
   /* ═══════════════════════════════════════
-     SCREEN: FOOD (Coming Soon)
+     SCREEN: FOOD (Nutrition Tracking)
      ═══════════════════════════════════════ */
   if (screen === "food") {
     return (
       <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
-        <Header title="Alimentazione" subtitle="Tracciamento" />
-        <ComingSoonScreen
-          icon={Utensils} title="Traccia la tua Alimentazione" color={T.coral}
-          description="Monitora calorie e macronutrienti per avere un quadro completo del tuo percorso."
-          features={[
-            { icon: Zap, title: "Calorie Giornaliere", desc: "Budget calorico personalizzato" },
-            { icon: Activity, title: "Macro Tracking", desc: "Proteine, carboidrati e grassi" },
-            { icon: Clock, title: "Pasti & Snack", desc: "Registra colazione, pranzo, cena" },
-            { icon: Droplets, title: "Idratazione", desc: "Traccia l'acqua bevuta ogni giorno" },
-          ]}
-        />
+        <FoodSection settings={settings} weightEntries={sorted} goTo={goTo} T={T} />
         <BottomNav active="food" onNavigate={goTo} onAdd={() => goTo("add")} />
       </div>
     );
