@@ -373,8 +373,7 @@ const BottomNav = ({ active, onNavigate, onAdd }) => {
             <span style={{
               fontSize: 10, fontWeight: 700, letterSpacing: 0.2,
               color: isActive ? T.teal : T.textSec,
-            }}>{tab.label}</s
-pan>
+            }}>{tab.label}</span>
             {isActive && <div style={{
               width: 4, height: 4, borderRadius: 2, background: T.teal, marginTop: -1,
             }} />}
