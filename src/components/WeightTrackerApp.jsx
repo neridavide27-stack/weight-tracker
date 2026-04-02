@@ -977,15 +977,15 @@ function FoodScreen({ onNavigate, settings }) {
               {[
                 { label: "Obiettivo", val: foodGoal.kcal },
                 { label: "Rimanenti", val: Math.max(0, foodGoal.kcal - totalKcal) },
-              ].map((s, i) => (
-                <React.Fragment key={i}>
-                  {i === 1 && <div style={{ width: 1, background: "rgba(255,255,255,0.18)" }} />}
-                  <div style={{ textAlign: "center" }}>
+              ].flatMap((s, i) => {
+                const els = [];
+                if (i === 1) els.push(<div key={"div"+i} style={{ width: 1, background: "rgba(255,255,255,0.18)" }} />);
+                els.push(<div key={"s"+i} style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{s.val}</div>
                     <div style={{ fontSize: 9, color: "rgba(255,255,255,.68)", fontWeight: 700, marginTop: 1 }}>{s.label}</div>
-                  </div>
-                </React.Fragment>
-              ))}
+                  </div>);
+                return els;
+              })}
             </div>
             {[
               { lbl: "P", val: totalP, goal: foodGoal.p, color: "#93C5FD" },
