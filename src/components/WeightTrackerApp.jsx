@@ -1554,8 +1554,7 @@ redictedDate = null;
     return { weeklyData, monthlyData };
   }, [smoothed]);
 
-  // Recent entries with ritmo (weekly trend slope)
- and diff vs previous
+  // Recent entries with ritmo (weekly trend slope) and diff vs previous
   const recentWithRitmo = useMemo(() => {
     const recent = [...sorted].reverse().slice(0, 5);
     return recent.map((entry, idx) => {
