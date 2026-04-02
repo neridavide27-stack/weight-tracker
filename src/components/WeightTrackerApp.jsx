@@ -327,8 +327,7 @@ const Toggle = ({ on, onToggle, label }) => (
 
 /* ═══════════════════════════════════════════
    BOTTOM NAVIGATION
-   ══════════════════════════�
-�════════════════ */
+   ══════════════════════════════════════════ */
 
 const BottomNav = ({ active, onNavigate, onAdd }) => {
   const tabs = [
@@ -1600,8 +1599,7 @@ redictedDate = null;
 
   /* ═══════════════════════════════════════
      SCREEN: ADD WEIGHT
-     ═�
-��═════════════════════════════════════ */
+     ══════════════════════════════════════ */
   if (screen === "add") {
     const w = parseFloat(newWeight.replace(",", "."));
     const valid = !isNaN(w) && w >= 20 && w <= 300;
@@ -1992,8 +1990,7 @@ alla settimana scorsa. A volte il corpo ha bisogno di una pausa prima di scender
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
 
-      {/* �
-��─ HEADER ── */}
+      {/* ── HEADER ── */}
       <div style={{
         padding: "16px 16px 0", background: T.bg,
         position: "sticky", top: 0, zIndex: 10,
