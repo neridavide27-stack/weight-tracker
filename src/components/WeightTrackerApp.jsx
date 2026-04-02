@@ -67,8 +67,7 @@ const bmiColor = (bmi) => {
   return "#E85D4E";
 };
 
-// Time-based greeting
-const getGreeting = () => {
+// Time-based greetingconst getGreeting = () => {
   const h = new Date().getHours();
   if (h < 6) return { text: "Buonanotte", icon: Moon };
   if (h < 12) return { text: "Buongiorno", icon: Sunrise };
@@ -80,8 +79,7 @@ const getDayName = (dateStr) => {
   return new Date(dateStr).toLocaleDateString("it-IT", { weekday: "short" });
 };
 
-// Get trend EMA value at a specific date with linear interpolation if missing
-const getTrendAtDate = (smoothedEntries, dateStr) => {
+// Get trend EMA value at a specific date with linear interpolation if missingconst getTrendAtDate = (smoothedEntries, dateStr) => {
   if (!smoothedEntries || smoothedEntries.length === 0) return null;
   const exact = smoothedEntries.find(e => e.date === dateStr);
   if (exact) return exact.trend;
@@ -298,8 +296,7 @@ const InfoPopup = ({ show, onClose, title, children }) => {
   );
 };
 
-// Toggle switch component
-const Toggle = ({ on, onToggle, label }) => (
+// Toggle switch componentconst Toggle = ({ on, onToggle, label }) => (
   <div style={{
     display: "flex", justifyContent: "space-between", alignItems: "center",
     padding: "9px 0", borderBottom: `1px solid ${T.border}`,
@@ -1461,8 +1458,7 @@ today());
 
     const recent = smoothed.slice(-14);
     const reg = linearRegression(recent);
-    let p
-redictedDate = null;
+    let predictedDate = null;
     let daysToGoal = null;
     if (reg && reg.slope < 0 && settings.goalWeight) {
       const currentTrendEnd = reg.intercept + reg.slope * (recent.length - 1);
@@ -1633,8 +1629,7 @@ redictedDate = null;
             </div>
             {currentWeight != null && valid && (
               <div style={{
-                fontSize: 14, fontWeight: 700, marginT
-op: 12, padding: "6px 16px",
+                fontSize: 14, fontWeight: 700, marginTop: 12, padding: "6px 16px",
                 borderRadius: 20, display: "inline-block",
                 background: w < currentWeight ? "#02C39A15" : w > currentWeight ? "#E85D4E15" : "#F0F0F0",
                 color: w < currentWeight ? T.mint : w > currentWeight ? T.coral : T.textSec,
@@ -1717,8 +1712,7 @@ Radius: 16, border: "none",
               }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, marginBottom: 3 }}>
-                    {formatDateF
-ull(entry.date)}
+                    {formatDateFull(entry.date)}
                   </div>
                   {editingEntry === entry.id ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1918,8 +1912,7 @@ boxShadow: T.shadow, display: "flex", alignItems: "center", gap: 12,
             ].map((item, i, arr) => (
               <div key={i} style={{
                 display: "flex", justifyContent: "space-between", padding: "10px 0",
-                borderBottom: i < arr.length - 1 ? `1px so
-lid ${T.border}` : "none",
+                borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : "none",
               }}>
                 <span style={{ fontSize: 13, color: T.textSec }}>{item.label}</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{item.value}</span>
@@ -1953,8 +1946,7 @@ lid ${T.border}` : "none",
     if (weekDiff == null) return { text: "Continua a registrare per calcolare i confronti settimanali.", mood: "neutral" };
     if (losing && weekDiff < -0.3) return { text: `Ottimo lavoro! Il trend è sceso di ${Math.abs(weekDiff)} kg questa settimana. Stai andando alla grande.`, mood: "great" };
     if (losing && weekDiff < 0) return { text: `Il trend è sceso di ${Math.abs(weekDiff)} kg questa settimana. Stai andando nella direzione giusta, continua così.`, mood: "good" };
-    if (losing && weekDiff === 0) return { text: "Il trend è stabile rispetto 
-alla settimana scorsa. A volte il corpo ha bisogno di una pausa prima di scendere ancora.", mood: "neutral" };
+    if (losing && weekDiff === 0) return { text: "Il trend è stabile rispetto alla settimana scorsa. A volte il corpo ha bisogno di una pausa prima di scendere ancora.", mood: "neutral" };
     if (losing && weekDiff > 0) return { text: `Il trend è salito di ${weekDiff} kg questa settimana. È normale avere oscillazioni, guarda il trend a lungo termine.`, mood: "attention" };
     if (!losing && weekDiff > 0.3) return { text: `Ottimo! Il trend è salito di ${weekDiff} kg questa settimana, in linea con il tuo obiettivo.`, mood: "great" };
     return { text: `Variazione trend settimanale: ${weekDiff > 0 ? "+" : ""}${weekDiff} kg. Continua a tracciare per dati più precisi.`, mood: "neutral" };
@@ -2114,8 +2106,7 @@ alla settimana scorsa. A volte il corpo ha bisogno di una pausa prima di scender
             <div style={{ textAlign: "center" }}>
               <div style={{ position: "relative", width: 76, height: 76 }}>
                 <CircularProgress percentage={Math.round(progressPct)} size={76} strokeWidth={5} color="#fff" />
-                <di
-v style={{
+                <div style={{
                   position: "absolute", top: "50%", left: "50%",
                   transform: "translate(-50%, -50%)",
                 }}>
@@ -2154,8 +2145,7 @@ v style={{
                   <Target size={13} color="rgba(255,255,255,0.75)" />
                   <span style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>
                     {"Raggiungerai "}{settings.goalWeight}{" kg il "}
-                    <strong 
-style={{ color: "#fff" }}>{metrics.predictedDate}</strong>
+                    <strong style={{ color: "#fff" }}>{metrics.predictedDate}</strong>
                   </span>
                 </div>
                 <button
@@ -2193,8 +2183,7 @@ style={{ color: "#fff" }}>{metrics.predictedDate}</strong>
             display: "flex", gap: 0, background: "#E8ECEF", borderRadius: 10, padding: 3, marginBottom: 14,
           }}>
             {[["week", "Settimane"], ["month", "Mesi"]].map(([key, label]) => (
-              <button key={key} onCli
-ck={() => setCompTab(key)} style={{
+              <button key={key} onClick={() => setCompTab(key)} style={{
                 flex: 1, padding: "7px 0", border: "none", borderRadius: 8,
                 fontSize: 12, fontWeight: 700, cursor: "pointer",
                 background: compTab === key ? "#fff" : "transparent",
@@ -2229,8 +2218,7 @@ ck={() => setCompTab(key)} style={{
                         <div style={{ fontSize: 9, color: T.textMuted, marginTop: 1 }}>{w.dateLabel}</div>
                       </>
                     ) : (
-                      <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>Dati non disponi
-bili</div>
+                      <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>Dati non disponibili</div>
                     )}
                   </div>
                   <div style={{ textAlign: "right" }}>
@@ -2389,8 +2377,7 @@ borderRadius: 8,
 
           {/* Settings panel */}
           {showChartSettings && (
-            <div st
-yle={{
+            <div style={{
               background: T.bg, borderRadius: 12, padding: "2px 14px 2px",
               margin: "8px 4px",
             }}>
@@ -2432,8 +2419,7 @@ yle={{
             {[
               chartSettings.showScale ? "Grigio = bilancia" : null,
               chartSettings.showTrend ? "Teal = trend" : null,
-              chartSetting
-s.showObjective && settings.goalWeight ? "Verde = obiettivo" : null,
+              chartSettings.showObjective && settings.goalWeight ? "Verde = obiettivo" : null,
             ].filter(Boolean).join("  ·  ")}
           </div>
 
@@ -2472,8 +2458,7 @@ s.showObjective && settings.goalWeight ? "Verde = obiettivo" : null,
               )}
 
               {/* Trend line */}
-              {c
-hartSettings.showTrend && (
+              {chartSettings.showTrend && (
                 <Line type="monotone" dataKey="trend" stroke={T.teal} strokeWidth={2.5} dot={false} />
               )}
             </ComposedChart>
@@ -2540,8 +2525,7 @@ hartSettings.showTrend && (
                         color: entry.diff < 0 ? T.mint : entry.diff > 0 ? T.coral : T.textMuted,
                         display: "inline-flex", alignItems: "center",
                       }}>
-                        {entry.diff > 0 ? "+" : ""}{entry.dif
-f}
+                        {entry.diff > 0 ? "+" : ""}{entry.diff}
                       </span>
                     ) : (
                       <span style={{ fontSize: 10, color: T.textMuted }}>—</span>
