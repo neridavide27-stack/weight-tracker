@@ -95,7 +95,7 @@ const getTrendAtDate = (smoothedEntries, dateStr) => {
     if (t > target && !after) after = e;
   }
 
-  if (!before || !after) return nul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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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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l;
+  if (!before || !after) return null;
   const bTime = new Date(before.date).getTime();
   const aTime = new Date(after.date).getTime();
   const ratio = (target - bTime) / (aTime - bTime);
