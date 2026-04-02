@@ -67,7 +67,8 @@ const bmiColor = (bmi) => {
   return "#E85D4E";
 };
 
-// Time-based greetingconst getGreeting = () => {
+// Time-based greeting
+const getGreeting = () => {
   const h = new Date().getHours();
   if (h < 6) return { text: "Buonanotte", icon: Moon };
   if (h < 12) return { text: "Buongiorno", icon: Sunrise };
@@ -79,7 +80,8 @@ const getDayName = (dateStr) => {
   return new Date(dateStr).toLocaleDateString("it-IT", { weekday: "short" });
 };
 
-// Get trend EMA value at a specific date with linear interpolation if missingconst getTrendAtDate = (smoothedEntries, dateStr) => {
+// Get trend EMA value at a specific date with linear interpolation if missing
+const getTrendAtDate = (smoothedEntries, dateStr) => {
   if (!smoothedEntries || smoothedEntries.length === 0) return null;
   const exact = smoothedEntries.find(e => e.date === dateStr);
   if (exact) return exact.trend;
@@ -171,8 +173,7 @@ const T = {
   textMuted: "#9CA3AF",
   border: "#F0F0F0",
   gradient: "linear-gradient(135deg, #028090, #02C39A)",
-  
-gradientWarm: "linear-gradient(135deg, #F0B429, #E85D4E)",
+  gradientWarm: "linear-gradient(135deg, #F0B429, #E85D4E)",
   shadow: "0 2px 16px rgba(0,0,0,0.06)",
   shadowLg: "0 8px 32px rgba(0,0,0,0.08)",
 };
@@ -296,7 +297,8 @@ const InfoPopup = ({ show, onClose, title, children }) => {
   );
 };
 
-// Toggle switch componentconst Toggle = ({ on, onToggle, label }) => (
+// Toggle switch component
+const Toggle = ({ on, onToggle, label }) => (
   <div style={{
     display: "flex", justifyContent: "space-between", alignItems: "center",
     padding: "9px 0", borderBottom: `1px solid ${T.border}`,
@@ -1407,8 +1409,7 @@ export default function WeightTrackerApp() {
   });
   const [newWeight, setNewWeight] = useState("");
   const [newNote, setNewNote] = useState("");
-  const [newDate, setNewDate] = useState(
-today());
+  const [newDate, setNewDate] = useState(today());
   const [chartRange, setChartRange] = useState("1M");
   const [editingEntry, setEditingEntry] = useState(null);
   const [editWeight, setEditWeight] = useState("");
@@ -1843,8 +1844,7 @@ Radius: 16, border: "none",
           ].map(({ label, key, type, unit, icon: Ic }) => (
             <div key={key} style={{
               background: T.card, borderRadius: 14, padding: "12px 16px", marginBottom: 8,
-              
-boxShadow: T.shadow, display: "flex", alignItems: "center", gap: 12,
+              boxShadow: T.shadow, display: "flex", alignItems: "center", gap: 12,
             }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 10, background: `${T.teal}10`,
@@ -2297,8 +2297,8 @@ boxShadow: T.shadow, display: "flex", alignItems: "center", gap: 12,
                       </div>
                     ) : (
                       <div style={{
-                        fontSize: 10, fontWeight: 600, padding: "3px 8px", 
-borderRadius: 8,
+                        fontSize: 10, fontWeight: 600, padding: "3px 8px",
+                        borderRadius: 8,
                         background: "#F0F0F0", color: T.textMuted,
                       }}>Primo mese</div>
                     )}
