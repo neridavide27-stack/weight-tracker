@@ -16,7 +16,6 @@ import {
   ChevronUp, Trash2, Camera, Target, BarChart3, Calendar,
   Clock, Star, Flame, Activity, TrendingUp, ScanLine, Settings,
 } from "lucide-react";
-// html5-qrcode is imported dynamically in startScanner() to avoid Next.js SSR issues
 import { FOOD_DATABASE as EXTERNAL_DB } from "./food-database";
 import {
   getFoodEntriesByDate, addFoodEntry, addFoodEntries,
@@ -308,11 +307,46 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     }
   }, []);
 
-  // ── BARCODE SCANNER (html5-qrcode, cross-platform) ──────
-  const html5QrRef = useRef(null);
+  // ── BARCODE SCANNER (BarcodeDetector nativo + QuaggaJS fallback) ──
+  const videoRef = useRef(null);
+  const scanRafRef = useRef(null);
+  const scanCanvasRef = useRef(null);
+  const scanCtxRef = useRef(null);
+  const barcodeDetectorRef = useRef(null);
+  const videoStreamRef = useRef(null);
   const verifyCountRef = useRef(0);
   const lastCodeRef = useRef(null);
-  const [verifyProgress, setVerifyProgress] = useState(0); // 0-3
+  const [verifyProgress, setVerifyProgress] = useState(0);
+  const [scanStatus, setScanStatus] = useState("");
+
+  // Init detector: BarcodeDetector nativo (iOS 17+, Android) + QuaggaJS fallback
+  const initDetector = async () => {
+    if (typeof window === "undefined") return "manual";
+    // 1. BarcodeDetector nativo
+    if ("BarcodeDetector" in window) {
+      try {
+        const formats = await window.BarcodeDetector.getSupportedFormats();
+        const ean = formats.filter((f) => f.includes("ean") || f.includes("upc") || f.includes("code"));
+        barcodeDetectorRef.current = new window.BarcodeDetector({
+          formats: ean.length ? ean : ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
+        });
+        return "native";
+      } catch (e) { /* fallthrough */ }
+    }
+    // 2. QuaggaJS via CDN
+    if (!window.Quagga) {
+      try {
+        await new Promise((res, rej) => {
+          const s = document.createElement("script");
+          s.src = "https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js";
+          s.onload = res;
+          s.onerror = rej;
+          document.head.appendChild(s);
+        });
+      } catch (e) { return "manual"; }
+    }
+    return "quagga";
+  };
 
   const startScanner = async () => {
     setScannerActive(true);
@@ -321,71 +355,148 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     setVerifyProgress(0);
     verifyCountRef.current = 0;
     lastCodeRef.current = null;
+    setScanStatus("Avvio fotocamera...");
 
-    // Small delay to ensure the DOM element is rendered
-    await new Promise((r) => setTimeout(r, 100));
-
+    // Get camera stream
+    let stream;
     try {
-      // Dynamic import to avoid Next.js SSR errors
-      const { Html5Qrcode } = await import("html5-qrcode");
-
-      const scanner = new Html5Qrcode("barcode-reader", {
-        formatsToSupport: [9 /* EAN_13 */, 10 /* EAN_8 */, 14 /* UPC_A */, 15 /* UPC_E */, 5 /* CODE_128 */],
-        verbose: false,
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
       });
-      html5QrRef.current = scanner;
-
-      await scanner.start(
-        { facingMode: "environment" },
-        {
-          fps: 15,
-          qrbox: { width: 280, height: 140 },
-          aspectRatio: 1.5,
-          disableFlip: false,
-        },
-        // onSuccess — 3-read verification
-        (decodedText) => {
-          if (decodedText === lastCodeRef.current) {
-            verifyCountRef.current += 1;
-          } else {
-            lastCodeRef.current = decodedText;
-            verifyCountRef.current = 1;
-          }
-          setVerifyProgress(Math.min(verifyCountRef.current, 3));
-
-          if (verifyCountRef.current >= 3) {
-            // Confirmed! Stop scanner and look up product
-            stopScanner();
-            handleBarcodeDetected(decodedText);
-          }
-        },
-        // onError — ignore, scanning continues
-        () => {}
-      );
     } catch (e) {
       setScannerActive(false);
       scannerActiveRef.current = false;
-      alert("Impossibile accedere alla fotocamera. Verifica i permessi del browser.");
+      let msg = "Errore fotocamera.";
+      if (e.name === "NotAllowedError") msg = "Permesso fotocamera negato.\n\nVai su Impostazioni → Safari → Fotocamera → Consenti.";
+      else if (e.name === "NotFoundError") msg = "Nessuna fotocamera trovata.";
+      else if (e.name === "NotReadableError") msg = "Fotocamera occupata da altra app.";
+      alert(msg);
+      return;
+    }
+
+    videoStreamRef.current = stream;
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = stream;
+    await video.play();
+
+    // Init detector
+    setScanStatus("Inizializzazione scanner...");
+    let method;
+    try { method = await initDetector(); } catch (e) { method = "manual"; }
+
+    // Create canvas for QuaggaJS fallback
+    if (!scanCanvasRef.current) {
+      scanCanvasRef.current = document.createElement("canvas");
+      scanCtxRef.current = scanCanvasRef.current.getContext("2d", { willReadFrequently: true, alpha: false });
+    }
+
+    if (method === "native") {
+      setScanStatus("Punta il barcode");
+      const NEEDED = 3;
+
+      const loop = async () => {
+        if (!scannerActiveRef.current) return;
+        if (video.readyState >= 2 && video.videoWidth > 0) {
+          try {
+            const barcodes = await barcodeDetectorRef.current.detect(video);
+            if (barcodes.length > 0 && scannerActiveRef.current) {
+              const code = barcodes[0].rawValue;
+              if (code === lastCodeRef.current) {
+                verifyCountRef.current += 1;
+              } else {
+                lastCodeRef.current = code;
+                verifyCountRef.current = 1;
+              }
+              setVerifyProgress(Math.min(verifyCountRef.current, NEEDED));
+              if (verifyCountRef.current >= NEEDED) {
+                if (navigator.vibrate) navigator.vibrate([60, 40, 100]);
+                stopScanner();
+                handleBarcodeDetected(code);
+                return;
+              }
+            } else {
+              lastCodeRef.current = null;
+              verifyCountRef.current = 0;
+              setVerifyProgress(0);
+              setScanStatus("Punta il barcode");
+            }
+          } catch (e) { /* ignore */ }
+        }
+        if (scannerActiveRef.current) scanRafRef.current = requestAnimationFrame(loop);
+      };
+      scanRafRef.current = requestAnimationFrame(loop);
+
+    } else if (method === "quagga") {
+      setScanStatus("Punta il barcode");
+      const NEEDED = 3;
+
+      const scanLoop = () => {
+        if (!scannerActiveRef.current) return;
+        if (video.readyState >= 2 && video.videoWidth > 0) {
+          scanCanvasRef.current.width = video.videoWidth;
+          scanCanvasRef.current.height = video.videoHeight;
+          scanCtxRef.current.drawImage(video, 0, 0);
+          window.Quagga.decodeSingle(
+            {
+              decoder: { readers: ["ean_reader", "ean_8_reader", "upc_reader", "code_128_reader"] },
+              locate: true,
+              src: scanCanvasRef.current.toDataURL("image/jpeg", 0.8),
+            },
+            (result) => {
+              if (!scannerActiveRef.current) return;
+              if (result && result.codeResult) {
+                const code = result.codeResult.code;
+                if (code === lastCodeRef.current) {
+                  verifyCountRef.current += 1;
+                } else {
+                  lastCodeRef.current = code;
+                  verifyCountRef.current = 1;
+                }
+                setVerifyProgress(Math.min(verifyCountRef.current, NEEDED));
+                if (verifyCountRef.current >= NEEDED) {
+                  if (navigator.vibrate) navigator.vibrate([60, 40, 100]);
+                  stopScanner();
+                  handleBarcodeDetected(code);
+                  return;
+                }
+                if (scannerActiveRef.current) setTimeout(scanLoop, 300);
+              } else {
+                lastCodeRef.current = null;
+                verifyCountRef.current = 0;
+                setVerifyProgress(0);
+                setScanStatus("Punta il barcode");
+                if (scannerActiveRef.current) setTimeout(scanLoop, 300);
+              }
+            }
+          );
+        } else {
+          if (scannerActiveRef.current) setTimeout(scanLoop, 300);
+        }
+      };
+      setTimeout(scanLoop, 500);
+
+    } else {
+      setScanStatus("Inserisci il codice manualmente");
     }
   };
 
-  const stopScanner = async () => {
+  const stopScanner = () => {
     setScannerActive(false);
     scannerActiveRef.current = false;
     setVerifyProgress(0);
     verifyCountRef.current = 0;
     lastCodeRef.current = null;
-    try {
-      if (html5QrRef.current) {
-        const state = html5QrRef.current.getState();
-        // 2 = SCANNING, 3 = PAUSED
-        if (state === 2 || state === 3) {
-          await html5QrRef.current.stop();
-        }
-        html5QrRef.current.clear();
-        html5QrRef.current = null;
-      }
-    } catch (e) { /* already stopped */ }
+    if (scanRafRef.current) {
+      cancelAnimationFrame(scanRafRef.current);
+      scanRafRef.current = null;
+    }
+    if (videoRef.current?.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
+      videoRef.current.srcObject = null;
+    }
+    videoStreamRef.current = null;
   };
 
   const handleBarcodeDetected = async (code) => {
@@ -729,46 +840,71 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
           <div style={{ width: 36 }} />
         </div>
 
-        {/* Camera view via html5-qrcode */}
+        {/* Camera video + overlay */}
         {scannerActive && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}>
-            <div id="barcode-reader" style={{ width: "100%", maxWidth: 440 }} />
-            {/* Verification progress bar */}
+          <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+            <video
+              ref={videoRef}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+              playsInline
+              autoPlay
+              muted
+            />
+            {/* Scan zone overlay */}
             <div style={{
-              display: "flex", gap: 8, justifyContent: "center",
-              padding: 16, background: "rgba(0,0,0,0.6)", width: "100%", maxWidth: 440,
+              position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              {[1, 2, 3].map((step) => (
-                <div key={step} style={{
-                  width: 50, height: 6, borderRadius: 3,
-                  background: verifyProgress >= step ? "#02C39A" : "rgba(255,255,255,0.25)",
-                  transition: "background 0.2s",
-                }} />
-              ))}
+              <div style={{
+                width: 280, height: 120, border: "3px solid rgba(2,192,154,0.8)",
+                borderRadius: 16, boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)",
+              }} />
             </div>
-            <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, padding: "4px 0 8px", textAlign: "center" }}>
-              {verifyProgress === 0 ? "Inquadra il codice a barre"
-                : verifyProgress < 3 ? `Verifica in corso... ${verifyProgress}/3`
-                : "Codice confermato!"}
+            {/* Scan line animation */}
+            <div style={{
+              position: "absolute", left: "calc(50% - 120px)", right: "calc(50% - 120px)",
+              height: 2, background: "linear-gradient(to right, transparent, #02C39A, transparent)",
+              animation: "scanLine 2s ease-in-out infinite", top: "calc(50% - 50px)",
+            }} />
+            <style>{`@keyframes scanLine { 0% { transform: translateY(0); } 50% { transform: translateY(100px); } 100% { transform: translateY(0); } }`}</style>
+
+            {/* Bottom info area */}
+            <div style={{
+              position: "absolute", bottom: 0, left: 0, right: 0,
+              background: "linear-gradient(transparent, rgba(0,0,0,0.85))",
+              padding: "40px 20px 20px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+            }}>
+              {/* Status text */}
+              <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, textAlign: "center" }}>
+                {scanStatus}
+              </div>
+              {/* Verification dots */}
+              <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                {[1, 2, 3].map((step) => (
+                  <div key={step} style={{
+                    width: 12, height: 12, borderRadius: "50%",
+                    background: verifyProgress >= step ? "#02C39A" : "rgba(255,255,255,0.25)",
+                    transition: "background 0.15s",
+                  }} />
+                ))}
+              </div>
+              {/* Manual input button */}
+              <button
+                onClick={() => {
+                  stopScanner();
+                  const manualCode = prompt("Inserisci il codice a barre manualmente:");
+                  if (manualCode && manualCode.trim()) {
+                    handleBarcodeDetected(manualCode.trim());
+                  }
+                }}
+                style={{
+                  background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.25)",
+                  borderRadius: 12, padding: "10px 20px", fontSize: 12,
+                  fontWeight: 500, color: "#fff", cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Inserisci codice manualmente
+              </button>
             </div>
-            {/* Manual input button */}
-            <button
-              onClick={() => {
-                stopScanner();
-                const manualCode = prompt("Inserisci il codice a barre manualmente:");
-                if (manualCode && manualCode.trim()) {
-                  handleBarcodeDetected(manualCode.trim());
-                }
-              }}
-              style={{
-                background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
-                borderRadius: 14, padding: "10px 20px", fontSize: 13,
-                fontWeight: 600, color: "#fff", cursor: "pointer", fontFamily: "inherit",
-                marginBottom: 16,
-              }}
-            >
-              Inserisci codice manualmente
-            </button>
           </div>
         )}
 
