@@ -3,9 +3,10 @@ import Dexie from 'dexie';
 
 const foodDb = new Dexie('FoodTrackerDB');
 
-foodDb.version(1).stores({
+foodDb.version(2).stores({
   foodEntries: '++id, date, mealType',
   cachedFoods: 'id, barcode',
+  savedMeals: '++id, mealType',
 });
 
 // ========== FOOD ENTRIES ==========
@@ -33,7 +34,7 @@ export const updateFoodEntry = async (id, changes) => {
 // ========== CACHED FOODS (offline) ==========
 
 export const cacheFood = async (food) => {
-  return await foodDb.cachedFoods.put({ ...food, lastUsed: Date.now() });
+  return await foodDb.cachedFoods.put({ ...food, brand: food.brand, lastUsed: Date.now() });
 };
 
 export const getCachedFood = async (id) => {
@@ -67,6 +68,7 @@ export const getRecentFoodsByMeal = async (mealType, limit = 20) => {
     if (!foodMap.has(key)) {
       foodMap.set(key, {
         foodName: e.foodName,
+        brand: e.brand,
         lastGrams: e.grams,
         kcalPer100: e.kcalPer100 || (e.grams > 0 ? (e.kcal / e.grams) * 100 : 0),
         proteinPer100: e.proteinPer100 || (e.grams > 0 ? (e.protein / e.grams) * 100 : 0),
@@ -86,6 +88,30 @@ export const getRecentFoodsByMeal = async (mealType, limit = 20) => {
   return Array.from(foodMap.values())
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
+};
+
+// ========== SAVED MEALS ==========
+
+export const getSavedMeals = async () => {
+  return await foodDb.savedMeals.toArray();
+};
+
+export const getSavedMealsByType = async (mealType) => {
+  return await foodDb.savedMeals.where('mealType').equals(mealType).toArray();
+};
+
+export const addSavedMeal = async (meal) => {
+  return await foodDb.savedMeals.add({
+    name: meal.name,
+    mealType: meal.mealType,
+    items: meal.items,
+    totalKcal: meal.totalKcal,
+    createdAt: Date.now(),
+  });
+};
+
+export const deleteSavedMeal = async (id) => {
+  return await foodDb.savedMeals.delete(id);
 };
 
 export default foodDb;
