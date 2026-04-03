@@ -22,7 +22,7 @@ import {
   getFoodEntriesByDate, addFoodEntry, addFoodEntries,
   deleteFoodEntry, updateFoodEntry, cacheFood,
   getCachedFoodByBarcode, searchCachedFoods,
-  getRecentFoodsByMeal, getAllCachedFoods,
+  getRecentFoodsByMeal, getAllCachedFoods, getLastEntryByFoodName,
 } from "../lib/food-db";
 
 // ─── CONSTANTS ────────────────────────────────────────────
@@ -133,11 +133,11 @@ const SwipeableItem = ({ entry, onDelete, onTap, T }) => {
 };
 
 // ─── GRAM EDITOR MODAL (REPLACED renderGramPopup) ───────
-const GramEditorModal = ({ entry, onSave, onClose, T }) => {
+const GramEditorModal = ({ entry, onSave, onClose, onMoveMeal, currentMealType, T }) => {
   const [grams, setGrams] = useState(entry.grams || entry.lastGrams || 100);
+  const [showMovePicker, setShowMovePicker] = useState(false);
   const m = grams / 100;
   const pv = { kcal: Math.round((entry.kcalPer100||0)*m), protein: +((entry.proteinPer100||0)*m).toFixed(1), carbs: +((entry.carbsPer100||0)*m).toFixed(1), fat: +((entry.fatPer100||0)*m).toFixed(1) };
-  const quickGrams = [50, 100, 150, 200, 250];
 
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={onClose}>
@@ -152,16 +152,11 @@ const GramEditorModal = ({ entry, onSave, onClose, T }) => {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginBottom: 18 }}>
             <button onClick={() => setGrams(Math.max(1, grams - 10))} style={{ width: 44, height: 44, borderRadius: 14, border: `2px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><Minus size={18} /></button>
             <div style={{ position: "relative" }}>
-              <input type="number" value={grams} onChange={(e) => setGrams(Math.max(0, parseInt(e.target.value) || 0))} autoFocus
+              <input type="tel" inputMode="numeric" pattern="[0-9]*" value={grams} onChange={(e) => setGrams(Math.max(0, parseInt(e.target.value.replace(/\D/g, "")) || 0))} autoFocus
                 style={{ width: 90, height: 52, borderRadius: 16, border: `2px solid ${T.teal}`, textAlign: "center", fontSize: 26, fontWeight: 800, fontFamily: "inherit", color: T.text, outline: "none", background: T.tealLight }} />
               <div style={{ position: "absolute", bottom: -6, left: "50%", transform: "translateX(-50%)", fontSize: 9, fontWeight: 700, color: T.teal, background: "#fff", padding: "0 6px" }}>grammi</div>
             </div>
             <button onClick={() => setGrams(grams + 10)} style={{ width: 44, height: 44, borderRadius: 14, border: `2px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><Plus size={18} /></button>
-          </div>
-          <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 20 }}>
-            {quickGrams.map((qg) => (
-              <button key={qg} onClick={() => setGrams(qg)} style={{ padding: "6px 10px", borderRadius: 10, border: "none", background: grams === qg ? T.teal : "#F0F2F5", color: grams === qg ? "#fff" : T.textSec, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>{qg}g</button>
-            ))}
           </div>
           <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 16, fontSize: 12 }}>
             <div style={{ textAlign: "center" }}>
@@ -181,6 +176,28 @@ const GramEditorModal = ({ entry, onSave, onClose, T }) => {
               <div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>G</div>
             </div>
           </div>
+
+          {/* Move to meal picker */}
+          {onMoveMeal && currentMealType && (
+            showMovePicker ? (
+              <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                {MEAL_TYPES.filter(mt => mt !== currentMealType).map((mt) => {
+                  const cfg = MEAL_CONFIG[mt];
+                  return (
+                    <button key={mt} onClick={() => { onMoveMeal(entry.id, mt); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${cfg.color}`, background: cfg.bgColor, cursor: "pointer", textAlign: "center", fontFamily: "inherit" }}>
+                      <div style={{ fontSize: 14 }}>{cfg.icon}</div>
+                      <div style={{ fontSize: 8, fontWeight: 600, color: cfg.color, marginTop: 2 }}>{cfg.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <button onClick={() => setShowMovePicker(true)} style={{ width: "100%", padding: "8px 14px", marginBottom: 14, borderRadius: 10, border: `1.5px dashed ${T.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: T.textSec, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                ↔ Sposta in altro pasto
+              </button>
+            )
+          )}
+
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F0F0", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec }}>Annulla</button>
             <button onClick={() => onSave(grams)} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: T.gradient, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Conferma</button>
@@ -237,24 +254,24 @@ const CustomFoodForm = ({ onSave, onBack, T, initialBarcode }) => {
 
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>kcal per 100g *</label>
-        <input type="number" value={kcalPer100} onChange={(e) => setKcalPer100(e.target.value)} placeholder="0"
+        <input type="tel" inputMode="numeric" pattern="[0-9]*" value={kcalPer100} onChange={(e) => setKcalPer100(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0"
           style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.border}`, fontSize: 14, fontFamily: "inherit", outline: "none", color: T.text, boxSizing: "border-box" }} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
         <div>
           <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 5 }}>Proteine (g)</label>
-          <input type="number" value={proteinPer100} onChange={(e) => setProteinPer100(e.target.value)} placeholder="0"
+          <input type="tel" inputMode="numeric" pattern="[0-9]*" value={proteinPer100} onChange={(e) => setProteinPer100(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0"
             style={{ width: "100%", padding: "10px 10px", borderRadius: 10, border: `1.5px solid ${T.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", color: T.text, boxSizing: "border-box" }} />
         </div>
         <div>
           <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 5 }}>Carbs (g)</label>
-          <input type="number" value={carbsPer100} onChange={(e) => setCarbsPer100(e.target.value)} placeholder="0"
+          <input type="tel" inputMode="numeric" pattern="[0-9]*" value={carbsPer100} onChange={(e) => setCarbsPer100(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0"
             style={{ width: "100%", padding: "10px 10px", borderRadius: 10, border: `1.5px solid ${T.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", color: T.text, boxSizing: "border-box" }} />
         </div>
         <div>
           <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 5 }}>Grassi (g)</label>
-          <input type="number" value={fatPer100} onChange={(e) => setFatPer100(e.target.value)} placeholder="0"
+          <input type="tel" inputMode="numeric" pattern="[0-9]*" value={fatPer100} onChange={(e) => setFatPer100(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0"
             style={{ width: "100%", padding: "10px 10px", borderRadius: 10, border: `1.5px solid ${T.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", color: T.text, boxSizing: "border-box" }} />
         </div>
       </div>
@@ -317,24 +334,24 @@ const CheatFoodForm = ({ onSave, onBack, T }) => {
 
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>kcal TOTALI *</label>
-        <input type="number" value={totalKcal} onChange={(e) => setTotalKcal(e.target.value)} placeholder="0"
+        <input type="tel" inputMode="numeric" pattern="[0-9]*" value={totalKcal} onChange={(e) => setTotalKcal(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0"
           style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.border}`, fontSize: 14, fontFamily: "inherit", outline: "none", color: T.text, boxSizing: "border-box" }} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
         <div>
           <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 5 }}>Proteine (g)</label>
-          <input type="number" value={totalProtein} onChange={(e) => setTotalProtein(e.target.value)} placeholder="0"
+          <input type="tel" inputMode="numeric" pattern="[0-9]*" value={totalProtein} onChange={(e) => setTotalProtein(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0"
             style={{ width: "100%", padding: "10px 10px", borderRadius: 10, border: `1.5px solid ${T.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", color: T.text, boxSizing: "border-box" }} />
         </div>
         <div>
           <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 5 }}>Carbs (g)</label>
-          <input type="number" value={totalCarbs} onChange={(e) => setTotalCarbs(e.target.value)} placeholder="0"
+          <input type="tel" inputMode="numeric" pattern="[0-9]*" value={totalCarbs} onChange={(e) => setTotalCarbs(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0"
             style={{ width: "100%", padding: "10px 10px", borderRadius: 10, border: `1.5px solid ${T.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", color: T.text, boxSizing: "border-box" }} />
         </div>
         <div>
           <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 5 }}>Grassi (g)</label>
-          <input type="number" value={totalFat} onChange={(e) => setTotalFat(e.target.value)} placeholder="0"
+          <input type="tel" inputMode="numeric" pattern="[0-9]*" value={totalFat} onChange={(e) => setTotalFat(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0"
             style={{ width: "100%", padding: "10px 10px", borderRadius: 10, border: `1.5px solid ${T.border}`, fontSize: 13, fontFamily: "inherit", outline: "none", color: T.text, boxSizing: "border-box" }} />
         </div>
       </div>
@@ -364,18 +381,30 @@ const LoadMealSheet = ({ mealType, savedMeals, onLoad, onDelete, onClose, T }) =
           {filtered.length === 0 ? (
             <div style={{ textAlign: "center", padding: 30, color: T.textMuted, fontSize: 13 }}>Nessun pasto salvato</div>
           ) : (
-            filtered.map((meal) => (
-              <div key={meal.id} style={{ padding: "12px 0", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{meal.name}</div>
-                  <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{meal.items.length} cibi • {meal.totalKcal} kcal</div>
+            filtered.map((meal) => {
+              const totP = meal.items.reduce((s, i) => s + (i.protein || 0), 0);
+              const totC = meal.items.reduce((s, i) => s + (i.carbs || 0), 0);
+              const totG = meal.items.reduce((s, i) => s + (i.fat || 0), 0);
+              return (
+                <div key={meal.id} style={{ padding: "12px 0", borderBottom: `1px solid ${T.border}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{meal.name}</div>
+                      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{meal.items.length} cibi • {meal.totalKcal} kcal</div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: "#E85D4E" }}>{Math.round(totG)}G</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: "#F0B429" }}>{Math.round(totC)}C</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: "#3B82F6" }}>{Math.round(totP)}P</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => onLoad(meal)} style={{ padding: "6px 12px", borderRadius: 10, border: "none", background: T.gradient, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600 }}>Carica</button>
+                      <button onClick={() => onDelete(meal.id)} style={{ padding: "6px 8px", borderRadius: 10, border: "none", background: "#FEE2E2", color: T.coral, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600 }}>Elimina</button>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => onLoad(meal)} style={{ padding: "6px 12px", borderRadius: 10, border: "none", background: T.gradient, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600 }}>Carica</button>
-                  <button onClick={() => onDelete(meal.id)} style={{ padding: "6px 8px", borderRadius: 10, border: "none", background: "#FEE2E2", color: T.coral, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600 }}>Elimina</button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -485,7 +514,13 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
         <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
         <div style={{ width: 36, height: 4, background: "#ddd", borderRadius: 2, margin: "10px auto" }} />
         <div style={{ padding: "4px 20px 12px" }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: T.text, marginBottom: 12 }}>Aggiungi Cibo</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>Aggiungi Cibo</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button onClick={() => setView("cheat")} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${T.coral}`, background: "rgba(232,93,78,0.08)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, flexShrink: 0 }}>🍕</button>
+              <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F0F2F5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textSec }}><X size={16} /></button>
+            </div>
+          </div>
 
           <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
             {MEAL_TYPES.map((mt) => {
@@ -505,8 +540,6 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
             <input type="text" value={search} onChange={(e) => handleSearch(e.target.value)} placeholder="Cerca alimento..." style={{ flex: 1, border: "none", background: "none", fontSize: 14, fontFamily: "inherit", outline: "none", color: T.text }} />
             <button onClick={onScannerOpen} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: T.gradient, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Camera size={16} /></button>
           </div>
-
-          <button onClick={() => setView("cheat")} style={{ width: "100%", padding: "10px 14px", marginBottom: 12, borderRadius: 12, border: `1.5px dashed ${T.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, color: T.text, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Pizza size={14} /> Aggiungi sgarro</button>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 10px" }}>
@@ -625,6 +658,26 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
       setShowAddSheet("breakfast");
     },
   }));
+
+  // ── Disable pinch-to-zoom across entire food section ────
+  useEffect(() => {
+    const prevent = (e) => { if (e.touches && e.touches.length > 1) e.preventDefault(); };
+    const preventGesture = (e) => e.preventDefault();
+    document.addEventListener("touchmove", prevent, { passive: false });
+    document.addEventListener("gesturestart", preventGesture);
+    document.addEventListener("gesturechange", preventGesture);
+    // Also set viewport meta
+    let meta = document.querySelector('meta[name="viewport"]');
+    const origContent = meta ? meta.content : null;
+    if (meta) { meta.content = "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"; }
+    else { meta = document.createElement("meta"); meta.name = "viewport"; meta.content = "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"; document.head.appendChild(meta); }
+    return () => {
+      document.removeEventListener("touchmove", prevent);
+      document.removeEventListener("gesturestart", preventGesture);
+      document.removeEventListener("gesturechange", preventGesture);
+      if (origContent !== null && meta) meta.content = origContent;
+    };
+  }, []);
 
   // ── DEXIE: Load entries when date changes ───────────────
   useEffect(() => {
@@ -1006,7 +1059,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     const food = await lookupBarcode(code);
     setScanLoading(false);
     if (food) {
-      setScanResult(food);
+      // Skip confirmation — go straight to gram editor
+      // Check if this product was used before to pre-fill grams
+      const foodName = food.foodName || food.name;
+      const lastEntry = await getLastEntryByFoodName(foodName);
+      const prefillGrams = lastEntry ? lastEntry.grams : (food.defaultPortion || 100);
+      setScanResult(null);
+      setScannerActive(false);
+      setGramPopup({ food, grams: prefillGrams, source: "scan" });
     } else {
       setScanResult({ notFound: true, barcode: code });
     }
@@ -1044,6 +1104,13 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     await deleteFoodEntry(id);
     setFoodEntries((prev) => prev.filter((e) => e.id !== id));
     showToast("Eliminato");
+  };
+
+  const handleMoveMeal = async (entryId, newMealType) => {
+    await updateFoodEntry(entryId, { mealType: newMealType });
+    setFoodEntries((prev) => prev.map((e) => e.id === entryId ? { ...e, mealType: newMealType } : e));
+    setEditingEntry(null);
+    showToast(`Spostato in ${MEAL_CONFIG[newMealType].label}`);
   };
 
   const handleUpdateGrams = async (entryId, newGrams) => {
@@ -1227,40 +1294,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
       );
     }
 
-    // Product found — show info + Aggiungi button that opens GramEditorModal
-    return (
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div style={{ background: "#fff", borderRadius: 24, width: "100%", maxWidth: 340, overflow: "hidden", boxShadow: "0 25px 60px rgba(0,0,0,0.25)" }}>
-          <div style={{ background: T.gradient, padding: "20px 22px 16px" }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>{scanResult.name}</div>
-            {scanResult.brand && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>{scanResult.brand}</div>}
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>{scanResult.kcalPer100} kcal per 100g</div>
-          </div>
-          <div style={{ padding: "16px 22px 20px" }}>
-            <div style={{ display: "flex", justifyContent: "space-around", marginBottom: 16, textAlign: "center" }}>
-              {[
-                { label: "Grassi", value: scanResult.fatPer100, color: "#E85D4E" },
-                { label: "Carbo", value: scanResult.carbsPer100, color: "#F0B429" },
-                { label: "Proteine", value: scanResult.proteinPer100, color: "#3B82F6" },
-              ].map((m) => (
-                <div key={m.label}>
-                  <div style={{ fontSize: 9, fontWeight: 600, color: T.textMuted, textTransform: "uppercase", marginBottom: 4 }}>{m.label}</div>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: m.color }}>{m.value}<span style={{ fontSize: 10, fontWeight: 500, color: T.textMuted }}>g</span></div>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setScanResult(null); setScannerActive(false); }} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F2F5", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec }}>Annulla</button>
-              <button onClick={() => {
-                const food = scanResult;
-                setScanResult(null); setScannerActive(false);
-                setGramPopup({ food, grams: food.defaultPortion || 100, source: "scan" });
-              }} style={{ flex: 1.5, padding: 12, borderRadius: 12, border: "none", background: T.gradient, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Aggiungi</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    // Product found — handled directly in handleBarcodeDetected (skips to gram editor)
+    return null;
   };
 
   const renderDashboard = () => {
@@ -1378,6 +1413,13 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
 
         {/* ─── Meal Cards ─── */}
         <div style={{ padding: "12px 16px 20px" }}>
+          {/* Single column header for all meals */}
+          <div style={{ display: "flex", alignItems: "center", padding: "4px 14px 8px", marginBottom: 4 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: "uppercase" }}>Alimento</div>
+            <ValuesRow gr="gr" g="G" c="C" p="P" kcal="kcal"
+              grColor={T.mint} gColor="#E85D4E" cColor="#F0B429" pColor="#3B82F6" kcalColor={T.text} fontSize={9} fontWeight={700} />
+            <div style={{ width: 22, flexShrink: 0 }} />
+          </div>
           {MEAL_TYPES.map((mt) => {
             const cfg = MEAL_CONFIG[mt];
             const expanded = expandedMeals[mt];
@@ -1402,14 +1444,6 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
 
                 {expanded && (
                   <div style={{ background: T.card, borderRadius: "0 0 14px 14px", boxShadow: T.shadow, marginTop: -1, overflow: "hidden" }}>
-                    {/* Meal header with columns */}
-                    <div style={{ padding: "8px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center" }}>
-                      <div style={{ flex: 1, minWidth: 0, fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: "uppercase" }}>Alimento</div>
-                      <ValuesRow gr="gr" g="G" c="C" p="P" kcal="kcal"
-                        grColor={T.mint} gColor="#E85D4E" cColor="#F0B429" pColor="#3B82F6" kcalColor={T.text} fontSize={9} fontWeight={700} />
-                      <div style={{ width: 22, flexShrink: 0 }} />
-                    </div>
-
                     {mealEntries.length > 0 && (
                       <div style={{ borderTop: `1px solid ${T.border}` }}>
                         {mealEntries.map((entry) => (
@@ -1448,7 +1482,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
 
         {/* Edit gram modal */}
         {editingEntry && foodEntries.find(e => e.id === editingEntry.id) && !foodEntries.find(e => e.id === editingEntry.id).isCheat && (
-          <GramEditorModal entry={foodEntries.find(e => e.id === editingEntry.id)} onSave={(g) => handleUpdateGrams(editingEntry.id, g)} onClose={() => setEditingEntry(null)} T={T} />
+          <GramEditorModal entry={foodEntries.find(e => e.id === editingEntry.id)} onSave={(g) => handleUpdateGrams(editingEntry.id, g)} onClose={() => setEditingEntry(null)} onMoveMeal={handleMoveMeal} currentMealType={editingEntry.mealType} T={T} />
         )}
 
         {/* Save meal popup */}
@@ -1460,15 +1494,35 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
               <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 16 }}>Salva i {getMealEntries(showSavePopup).length} cibi come pasto riutilizzabile</div>
               <input type="text" value={saveMealName} onChange={(e) => setSaveMealName(e.target.value)} placeholder={`Es. "${MEAL_CONFIG[showSavePopup].label} tipo"`} autoFocus
                 style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.border}`, fontSize: 14, fontFamily: "inherit", outline: "none", color: T.text, marginBottom: 16, boxSizing: "border-box" }} />
-              <div style={{ background: "#F8F9FB", borderRadius: 12, padding: 10, marginBottom: 16, textAlign: "left", maxHeight: 150, overflowY: "auto" }}>
-                {getMealEntries(showSavePopup).map((item, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, padding: "5px 0", alignItems: "baseline", borderBottom: i < getMealEntries(showSavePopup).length - 1 ? `1px solid ${T.border}` : "none" }}>
-                    <span style={{ fontSize: 11, color: T.text, flex: 1 }}>{item.isCheat && "🍕 "}{item.foodName}</span>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: T.mint }}>{item.grams ? `${item.grams}g` : "—"}</span>
-                    <span style={{ fontSize: 10, color: T.textMuted }}>{item.kcal} kcal</span>
+              {(() => {
+                const items = getMealEntries(showSavePopup);
+                const totK = items.reduce((s, i) => s + (i.kcal || 0), 0);
+                const totP = items.reduce((s, i) => s + (i.protein || 0), 0);
+                const totC = items.reduce((s, i) => s + (i.carbs || 0), 0);
+                const totG = items.reduce((s, i) => s + (i.fat || 0), 0);
+                return (
+                  <div style={{ background: "#F8F9FB", borderRadius: 12, padding: 10, marginBottom: 16, textAlign: "left", maxHeight: 180, overflowY: "auto" }}>
+                    {items.map((item, i) => (
+                      <div key={i} style={{ display: "flex", gap: 6, padding: "5px 0", alignItems: "baseline", borderBottom: i < items.length - 1 ? `1px solid ${T.border}` : "none" }}>
+                        <span style={{ fontSize: 11, color: T.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.isCheat && "🍕 "}{item.foodName}</span>
+                        <span style={{ fontSize: 9, fontWeight: 600, color: T.mint, flexShrink: 0 }}>{item.grams ? `${item.grams}g` : "—"}</span>
+                        <span style={{ fontSize: 9, color: "#E85D4E", flexShrink: 0 }}>{Math.round(item.fat || 0)}G</span>
+                        <span style={{ fontSize: 9, color: "#F0B429", flexShrink: 0 }}>{Math.round(item.carbs || 0)}C</span>
+                        <span style={{ fontSize: 9, color: "#3B82F6", flexShrink: 0 }}>{Math.round(item.protein || 0)}P</span>
+                        <span style={{ fontSize: 9, fontWeight: 600, color: T.text, flexShrink: 0 }}>{item.kcal}</span>
+                      </div>
+                    ))}
+                    {/* Totals row */}
+                    <div style={{ display: "flex", gap: 6, padding: "8px 0 2px", alignItems: "baseline", borderTop: `2px solid ${T.border}`, marginTop: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: T.text, flex: 1 }}>Totale</span>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: "#E85D4E", flexShrink: 0 }}>{Math.round(totG)}G</span>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: "#F0B429", flexShrink: 0 }}>{Math.round(totC)}C</span>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: "#3B82F6", flexShrink: 0 }}>{Math.round(totP)}P</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: T.text, flexShrink: 0 }}>{Math.round(totK)} kcal</span>
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+              })()}
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={() => setShowSavePopup(null)} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F0F0", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec }}>Annulla</button>
                 <button onClick={() => handleSaveMeal(showSavePopup)} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: T.gradient, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Salva</button>
@@ -1561,15 +1615,15 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                   </div>
                   <div>
                     <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>Età</label>
-                    <input type="number" value={goalAge} onChange={(e) => setGoalAge(parseInt(e.target.value) || 25)} min="10" max="120" style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+                    <input type="tel" inputMode="numeric" value={goalAge} onChange={(e) => setGoalAge(parseInt(e.target.value.replace(/\D/g, "")) || 25)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
                   </div>
                   <div>
                     <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>Peso (kg)</label>
-                    <input type="number" value={goalWeight} onChange={(e) => setGoalWeight(parseInt(e.target.value) || 75)} min="30" max="200" style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+                    <input type="tel" inputMode="numeric" value={goalWeight} onChange={(e) => setGoalWeight(parseInt(e.target.value.replace(/\D/g, "")) || 75)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
                   </div>
                   <div>
                     <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>Altezza (cm)</label>
-                    <input type="number" value={goalHeight} onChange={(e) => setGoalHeight(parseInt(e.target.value) || 175)} min="100" max="250" style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+                    <input type="tel" inputMode="numeric" value={goalHeight} onChange={(e) => setGoalHeight(parseInt(e.target.value.replace(/\D/g, "")) || 175)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
                   </div>
                 </div>
                 <div>
@@ -1595,7 +1649,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
             {useManual && (
               <div style={{ background: "#F0F2F5", padding: 14, borderRadius: 12, marginLeft: 28, marginTop: 10 }}>
                 <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>kcal giornaliere</label>
-                <input type="number" value={manualKcal} onChange={(e) => setManualKcal(parseInt(e.target.value) || 2000)} min="1000" max="10000" style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+                <input type="tel" inputMode="numeric" value={manualKcal} onChange={(e) => setManualKcal(parseInt(e.target.value.replace(/\D/g, "")) || 2000)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
               </div>
             )}
           </div>
