@@ -90,6 +90,17 @@ export const getRecentFoodsByMeal = async (mealType, limit = 20) => {
     .slice(0, limit);
 };
 
+// ========== LAST ENTRY LOOKUP ==========
+
+export const getLastEntryByFoodName = async (foodName) => {
+  const entries = await foodDb.foodEntries
+    .filter(e => e.foodName === foodName)
+    .toArray();
+  if (entries.length === 0) return null;
+  // Return the most recent one (highest id = latest added)
+  return entries.sort((a, b) => b.id - a.id)[0];
+};
+
 // ========== SAVED MEALS ==========
 
 export const getSavedMeals = async () => {
