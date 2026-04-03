@@ -3,10 +3,11 @@ import Dexie from 'dexie';
 
 const foodDb = new Dexie('FoodTrackerDB');
 
-foodDb.version(2).stores({
+foodDb.version(3).stores({
   foodEntries: '++id, date, mealType',
   cachedFoods: 'id, barcode',
   savedMeals: '++id, mealType',
+  appSettings: 'key',
 });
 
 // ========== FOOD ENTRIES ==========
@@ -101,6 +102,30 @@ export const getLastEntryByFoodName = async (foodName) => {
   return entries.sort((a, b) => b.id - a.id)[0];
 };
 
+// ========== AGGREGATION HELPERS (Confronti + Dettaglio cards) ==========
+
+// Get all entries in a date range [startDate, endDate] inclusive (YYYY-MM-DD strings)
+export const getFoodEntriesByDateRange = async (startDate, endDate) => {
+  return await foodDb.foodEntries
+    .where('date')
+    .between(startDate, endDate, true, true)
+    .toArray();
+};
+
+// Get daily totals for a date range → [{ date, kcal, protein, carbs, fat }]
+export const getDailyTotalsForRange = async (startDate, endDate) => {
+  const entries = await getFoodEntriesByDateRange(startDate, endDate);
+  const byDate = {};
+  for (const e of entries) {
+    if (!byDate[e.date]) byDate[e.date] = { date: e.date, kcal: 0, protein: 0, carbs: 0, fat: 0 };
+    byDate[e.date].kcal += e.kcal || 0;
+    byDate[e.date].protein += e.protein || 0;
+    byDate[e.date].carbs += e.carbs || 0;
+    byDate[e.date].fat += e.fat || 0;
+  }
+  return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+};
+
 // ========== SAVED MEALS ==========
 
 export const getSavedMeals = async () => {
@@ -123,6 +148,17 @@ export const addSavedMeal = async (meal) => {
 
 export const deleteSavedMeal = async (id) => {
   return await foodDb.savedMeals.delete(id);
+};
+
+// ========== APP SETTINGS (key-value store) ==========
+
+export const getNutritionGoals = async () => {
+  const row = await foodDb.appSettings.get('nutritionGoals');
+  return row ? row.value : null;
+};
+
+export const saveNutritionGoals = async (goals) => {
+  return await foodDb.appSettings.put({ key: 'nutritionGoals', value: goals });
 };
 
 export default foodDb;
