@@ -192,14 +192,14 @@ const GramEditorModal = ({ entry, onSave, onClose, T }) => {
 };
 
 // ─── CUSTOM FOOD FORM ───────────────────────────────────
-const CustomFoodForm = ({ onSave, onBack, T }) => {
+const CustomFoodForm = ({ onSave, onBack, T, initialBarcode }) => {
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
   const [kcalPer100, setKcalPer100] = useState("");
   const [proteinPer100, setProteinPer100] = useState("");
   const [carbsPer100, setCarbsPer100] = useState("");
   const [fatPer100, setFatPer100] = useState("");
-  const [barcode, setBarcode] = useState("");
+  const [barcode, setBarcode] = useState(initialBarcode || "");
 
   const canSave = name && kcalPer100;
 
@@ -384,8 +384,9 @@ const LoadMealSheet = ({ mealType, savedMeals, onLoad, onDelete, onClose, T }) =
 };
 
 // ─── ADD FOOD SHEET (REPLACED renderBottomSheet) ────────
-const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T }) => {
-  const [view, setView] = useState("main"); // "main" | "customFood" | "cheat"
+const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, initialView, initialBarcode }) => {
+  const [view, setView] = useState(initialView || "main"); // "main" | "customFood" | "cheat"
+  const [customBarcode, setCustomBarcode] = useState(initialBarcode || null);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
   const [selections, setSelections] = useState(new Map());
@@ -459,7 +460,7 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T }) =
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.45)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
         <div style={{ background: "#fff", width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "slideUp .3s ease-out" }} onClick={(e) => e.stopPropagation()}>
           <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
-          <CustomFoodForm onSave={(food) => { onAdd(food, mealType, 100); onClose(); }} onBack={() => setView("main")} T={T} />
+          <CustomFoodForm onSave={(food) => { onAdd(food, mealType, 100); onClose(); }} onBack={() => setView("main")} T={T} initialBarcode={customBarcode} />
         </div>
       </div>
     );
@@ -571,10 +572,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
 
   // Bottom sheet state
   const [showAddSheet, setShowAddSheet] = useState(null); // null or mealType
+  const [addSheetMeal, setAddSheetMeal] = useState("breakfast");
   const [addSheetRecents, setAddSheetRecents] = useState([]);
+  const [addSheetView, setAddSheetView] = useState("main"); // "main" | "customFood" | "cheat"
+  const [customBarcode, setCustomBarcode] = useState(null);
 
   // Gram editor state
   const [editingEntry, setEditingEntry] = useState(null); // { id, mealType }
+  const [gramPopup, setGramPopup] = useState(null); // { food, grams, source, entryId?, meal? }
 
   // Save/Load meal state
   const [savedMeals, setSavedMeals] = useState([]);
@@ -1040,26 +1045,51 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   // ─── RENDER FUNCTIONS ──────────────────────────────────
 
   const renderScanner = () => {
-    if (!scannerActive) return null;
-    const isLoading = scanLoading || !scanResult;
+    if (!scannerActive && !scanResult && !scanLoading) return null;
 
-    if (isLoading) {
+    // Camera active — show video feed with scan overlay
+    if (scannerActive && !scanResult) {
       return (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "#000", zIndex: 3000, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <video ref={videoRef} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-          <div style={{ position: "relative", zIndex: 10, textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 12 }}>{scanStatus}</div>
-            <div style={{ width: 100, height: 100, borderRadius: "50%", border: "3px solid #fff", position: "relative", margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {Array.from({ length: verifyProgress }).map((_, i) => (
-                <div key={i} style={{ position: "absolute", width: 70, height: 70, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.5)", transform: `rotate(${(i / 3) * 120}deg)` }} />
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "#000", zIndex: 3000, display: "flex", flexDirection: "column" }}>
+          <video ref={videoRef} playsInline autoPlay muted style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+          {/* Scan zone overlay */}
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 280, height: 120, border: "3px solid rgba(2,192,154,0.8)", borderRadius: 16, boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)" }} />
+          </div>
+          {/* Scan line animation */}
+          <div style={{ position: "absolute", left: "calc(50% - 120px)", right: "calc(50% - 120px)", height: 2, background: "linear-gradient(to right, transparent, #02C39A, transparent)", animation: "scanLine 2s ease-in-out infinite", top: "calc(50% - 50px)" }} />
+          <style>{`@keyframes scanLine { 0% { transform: translateY(0); } 50% { transform: translateY(100px); } 100% { transform: translateY(0); } }`}</style>
+          {/* Bottom info area */}
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent, rgba(0,0,0,0.85))", padding: "40px 20px 20px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, textAlign: "center" }}>{scanStatus}</div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              {[1, 2, 3].map((step) => (
+                <div key={step} style={{ width: 12, height: 12, borderRadius: "50%", background: verifyProgress >= step ? "#02C39A" : "rgba(255,255,255,0.25)", transition: "background 0.15s" }} />
               ))}
             </div>
-            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.7)", marginTop: 12 }}>{verifyProgress}/3</div>
+            <button onClick={() => { stopScanner(); const manualCode = prompt("Inserisci il codice a barre manualmente:"); if (manualCode && manualCode.trim()) handleBarcodeDetected(manualCode.trim()); }}
+              style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: "10px 20px", fontSize: 12, fontWeight: 500, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
+              Inserisci codice manualmente
+            </button>
+            <button onClick={stopScanner} style={{ padding: "10px 24px", borderRadius: 12, background: T.coral, color: "#fff", border: "none", cursor: "pointer", fontWeight: 600, fontFamily: "inherit", fontSize: 13 }}>Annulla</button>
           </div>
-          <button onClick={stopScanner} style={{ position: "fixed", bottom: 40, left: "50%", transform: "translateX(-50%)", padding: "12px 24px", borderRadius: 20, background: T.coral, color: "#fff", border: "none", cursor: "pointer", fontWeight: 600, fontFamily: "inherit", fontSize: 14 }}>Annulla</button>
         </div>
       );
     }
+
+    // Loading after barcode detected
+    if (scanLoading) {
+      return (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", zIndex: 3000, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          <div style={{ width: 40, height: 40, border: "3px solid rgba(255,255,255,0.3)", borderTopColor: "#02C39A", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+          <div style={{ color: "#fff", fontSize: 14 }}>Cercando prodotto...</div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      );
+    }
+
+    // No result yet
+    if (!scanResult) return null;
 
     if (scanResult.notFound) {
       return (
@@ -1068,24 +1098,54 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
             <div style={{ fontSize: 36, marginBottom: 8 }}>📭</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 6 }}>Prodotto non trovato</div>
             <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 20 }}>Il codice {scanResult.barcode} non è nel database</div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setScanResult(null); startScanner(); }} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F0F0", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec }}>Riprova</button>
-              <button onClick={() => { setScanResult(null); setScannerActive(false); setFoodScreen("dashboard"); }} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: T.gradient, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Chiudi</button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={() => {
+                const bc = scanResult.barcode;
+                setScanResult(null); setScannerActive(false);
+                setShowAddSheet("_barcode_"); setAddSheetView("customFood"); setCustomBarcode(bc);
+              }} style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: T.gradient, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                Inserisci manualmente
+              </button>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => { setScanResult(null); startScanner(); }} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F2F5", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec }}>Riprova</button>
+                <button onClick={() => { setScanResult(null); setScannerActive(false); }} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F2F5", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec }}>Chiudi</button>
+              </div>
             </div>
           </div>
         </div>
       );
     }
 
+    // Product found — show info + Aggiungi button that opens GramEditorModal
     return (
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div style={{ background: "#fff", borderRadius: 24, width: "100%", maxWidth: 340, padding: 24, boxShadow: "0 25px 60px rgba(0,0,0,0.25)" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 12 }}>{scanResult.name}</div>
-          {scanResult.brand && <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>{scanResult.brand}</div>}
-          <div style={{ fontSize: 12, color: T.text, marginBottom: 16 }}>{scanResult.kcalPer100} kcal / 100g</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => { setScanResult(null); stopScanner(); }} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F0F0", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec }}>Annulla</button>
-            <button onClick={() => { setScanResult(null); stopScanner(); }} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: T.gradient, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>OK</button>
+        <div style={{ background: "#fff", borderRadius: 24, width: "100%", maxWidth: 340, overflow: "hidden", boxShadow: "0 25px 60px rgba(0,0,0,0.25)" }}>
+          <div style={{ background: T.gradient, padding: "20px 22px 16px" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>{scanResult.name}</div>
+            {scanResult.brand && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>{scanResult.brand}</div>}
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>{scanResult.kcalPer100} kcal per 100g</div>
+          </div>
+          <div style={{ padding: "16px 22px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-around", marginBottom: 16, textAlign: "center" }}>
+              {[
+                { label: "Grassi", value: scanResult.fatPer100, color: "#E85D4E" },
+                { label: "Carbo", value: scanResult.carbsPer100, color: "#F0B429" },
+                { label: "Proteine", value: scanResult.proteinPer100, color: "#3B82F6" },
+              ].map((m) => (
+                <div key={m.label}>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: T.textMuted, textTransform: "uppercase", marginBottom: 4 }}>{m.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: m.color }}>{m.value}<span style={{ fontSize: 10, fontWeight: 500, color: T.textMuted }}>g</span></div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { setScanResult(null); setScannerActive(false); }} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F2F5", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec }}>Annulla</button>
+              <button onClick={() => {
+                const food = scanResult;
+                setScanResult(null); setScannerActive(false);
+                setGramPopup({ food, grams: food.defaultPortion || 100, source: "scan" });
+              }} style={{ flex: 1.5, padding: 12, borderRadius: 12, border: "none", background: T.gradient, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Aggiungi</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1315,11 +1375,42 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
 
         {/* Add food sheet */}
         {showAddSheet && (
-          <AddFoodSheet mealType={showAddSheet} recents={addSheetRecents}
+          <AddFoodSheet mealType={showAddSheet === "_barcode_" ? addSheetMeal : showAddSheet} recents={addSheetRecents}
             onAdd={handleAddFood}
-            onClose={() => setShowAddSheet(null)}
+            onClose={() => { setShowAddSheet(null); setAddSheetView("main"); setCustomBarcode(null); }}
             onScannerOpen={() => { setShowAddSheet(null); startScanner(); }}
-            T={T} />
+            T={T}
+            initialView={addSheetView}
+            initialBarcode={customBarcode} />
+        )}
+
+        {/* Gram editor modal for scanned products */}
+        {gramPopup && gramPopup.source === "scan" && (
+          <GramEditorModal
+            entry={{ foodName: gramPopup.food.name || gramPopup.food.foodName, brand: gramPopup.food.brand, kcalPer100: gramPopup.food.kcalPer100, proteinPer100: gramPopup.food.proteinPer100, carbsPer100: gramPopup.food.carbsPer100, fatPer100: gramPopup.food.fatPer100, grams: gramPopup.grams }}
+            onSave={async (g) => {
+              const food = gramPopup.food;
+              const m = g / 100;
+              const meal = gramPopup.meal || addSheetMeal || "breakfast";
+              const entry = {
+                date: selectedDate, mealType: meal,
+                foodName: food.name || food.foodName, brand: food.brand || "", grams: g,
+                kcal: Math.round((food.kcalPer100||0)*m), protein: +((food.proteinPer100||0)*m).toFixed(1),
+                carbs: +((food.carbsPer100||0)*m).toFixed(1), fat: +((food.fatPer100||0)*m).toFixed(1),
+                kcalPer100: food.kcalPer100||0, proteinPer100: food.proteinPer100||0,
+                carbsPer100: food.carbsPer100||0, fatPer100: food.fatPer100||0,
+                category: food.category || "Altro", source: food.source || "api",
+              };
+              await addFoodEntry(entry);
+              cacheFood({ id: food.id || `api_${food.barcode||Date.now()}`, name: food.name||food.foodName, brand: food.brand||"", kcalPer100: food.kcalPer100||0, proteinPer100: food.proteinPer100||0, carbsPer100: food.carbsPer100||0, fatPer100: food.fatPer100||0, defaultPortion: g, category: food.category||"Altro", barcode: food.barcode||null, source: food.source||"api" }).catch(()=>{});
+              const updated = await getFoodEntriesByDate(selectedDate);
+              setFoodEntries(updated);
+              setGramPopup(null);
+              showToast(`${food.name||food.foodName} aggiunto`);
+            }}
+            onClose={() => setGramPopup(null)}
+            T={T}
+          />
         )}
 
         {/* Toast */}
