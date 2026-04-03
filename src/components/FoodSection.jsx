@@ -16,6 +16,7 @@ import {
   ChevronUp, Trash2, Camera, Target, BarChart3, Calendar,
   Clock, Star, Flame, Activity, TrendingUp, ScanLine, Settings,
 } from "lucide-react";
+import { Html5Qrcode } from "html5-qrcode";
 import { FOOD_DATABASE as EXTERNAL_DB } from "./food-database";
 import {
   getFoodEntriesByDate, addFoodEntry, addFoodEntries,
@@ -102,8 +103,6 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   const [goalHeight, setGoalHeight] = useState(settings?.height || 175);
 
   // Refs
-  const videoRef = useRef(null);
-  const scanIntervalRef = useRef(null);
   const searchTimeoutRef = useRef(null);
   const scannerActiveRef = useRef(false);
 
@@ -220,6 +219,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
         const food = {
           id: `api_${barcode}`,
           name: p.product_name_it || p.product_name || "Prodotto sconosciuto",
+          brand: p.brands || "",
           kcalPer100: Math.round(n["energy-kcal_100g"] || 0),
           proteinPer100: +(n.proteins_100g || 0).toFixed(1),
           carbsPer100: +(n.carbohydrates_100g || 0).toFixed(1),
@@ -253,6 +253,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
             return {
               id: `api_${p.code || p._id}`,
               name: p.product_name_it || p.product_name,
+              brand: p.brands || "",
               kcalPer100: Math.round(n["energy-kcal_100g"] || 0),
               proteinPer100: +(n.proteins_100g || 0).toFixed(1),
               carbsPer100: +(n.carbohydrates_100g || 0).toFixed(1),
@@ -307,67 +308,78 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     }
   }, []);
 
-  // ── BARCODE SCANNER ─────────────────────────────────────
+  // ── BARCODE SCANNER (html5-qrcode, cross-platform) ──────
+  const html5QrRef = useRef(null);
+  const verifyCountRef = useRef(0);
+  const lastCodeRef = useRef(null);
+  const [verifyProgress, setVerifyProgress] = useState(0); // 0-3
+
   const startScanner = async () => {
     setScannerActive(true);
     scannerActiveRef.current = true;
     setScanResult(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+    setVerifyProgress(0);
+    verifyCountRef.current = 0;
+    lastCodeRef.current = null;
 
-      // Try native BarcodeDetector first
-      if ("BarcodeDetector" in window) {
-        const detector = new window.BarcodeDetector({
-          formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
-        });
-        const detect = async () => {
-          if (!videoRef.current || !scannerActiveRef.current) return;
-          try {
-            const barcodes = await detector.detect(videoRef.current);
-            if (barcodes.length > 0) {
-              const code = barcodes[0].rawValue;
-              stopScanner();
-              handleBarcodeDetected(code);
-              return;
-            }
-          } catch (e) { /* ignore detection errors */ }
-          scanIntervalRef.current = requestAnimationFrame(detect);
-        };
-        detect();
-      } else {
-        // Browser doesn't support BarcodeDetector (e.g. iOS Safari)
-        // Show manual input fallback
-        stopScanner();
-        const manualCode = prompt("Il tuo browser non supporta la scansione automatica.\nInserisci il codice a barre manualmente:");
-        if (manualCode && manualCode.trim()) {
-          handleBarcodeDetected(manualCode.trim());
-        }
-        return;
-      }
+    // Small delay to ensure the DOM element is rendered
+    await new Promise((r) => setTimeout(r, 100));
+
+    try {
+      const scanner = new Html5Qrcode("barcode-reader");
+      html5QrRef.current = scanner;
+
+      await scanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 280, height: 140 },
+          aspectRatio: 1.5,
+          formatsToSupport: [9 /* EAN_13 */, 10 /* EAN_8 */, 14 /* UPC_A */, 15 /* UPC_E */, 5 /* CODE_128 */],
+        },
+        // onSuccess — 3-read verification
+        (decodedText) => {
+          if (decodedText === lastCodeRef.current) {
+            verifyCountRef.current += 1;
+          } else {
+            lastCodeRef.current = decodedText;
+            verifyCountRef.current = 1;
+          }
+          setVerifyProgress(Math.min(verifyCountRef.current, 3));
+
+          if (verifyCountRef.current >= 3) {
+            // Confirmed! Stop scanner and look up product
+            stopScanner();
+            handleBarcodeDetected(decodedText);
+          }
+        },
+        // onError — ignore, scanning continues
+        () => {}
+      );
     } catch (e) {
       setScannerActive(false);
       scannerActiveRef.current = false;
-      alert("Impossibile accedere alla fotocamera. Verifica i permessi.");
+      alert("Impossibile accedere alla fotocamera. Verifica i permessi del browser.");
     }
   };
 
-  const stopScanner = () => {
+  const stopScanner = async () => {
     setScannerActive(false);
     scannerActiveRef.current = false;
-    if (videoRef.current?.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
-      videoRef.current.srcObject = null;
-    }
-    if (scanIntervalRef.current) {
-      cancelAnimationFrame(scanIntervalRef.current);
-      scanIntervalRef.current = null;
-    }
+    setVerifyProgress(0);
+    verifyCountRef.current = 0;
+    lastCodeRef.current = null;
+    try {
+      if (html5QrRef.current) {
+        const state = html5QrRef.current.getState();
+        // 2 = SCANNING, 3 = PAUSED
+        if (state === 2 || state === 3) {
+          await html5QrRef.current.stop();
+        }
+        html5QrRef.current.clear();
+        html5QrRef.current = null;
+      }
+    } catch (e) { /* already stopped */ }
   };
 
   const handleBarcodeDetected = async (code) => {
@@ -711,20 +723,29 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
           <div style={{ width: 36 }} />
         </div>
 
-        {/* Video */}
+        {/* Camera view via html5-qrcode */}
         {scannerActive && (
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-            <video
-              ref={videoRef}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              playsInline
-              muted
-            />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}>
+            <div id="barcode-reader" style={{ width: "100%", maxWidth: 440 }} />
+            {/* Verification progress bar */}
             <div style={{
-              position: "absolute", width: 250, height: 120, border: "3px solid rgba(2,192,154,0.8)",
-              borderRadius: 16, boxShadow: "0 0 0 9999px rgba(0,0,0,0.4)",
-            }} />
-            {/* Manual input button over scanner */}
+              display: "flex", gap: 8, justifyContent: "center",
+              padding: 16, background: "rgba(0,0,0,0.6)", width: "100%", maxWidth: 440,
+            }}>
+              {[1, 2, 3].map((step) => (
+                <div key={step} style={{
+                  width: 50, height: 6, borderRadius: 3,
+                  background: verifyProgress >= step ? "#02C39A" : "rgba(255,255,255,0.25)",
+                  transition: "background 0.2s",
+                }} />
+              ))}
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, padding: "4px 0 8px", textAlign: "center" }}>
+              {verifyProgress === 0 ? "Inquadra il codice a barre"
+                : verifyProgress < 3 ? `Verifica in corso... ${verifyProgress}/3`
+                : "Codice confermato!"}
+            </div>
+            {/* Manual input button */}
             <button
               onClick={() => {
                 stopScanner();
@@ -734,9 +755,10 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                 }
               }}
               style={{
-                position: "absolute", bottom: 30, background: "rgba(255,255,255,0.9)",
-                border: "none", borderRadius: 14, padding: "10px 20px", fontSize: 13,
-                fontWeight: 600, color: T.text, cursor: "pointer", fontFamily: "inherit",
+                background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)",
+                borderRadius: 14, padding: "10px 20px", fontSize: 13,
+                fontWeight: 600, color: "#fff", cursor: "pointer", fontFamily: "inherit",
+                marginBottom: 16,
               }}
             >
               Inserisci codice manualmente
@@ -774,7 +796,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
             ) : (
               <div style={{ background: "#fff", borderRadius: 20, padding: 24, textAlign: "center", maxWidth: 320, width: "100%" }}>
                 {scanResult.image && <img src={scanResult.image} alt="" style={{ width: 80, height: 80, objectFit: "contain", borderRadius: 12, marginBottom: 10 }} />}
-                <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 4 }}>{scanResult.name}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 2 }}>{scanResult.name}</div>
+                {scanResult.brand && <div style={{ fontSize: 12, color: T.accent, fontWeight: 600, marginBottom: 8 }}>{scanResult.brand}</div>}
                 <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 12 }}>{scanResult.kcalPer100} kcal / 100g</div>
                 <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 16, fontSize: 12 }}>
                   <span style={{ color: "#3B82F6", fontWeight: 600 }}>P {scanResult.proteinPer100}g</span>
@@ -806,7 +829,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
           </div>
         )}
 
-        {/* Manual barcode input */}
+        {/* Manual barcode input (fallback when scanner not active) */}
         {!scannerActive && !scanResult && !scanLoading && (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
             <div style={{ background: "#fff", borderRadius: 20, padding: 24, maxWidth: 320, width: "100%" }}>
@@ -816,11 +839,22 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                 style={{
                   width: "100%", padding: 12, borderRadius: 12, border: `1px solid ${T.border}`,
                   fontSize: 16, fontFamily: "inherit", textAlign: "center", marginBottom: 12, outline: "none",
+                  boxSizing: "border-box",
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleBarcodeDetected(e.target.value);
+                  if (e.key === "Enter" && e.target.value.trim()) handleBarcodeDetected(e.target.value.trim());
                 }}
               />
+              <button
+                onClick={() => startScanner()}
+                style={{
+                  width: "100%", padding: 12, borderRadius: 12, border: "none",
+                  background: T.gradient, color: "#fff", fontWeight: 600, cursor: "pointer",
+                  fontFamily: "inherit", fontSize: 13,
+                }}
+              >
+                Riprova con fotocamera
+              </button>
             </div>
           </div>
         )}
