@@ -105,6 +105,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   const videoRef = useRef(null);
   const scanIntervalRef = useRef(null);
   const searchTimeoutRef = useRef(null);
+  const scannerActiveRef = useRef(false);
 
   // ── EXPOSE openAddFood to parent via ref ────────────────
   useImperativeHandle(ref, () => ({
@@ -309,6 +310,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   // ── BARCODE SCANNER ─────────────────────────────────────
   const startScanner = async () => {
     setScannerActive(true);
+    scannerActiveRef.current = true;
     setScanResult(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -318,12 +320,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+
+      // Try native BarcodeDetector first
       if ("BarcodeDetector" in window) {
         const detector = new window.BarcodeDetector({
           formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"],
         });
         const detect = async () => {
-          if (!videoRef.current || !scannerActive) return;
+          if (!videoRef.current || !scannerActiveRef.current) return;
           try {
             const barcodes = await detector.detect(videoRef.current);
             if (barcodes.length > 0) {
@@ -332,19 +336,46 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
               handleBarcodeDetected(code);
               return;
             }
-          } catch (e) { /* */ }
+          } catch (e) { /* ignore detection errors */ }
           scanIntervalRef.current = requestAnimationFrame(detect);
         };
         detect();
+      } else {
+        // Fallback: load ZXing library dynamically for browsers without BarcodeDetector
+        try {
+          const ZXing = await import("https://unpkg.com/@AztecProtocol/barcode-detector@2.1.3/es/pure.min.js"
+            .replace("@AztecProtocol/barcode-detector", "@AztecProtocol/barcode-detector"))
+            .catch(() => null);
+
+          // If dynamic import fails, show manual input prompt
+          if (!ZXing) {
+            stopScanner();
+            const manualCode = prompt("Il tuo browser non supporta la scansione automatica.\nInserisci il codice a barre manualmente:");
+            if (manualCode && manualCode.trim()) {
+              handleBarcodeDetected(manualCode.trim());
+            }
+            return;
+          }
+        } catch {
+          // Ultimate fallback: manual input
+          stopScanner();
+          const manualCode = prompt("Il tuo browser non supporta la scansione automatica.\nInserisci il codice a barre manualmente:");
+          if (manualCode && manualCode.trim()) {
+            handleBarcodeDetected(manualCode.trim());
+          }
+          return;
+        }
       }
     } catch (e) {
       setScannerActive(false);
+      scannerActiveRef.current = false;
       alert("Impossibile accedere alla fotocamera. Verifica i permessi.");
     }
   };
 
   const stopScanner = () => {
     setScannerActive(false);
+    scannerActiveRef.current = false;
     if (videoRef.current?.srcObject) {
       videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
       videoRef.current.srcObject = null;
@@ -709,6 +740,23 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
               position: "absolute", width: 250, height: 120, border: "3px solid rgba(2,192,154,0.8)",
               borderRadius: 16, boxShadow: "0 0 0 9999px rgba(0,0,0,0.4)",
             }} />
+            {/* Manual input button over scanner */}
+            <button
+              onClick={() => {
+                stopScanner();
+                const manualCode = prompt("Inserisci il codice a barre manualmente:");
+                if (manualCode && manualCode.trim()) {
+                  handleBarcodeDetected(manualCode.trim());
+                }
+              }}
+              style={{
+                position: "absolute", bottom: 30, background: "rgba(255,255,255,0.9)",
+                border: "none", borderRadius: 14, padding: "10px 20px", fontSize: 13,
+                fontWeight: 600, color: T.text, cursor: "pointer", fontFamily: "inherit",
+              }}
+            >
+              Inserisci codice manualmente
+            </button>
           </div>
         )}
 
