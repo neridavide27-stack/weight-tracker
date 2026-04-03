@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import FoodSection from "./FoodSection";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -408,6 +408,7 @@ const CircularProgress = ({ percentage, size = 64, strokeWidth = 5, color = T.te
 export default function WeightTrackerApp() {
   const [entries, setEntries] = useState(generateSampleData);
   const [screen, setScreen] = useState("dashboard");
+  const foodSectionRef = useRef(null);
   const [settings, setSettings] = useState({
     height: 175, goalWeight: 78, startWeight: 85.5, name: "Davide",
   });
@@ -786,8 +787,11 @@ export default function WeightTrackerApp() {
   if (screen === "food") {
     return (
       <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
-        <FoodSection settings={settings} weightEntries={sorted} goTo={goTo} T={T} />
-        <BottomNav active="food" onNavigate={goTo} onAdd={() => goTo("add")} />
+        <FoodSection ref={foodSectionRef} settings={settings} weightEntries={sorted} goTo={goTo} T={T} />
+        <BottomNav active="food" onNavigate={goTo} onAdd={() => {
+          if (foodSectionRef.current) foodSectionRef.current.openAddFood();
+          else goTo("add");
+        }} />
       </div>
     );
   }
