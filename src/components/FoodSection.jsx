@@ -805,7 +805,6 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   const torchTrackRef = useRef(null);
   const [flashOn, setFlashOn] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
-  const emptyFramesRef = useRef(0);
 
   const startScanner = async () => {
     setScannerActive(true);
