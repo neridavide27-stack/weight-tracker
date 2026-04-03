@@ -16,7 +16,7 @@ import {
   ChevronUp, Trash2, Camera, Target, BarChart3, Calendar,
   Clock, Star, Flame, Activity, TrendingUp, ScanLine, Settings,
 } from "lucide-react";
-import { Html5Qrcode } from "html5-qrcode";
+// html5-qrcode is imported dynamically in startScanner() to avoid Next.js SSR issues
 import { FOOD_DATABASE as EXTERNAL_DB } from "./food-database";
 import {
   getFoodEntriesByDate, addFoodEntry, addFoodEntries,
@@ -326,16 +326,22 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     await new Promise((r) => setTimeout(r, 100));
 
     try {
-      const scanner = new Html5Qrcode("barcode-reader");
+      // Dynamic import to avoid Next.js SSR errors
+      const { Html5Qrcode } = await import("html5-qrcode");
+
+      const scanner = new Html5Qrcode("barcode-reader", {
+        formatsToSupport: [9 /* EAN_13 */, 10 /* EAN_8 */, 14 /* UPC_A */, 15 /* UPC_E */, 5 /* CODE_128 */],
+        verbose: false,
+      });
       html5QrRef.current = scanner;
 
       await scanner.start(
         { facingMode: "environment" },
         {
-          fps: 10,
+          fps: 15,
           qrbox: { width: 280, height: 140 },
           aspectRatio: 1.5,
-          formatsToSupport: [9 /* EAN_13 */, 10 /* EAN_8 */, 14 /* UPC_A */, 15 /* UPC_E */, 5 /* CODE_128 */],
+          disableFlip: false,
         },
         // onSuccess — 3-read verification
         (decodedText) => {
