@@ -316,6 +316,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   const videoStreamRef = useRef(null);
   const verifyCountRef = useRef(0);
   const lastCodeRef = useRef(null);
+  const emptyFramesRef = useRef(0); // count empty frames before resetting
+  const lastProgressRef = useRef(0); // avoid unnecessary re-renders
   const [verifyProgress, setVerifyProgress] = useState(0);
   const [scanStatus, setScanStatus] = useState("");
 
@@ -409,19 +411,16 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                 lastCodeRef.current = code;
                 verifyCountRef.current = 1;
               }
-              setVerifyProgress(Math.min(verifyCountRef.current, NEEDED));
+              const prog = Math.min(verifyCountRef.current, NEEDED);
+              if (prog !== lastProgressRef.current) { lastProgressRef.current = prog; setVerifyProgress(prog); }
               if (verifyCountRef.current >= NEEDED) {
                 if (navigator.vibrate) navigator.vibrate([60, 40, 100]);
                 stopScanner();
                 handleBarcodeDetected(code);
                 return;
               }
-            } else {
-              lastCodeRef.current = null;
-              verifyCountRef.current = 0;
-              setVerifyProgress(0);
-              setScanStatus("Punta il barcode");
             }
+            // Frame vuoto: non resettare — continua a cercare
           } catch (e) { /* ignore */ }
         }
         if (scannerActiveRef.current) scanRafRef.current = requestAnimationFrame(loop);
@@ -454,7 +453,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                   lastCodeRef.current = code;
                   verifyCountRef.current = 1;
                 }
-                setVerifyProgress(Math.min(verifyCountRef.current, NEEDED));
+                const prog = Math.min(verifyCountRef.current, NEEDED);
+              if (prog !== lastProgressRef.current) { lastProgressRef.current = prog; setVerifyProgress(prog); }
                 if (verifyCountRef.current >= NEEDED) {
                   if (navigator.vibrate) navigator.vibrate([60, 40, 100]);
                   stopScanner();
@@ -463,10 +463,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                 }
                 if (scannerActiveRef.current) setTimeout(scanLoop, 300);
               } else {
-                lastCodeRef.current = null;
-                verifyCountRef.current = 0;
-                setVerifyProgress(0);
-                setScanStatus("Punta il barcode");
+                // Frame vuoto: non resettare — continua a cercare
                 if (scannerActiveRef.current) setTimeout(scanLoop, 300);
               }
             }
@@ -708,9 +705,34 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
         >
           <div style={{ fontSize: 36, marginBottom: 6 }}>{getEmoji(food.category)}</div>
           <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{name}</div>
-          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, marginBottom: 14 }}>
+          {food.brand && <div style={{ fontSize: 11, color: T.accent, fontWeight: 600, marginTop: 1 }}>{food.brand}</div>}
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, marginBottom: source === "scan" ? 10 : 14 }}>
             {k100} kcal / 100g
           </div>
+
+          {/* Meal selector for scanned products */}
+          {source === "scan" && (
+            <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 14, flexWrap: "wrap" }}>
+              {MEAL_TYPES.map((mt) => {
+                const cfg = MEAL_CONFIG[mt];
+                const sel = (gramPopup.meal || addSheetMeal || "breakfast") === mt;
+                return (
+                  <button
+                    key={mt}
+                    onClick={() => setGramPopup((prev) => ({ ...prev, meal: mt }))}
+                    style={{
+                      padding: "5px 11px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+                      background: sel ? cfg.bgColor : "#F5F7FA", color: sel ? cfg.color : T.textSec,
+                      border: sel ? `1px solid ${cfg.color}` : "1px solid transparent",
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    {cfg.icon} {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Quick portions */}
           <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 14, flexWrap: "wrap" }}>
@@ -789,13 +811,54 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
               Annulla
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (source === "diary" && entryId) {
                   handleUpdateGrams(entryId, grams);
                 } else if (source === "sheet") {
                   const key = food.name || food.foodName;
                   updateSelectionGrams(key, grams);
                   if (!selections.has(key)) toggleSelection(food);
+                } else if (source === "scan") {
+                  // Direct save from barcode scan — add to selected meal
+                  const vals = calcForPortion(food, grams);
+                  const meal = gramPopup.meal || addSheetMeal || "breakfast";
+                  const entry = {
+                    date: selectedDate,
+                    mealType: meal,
+                    foodName: food.name || food.foodName,
+                    grams,
+                    kcal: vals.kcal,
+                    protein: vals.protein,
+                    carbs: vals.carbs,
+                    fat: vals.fat,
+                    kcalPer100: food.kcalPer100 ?? food.kcal ?? 0,
+                    proteinPer100: food.proteinPer100 ?? food.protein ?? 0,
+                    carbsPer100: food.carbsPer100 ?? food.carbs ?? 0,
+                    fatPer100: food.fatPer100 ?? food.fat ?? 0,
+                    fiberPer100: food.fiberPer100 ?? food.fiber ?? 0,
+                    category: food.category || "Altro",
+                    source: food.source || "api",
+                    brand: food.brand || "",
+                  };
+                  await addFoodEntry(entry);
+                  // Cache food for offline
+                  cacheFood({
+                    id: food.id || `api_${food.barcode || Date.now()}`,
+                    name: food.name,
+                    brand: food.brand || "",
+                    kcalPer100: food.kcalPer100 ?? 0,
+                    proteinPer100: food.proteinPer100 ?? 0,
+                    carbsPer100: food.carbsPer100 ?? 0,
+                    fatPer100: food.fatPer100 ?? 0,
+                    fiberPer100: food.fiberPer100 ?? 0,
+                    defaultPortion: grams,
+                    category: food.category || "Altro",
+                    barcode: food.barcode || null,
+                    source: food.source || "api",
+                  }).catch(() => {});
+                  // Reload
+                  const updated = await getFoodEntriesByDate(selectedDate);
+                  setFoodEntries(updated);
                 }
                 setGramPopup(null);
               }}
@@ -949,14 +1012,13 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                 <button
                   onClick={() => {
                     const food = scanResult;
-                    const key = food.name;
-                    setSelections((prev) => {
-                      const next = new Map(prev);
-                      next.set(key, { food, grams: food.defaultPortion || 100 });
-                      return next;
-                    });
                     setScanResult(null);
-                    stopScanner();
+                    // Open gram popup — source 'scan' triggers direct save after
+                    setGramPopup({
+                      food,
+                      grams: food.defaultPortion || 100,
+                      source: "scan",
+                    });
                   }}
                   style={{
                     width: "100%", padding: 14, borderRadius: 14, border: "none",
