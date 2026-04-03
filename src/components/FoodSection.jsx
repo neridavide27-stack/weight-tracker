@@ -341,30 +341,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
         };
         detect();
       } else {
-        // Fallback: load ZXing library dynamically for browsers without BarcodeDetector
-        try {
-          const ZXing = await import("https://unpkg.com/@AztecProtocol/barcode-detector@2.1.3/es/pure.min.js"
-            .replace("@AztecProtocol/barcode-detector", "@AztecProtocol/barcode-detector"))
-            .catch(() => null);
-
-          // If dynamic import fails, show manual input prompt
-          if (!ZXing) {
-            stopScanner();
-            const manualCode = prompt("Il tuo browser non supporta la scansione automatica.\nInserisci il codice a barre manualmente:");
-            if (manualCode && manualCode.trim()) {
-              handleBarcodeDetected(manualCode.trim());
-            }
-            return;
-          }
-        } catch {
-          // Ultimate fallback: manual input
-          stopScanner();
-          const manualCode = prompt("Il tuo browser non supporta la scansione automatica.\nInserisci il codice a barre manualmente:");
-          if (manualCode && manualCode.trim()) {
-            handleBarcodeDetected(manualCode.trim());
-          }
-          return;
+        // Browser doesn't support BarcodeDetector (e.g. iOS Safari)
+        // Show manual input fallback
+        stopScanner();
+        const manualCode = prompt("Il tuo browser non supporta la scansione automatica.\nInserisci il codice a barre manualmente:");
+        if (manualCode && manualCode.trim()) {
+          handleBarcodeDetected(manualCode.trim());
         }
+        return;
       }
     } catch (e) {
       setScannerActive(false);
