@@ -802,6 +802,11 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     return "quagga";
   };
 
+  const torchTrackRef = useRef(null);
+  const [flashOn, setFlashOn] = useState(false);
+  const [manualBarcode, setManualBarcode] = useState("");
+  const emptyFramesRef = useRef(0);
+
   const startScanner = async () => {
     setScannerActive(true);
     scannerActiveRef.current = true;
@@ -809,6 +814,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     setVerifyProgress(0);
     verifyCountRef.current = 0;
     lastCodeRef.current = null;
+    emptyFramesRef.current = 0;
+    setManualBarcode("");
+    setFlashOn(false);
     setScanStatus("Avvio fotocamera...");
 
     let stream;
@@ -821,7 +829,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
       setScannerActive(false);
       scannerActiveRef.current = false;
       let msg = "Errore fotocamera.";
-      if (e.name === "NotAllowedError") msg = "Permesso fotocamera negato.";
+      if (e.name === "NotAllowedError") msg = "Permesso fotocamera negato.\n\nVai su Impostazioni → Safari → Fotocamera → Consenti.";
       else if (e.name === "NotFoundError") msg = "Nessuna fotocamera trovata.";
       else if (e.name === "NotReadableError") msg = "Fotocamera occupata da altra app.";
       alert(msg);
@@ -829,6 +837,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     }
 
     videoStreamRef.current = stream;
+    const tracks = stream.getVideoTracks();
+    if (tracks.length) torchTrackRef.current = tracks[0];
     const video = videoRef.current;
     if (!video) return;
     video.srcObject = stream;
@@ -844,8 +854,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     }
 
     if (method === "native") {
-      setScanStatus("Punta il barcode");
-      const NEEDED = 3;
+      setScanStatus("\uD83D\uDCF7 Punta il barcode");
+      const NEEDED = 2;
 
       const loop = async () => {
         if (!scannerActiveRef.current) return;
@@ -854,6 +864,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
             const barcodes = await barcodeDetectorRef.current.detect(video);
             if (barcodes.length > 0 && scannerActiveRef.current) {
               const code = barcodes[0].rawValue;
+              emptyFramesRef.current = 0;
               if (code === lastCodeRef.current) {
                 verifyCountRef.current += 1;
               } else {
@@ -861,12 +872,27 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                 verifyCountRef.current = 1;
               }
               const prog = Math.min(verifyCountRef.current, NEEDED);
-              if (prog !== lastProgressRef.current) { lastProgressRef.current = prog; setVerifyProgress(prog); }
+              if (prog !== lastProgressRef.current) {
+                lastProgressRef.current = prog;
+                setVerifyProgress(prog);
+                const dots = "\u25CF".repeat(prog) + "\u25CB".repeat(NEEDED - prog);
+                setScanStatus(`\uD83D\uDCF7 ${dots}`);
+              }
               if (verifyCountRef.current >= NEEDED) {
+                setScanStatus(`\u2713 ${code}`);
                 if (navigator.vibrate) navigator.vibrate([60, 40, 100]);
                 stopScanner();
                 handleBarcodeDetected(code);
                 return;
+              }
+            } else {
+              // No barcode in frame — reset after a few empty frames
+              emptyFramesRef.current += 1;
+              if (emptyFramesRef.current > 5) {
+                lastCodeRef.current = null;
+                verifyCountRef.current = 0;
+                if (lastProgressRef.current !== 0) { lastProgressRef.current = 0; setVerifyProgress(0); }
+                setScanStatus("\uD83D\uDCF7 Punta il barcode");
               }
             }
           } catch (e) { /* ignore */ }
@@ -876,8 +902,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
       scanRafRef.current = requestAnimationFrame(loop);
 
     } else if (method === "quagga") {
-      setScanStatus("Punta il barcode");
-      const NEEDED = 3;
+      setScanStatus("\uD83D\uDCF7 Punta il barcode");
+      const NEEDED = 2;
 
       const scanLoop = () => {
         if (!scannerActiveRef.current) return;
@@ -895,6 +921,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
               if (!scannerActiveRef.current) return;
               if (result && result.codeResult) {
                 const code = result.codeResult.code;
+                emptyFramesRef.current = 0;
                 if (code === lastCodeRef.current) {
                   verifyCountRef.current += 1;
                 } else {
@@ -902,8 +929,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                   verifyCountRef.current = 1;
                 }
                 const prog = Math.min(verifyCountRef.current, NEEDED);
-                if (prog !== lastProgressRef.current) { lastProgressRef.current = prog; setVerifyProgress(prog); }
+                if (prog !== lastProgressRef.current) {
+                  lastProgressRef.current = prog;
+                  setVerifyProgress(prog);
+                  const dots = "\u25CF".repeat(prog) + "\u25CB".repeat(NEEDED - prog);
+                  setScanStatus(`\uD83D\uDCF7 ${dots}`);
+                }
                 if (verifyCountRef.current >= NEEDED) {
+                  setScanStatus(`\u2713 ${code}`);
                   if (navigator.vibrate) navigator.vibrate([60, 40, 100]);
                   stopScanner();
                   handleBarcodeDetected(code);
@@ -911,6 +944,13 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
                 }
                 if (scannerActiveRef.current) setTimeout(scanLoop, 300);
               } else {
+                emptyFramesRef.current += 1;
+                if (emptyFramesRef.current > 3) {
+                  lastCodeRef.current = null;
+                  verifyCountRef.current = 0;
+                  if (lastProgressRef.current !== 0) { lastProgressRef.current = 0; setVerifyProgress(0); }
+                  setScanStatus("\uD83D\uDCF7 Punta il barcode");
+                }
                 if (scannerActiveRef.current) setTimeout(scanLoop, 300);
               }
             }
@@ -929,10 +969,36 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   const stopScanner = () => {
     setScannerActive(false);
     scannerActiveRef.current = false;
-    if (scanRafRef.current) cancelAnimationFrame(scanRafRef.current);
+    setVerifyProgress(0);
+    verifyCountRef.current = 0;
+    lastCodeRef.current = null;
+    emptyFramesRef.current = 0;
+    if (scanRafRef.current) { cancelAnimationFrame(scanRafRef.current); scanRafRef.current = null; }
+    // Turn off flash
+    if (torchTrackRef.current && flashOn) {
+      torchTrackRef.current.applyConstraints?.({ advanced: [{ torch: false }] }).catch(() => {});
+      setFlashOn(false);
+    }
     if (videoStreamRef.current) {
       videoStreamRef.current.getTracks().forEach((t) => t.stop());
       videoStreamRef.current = null;
+      torchTrackRef.current = null;
+    }
+    if (videoRef.current) videoRef.current.srcObject = null;
+  };
+
+  const toggleFlash = () => {
+    if (!torchTrackRef.current) return;
+    const next = !flashOn;
+    torchTrackRef.current.applyConstraints?.({ advanced: [{ torch: next }] }).catch(() => {});
+    setFlashOn(next);
+  };
+
+  const handleManualBarcodeSearch = () => {
+    const code = manualBarcode.replace(/\D/g, "").trim();
+    if (code.length >= 8) {
+      stopScanner();
+      handleBarcodeDetected(code);
     }
   };
 
@@ -1047,32 +1113,78 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   const renderScanner = () => {
     if (!scannerActive && !scanResult && !scanLoading) return null;
 
-    // Camera active — show video feed with scan overlay
+    // Camera active — show video feed with corner viewfinder
     if (scannerActive && !scanResult) {
       return (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "#000", zIndex: 3000, display: "flex", flexDirection: "column" }}>
           <video ref={videoRef} playsInline autoPlay muted style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-          {/* Scan zone overlay */}
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ width: 280, height: 120, border: "3px solid rgba(2,192,154,0.8)", borderRadius: 16, boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)" }} />
+
+          {/* Top bar: close + title + flash */}
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 14px", zIndex: 5, background: "linear-gradient(to bottom, rgba(0,0,0,0.65), transparent)" }}>
+            <button onClick={stopScanner} style={{ width: 36, height: 36, background: "rgba(0,0,0,0.4)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", color: "#fff", fontSize: 18 }}>✕</button>
+            <div style={{ color: "#fff", fontSize: 13, fontWeight: 500 }}>Scansiona barcode</div>
+            <button onClick={toggleFlash} style={{ width: 36, height: 36, background: flashOn ? "rgba(2,192,154,0.5)" : "rgba(0,0,0,0.4)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", fontSize: 20 }}>🔦</button>
           </div>
-          {/* Scan line animation */}
-          <div style={{ position: "absolute", left: "calc(50% - 120px)", right: "calc(50% - 120px)", height: 2, background: "linear-gradient(to right, transparent, #02C39A, transparent)", animation: "scanLine 2s ease-in-out infinite", top: "calc(50% - 50px)" }} />
-          <style>{`@keyframes scanLine { 0% { transform: translateY(0); } 50% { transform: translateY(100px); } 100% { transform: translateY(0); } }`}</style>
-          {/* Bottom info area */}
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent, rgba(0,0,0,0.85))", padding: "40px 20px 20px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-            <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 13, textAlign: "center" }}>{scanStatus}</div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-              {[1, 2, 3].map((step) => (
-                <div key={step} style={{ width: 12, height: 12, borderRadius: "50%", background: verifyProgress >= step ? "#02C39A" : "rgba(255,255,255,0.25)", transition: "background 0.15s" }} />
-              ))}
+
+          {/* Corner viewfinder */}
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -55%)", width: 260, height: 140, zIndex: 3, pointerEvents: "none" }}>
+            {/* Top-left corner */}
+            <div style={{ position: "absolute", top: 0, left: 0, width: 22, height: 22, borderColor: "#02C39A", borderStyle: "solid", borderWidth: "3px 0 0 3px", borderRadius: "4px 0 0 0" }} />
+            {/* Top-right corner */}
+            <div style={{ position: "absolute", top: 0, right: 0, width: 22, height: 22, borderColor: "#02C39A", borderStyle: "solid", borderWidth: "3px 3px 0 0", borderRadius: "0 4px 0 0" }} />
+            {/* Bottom-left corner */}
+            <div style={{ position: "absolute", bottom: 0, left: 0, width: 22, height: 22, borderColor: "#02C39A", borderStyle: "solid", borderWidth: "0 0 3px 3px", borderRadius: "0 0 0 4px" }} />
+            {/* Bottom-right corner */}
+            <div style={{ position: "absolute", bottom: 0, right: 0, width: 22, height: 22, borderColor: "#02C39A", borderStyle: "solid", borderWidth: "0 3px 3px 0", borderRadius: "0 0 4px 0" }} />
+            {/* "NUMERI QUI" dashed zone */}
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 30, background: "rgba(2,192,154,0.15)", border: "1.5px dashed rgba(2,192,154,0.7)", borderRadius: "0 0 4px 4px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: 9, color: "rgba(2,192,154,0.9)", fontWeight: 600, letterSpacing: 0.5 }}>NUMERI QUI</span>
             </div>
-            <button onClick={() => { stopScanner(); const manualCode = prompt("Inserisci il codice a barre manualmente:"); if (manualCode && manualCode.trim()) handleBarcodeDetected(manualCode.trim()); }}
-              style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: "10px 20px", fontSize: 12, fontWeight: 500, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}>
-              Inserisci codice manualmente
-            </button>
-            <button onClick={stopScanner} style={{ padding: "10px 24px", borderRadius: 12, background: T.coral, color: "#fff", border: "none", cursor: "pointer", fontWeight: 600, fontFamily: "inherit", fontSize: 13 }}>Annulla</button>
           </div>
+
+          {/* Guide text below viewfinder */}
+          <div style={{ position: "absolute", bottom: "calc(50% - 110px)", left: 0, right: 0, textAlign: "center", color: "rgba(255,255,255,0.7)", fontSize: 13, zIndex: 3, pointerEvents: "none" }}>Centra il barcode — i numeri nella zona verde</div>
+
+          {/* Bottom area: status + manual input + search button */}
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "16px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", zIndex: 5, background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }}>
+            {/* Status with dots */}
+            <div style={{ textAlign: "center", color: "rgba(255,255,255,0.8)", fontSize: 12, marginBottom: 12 }}>
+              {scanStatus}
+              <span style={{ marginLeft: 8, display: "inline-flex", gap: 5 }}>
+                {[1, 2].map((step) => (
+                  <span key={step} style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: verifyProgress >= step ? "#02C39A" : "rgba(255,255,255,0.25)", transition: "background 0.15s" }} />
+                ))}
+              </span>
+            </div>
+
+            {/* Numeric input field */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", background: "rgba(255,255,255,0.12)", border: "0.5px solid rgba(255,255,255,0.25)", borderRadius: 12, padding: "10px 14px", marginBottom: 10 }}>
+              <span style={{ fontSize: 16 }}>🔢</span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={13}
+                placeholder="Digita i numeri sotto il barcode"
+                value={manualBarcode}
+                onChange={(e) => setManualBarcode(e.target.value.replace(/\D/g, ""))}
+                onKeyDown={(e) => { if (e.key === "Enter" && manualBarcode.length >= 8) handleManualBarcodeSearch(); }}
+                style={{ flex: 1, background: "none", border: "none", fontSize: 15, color: "#fff", fontFamily: "inherit", outline: "none", caretColor: "#02C39A" }}
+              />
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", flexShrink: 0 }}>{manualBarcode.length}/13</span>
+            </div>
+
+            {/* Search button */}
+            <button
+              onClick={handleManualBarcodeSearch}
+              disabled={manualBarcode.length < 8}
+              style={{ width: "100%", background: manualBarcode.length >= 8 ? T.mint : "rgba(255,255,255,0.15)", border: "none", borderRadius: 10, padding: 13, color: "#fff", fontSize: 14, fontWeight: 600, cursor: manualBarcode.length >= 8 ? "pointer" : "default", fontFamily: "inherit", opacity: manualBarcode.length >= 8 ? 1 : 0.5, transition: "all 0.2s" }}
+            >
+              🔍 Cerca prodotto
+            </button>
+          </div>
+
+          <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}`}</style>
         </div>
       );
     }
