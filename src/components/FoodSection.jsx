@@ -23,6 +23,7 @@ import {
   deleteFoodEntry, updateFoodEntry, cacheFood,
   getCachedFoodByBarcode, searchCachedFoods,
   getRecentFoodsByMeal, getAllCachedFoods, getLastEntryByFoodName,
+  getDailyTotalsForRange,
 } from "../lib/food-db";
 
 // ─── CONSTANTS ────────────────────────────────────────────
@@ -590,7 +591,7 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
 };
 
 // ─── COMPONENT ────────────────────────────────────────────
-const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
+const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoals: nutritionGoalsProp }, ref) => {
 
   // ── STATE ───────────────────────────────────────────────
   const [foodScreen, setFoodScreen] = useState("dashboard");
@@ -598,9 +599,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     const d = new Date(); return d.toISOString().split("T")[0];
   });
   const [foodEntries, setFoodEntries] = useState([]);
-  const [nutritionGoals, setNutritionGoals] = useState({
-    kcalTarget: 2000, proteinPct: 30, carbsPct: 40, fatPct: 30,
-  });
+  // nutritionGoals comes from parent (persisted in Dexie via profile)
+  const nutritionGoals = nutritionGoalsProp || { kcalTarget: 2000, proteinPct: 30, carbsPct: 40, fatPct: 30 };
   const [expandedMeals, setExpandedMeals] = useState({ breakfast: true, lunch: false, dinner: false, snack: false });
 
   // Bottom sheet state
@@ -637,6 +637,15 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   const [goalActivity, setGoalActivity] = useState(1.55);
   const [goalWeight, setGoalWeight] = useState(settings?.goalWeight || 75);
   const [goalHeight, setGoalHeight] = useState(settings?.height || 175);
+
+  // Confronti + Dettaglio card state
+  const [compTab, setCompTab] = useState("week"); // "week" | "month"
+  const [detailPeriod, setDetailPeriod] = useState("week");
+  const [detailWeekIdx, setDetailWeekIdx] = useState(0);
+  const [detailMonthIdx, setDetailMonthIdx] = useState(0);
+  const [detailMetric, setDetailMetric] = useState("kcal");
+  const [compData, setCompData] = useState({ weeks: [], months: [] });
+  const [detailData, setDetailData] = useState({ weeks: [], months: [] });
 
   // Refs
   const searchTimeoutRef = useRef(null);
@@ -703,6 +712,125 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     setLocalGoals(nutritionGoals);
     setManualKcal(nutritionGoals.kcalTarget);
   }, [nutritionGoals]);
+
+  // ── Load Confronti + Dettaglio data ────────────────────
+  useEffect(() => {
+    let active = true;
+    const loadComparisonData = async () => {
+      const today = new Date();
+      const toISO = (d) => d.toISOString().split("T")[0];
+
+      // Helper: get Monday of a week containing date d
+      const getMonday = (d) => {
+        const dt = new Date(d);
+        const day = dt.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        dt.setDate(dt.getDate() + diff);
+        return dt;
+      };
+
+      // Generate last N weeks starting from this week
+      const weeks = [];
+      const weekLabels = ["Questa settimana", "Settimana scorsa", "2 settimane fa", "3 settimane fa", "4 settimane fa", "5 settimane fa", "6 settimane fa", "7 settimane fa"];
+      const dayLabelsShort = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+      for (let w = 0; w < 8; w++) {
+        const mon = getMonday(today);
+        mon.setDate(mon.getDate() - w * 7);
+        const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+        const start = toISO(mon);
+        const end = toISO(sun);
+        const dailyTotals = await getDailyTotalsForRange(start, end);
+        const daysWithData = dailyTotals.length;
+        const totalKcal = dailyTotals.reduce((s, d) => s + d.kcal, 0);
+        const totalP = dailyTotals.reduce((s, d) => s + d.protein, 0);
+        const totalC = dailyTotals.reduce((s, d) => s + d.carbs, 0);
+        const totalG = dailyTotals.reduce((s, d) => s + d.fat, 0);
+        const divisor = daysWithData || 1;
+
+        // Build per-day chart data (Mon-Sun)
+        const chartDays = [];
+        for (let di = 0; di < 7; di++) {
+          const dayDate = new Date(mon);
+          dayDate.setDate(mon.getDate() + di);
+          const ds = toISO(dayDate);
+          const dayEntry = dailyTotals.find(d => d.date === ds);
+          chartDays.push({
+            label: dayLabelsShort[di],
+            kcal: dayEntry ? Math.round(dayEntry.kcal) : 0,
+            p: dayEntry ? Math.round(dayEntry.protein) : 0,
+            c: dayEntry ? Math.round(dayEntry.carbs) : 0,
+            g: dayEntry ? Math.round(dayEntry.fat) : 0,
+          });
+        }
+
+        const dateLabel = `${mon.getDate()} ${monthNames[mon.getMonth()]} – ${sun.getDate()} ${monthNames[sun.getMonth()]}`;
+        weeks.push({
+          label: weekLabels[w] || `${w} settimane fa`,
+          dateLabel,
+          isCurrent: w === 0,
+          avg: { kcal: Math.round(totalKcal / divisor), p: Math.round(totalP / divisor), c: Math.round(totalC / divisor), g: Math.round(totalG / divisor) },
+          days: chartDays,
+          periodLabel: dateLabel,
+        });
+      }
+
+      // Generate last N months
+      const months = [];
+      const monthLabelsFull = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno","Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
+      const monthLabelsRel = ["Questo mese", "Mese scorso", "2 mesi fa", "3 mesi fa", "4 mesi fa", "5 mesi fa"];
+      for (let m = 0; m < 6; m++) {
+        const dt = new Date(today.getFullYear(), today.getMonth() - m, 1);
+        const lastDay = new Date(dt.getFullYear(), dt.getMonth() + 1, 0);
+        const start = toISO(dt);
+        const end = toISO(lastDay);
+        const dailyTotals = await getDailyTotalsForRange(start, end);
+        const daysWithData = dailyTotals.length;
+        const totalKcal = dailyTotals.reduce((s, d) => s + d.kcal, 0);
+        const totalP = dailyTotals.reduce((s, d) => s + d.protein, 0);
+        const totalC = dailyTotals.reduce((s, d) => s + d.carbs, 0);
+        const totalG = dailyTotals.reduce((s, d) => s + d.fat, 0);
+        const divisor = daysWithData || 1;
+
+        // Build per-week chart data for this month
+        const chartWeeks = [];
+        let weekStart = new Date(dt);
+        let wNum = 1;
+        while (weekStart <= lastDay) {
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 6);
+          if (weekEnd > lastDay) weekEnd.setTime(lastDay.getTime());
+          const ws = toISO(weekStart);
+          const we = toISO(weekEnd);
+          const weekEntries = dailyTotals.filter(d => d.date >= ws && d.date <= we);
+          const wk = weekEntries.reduce((s, d) => s + d.kcal, 0);
+          const wp = weekEntries.reduce((s, d) => s + d.protein, 0);
+          const wc = weekEntries.reduce((s, d) => s + d.carbs, 0);
+          const wg = weekEntries.reduce((s, d) => s + d.fat, 0);
+          chartWeeks.push({ label: `Sett ${wNum}`, kcal: Math.round(wk), p: Math.round(wp), c: Math.round(wc), g: Math.round(wg) });
+          weekStart = new Date(weekEnd);
+          weekStart.setDate(weekStart.getDate() + 1);
+          wNum++;
+        }
+
+        const dateLabel = `${monthLabelsFull[dt.getMonth()]} ${dt.getFullYear()}`;
+        months.push({
+          label: monthLabelsRel[m] || `${m} mesi fa`,
+          dateLabel,
+          isCurrent: m === 0,
+          avg: { kcal: Math.round(totalKcal / divisor), p: Math.round(totalP / divisor), c: Math.round(totalC / divisor), g: Math.round(totalG / divisor) },
+          weeks: chartWeeks,
+          periodLabel: dateLabel,
+        });
+      }
+
+      if (active) {
+        setCompData({ weeks, months });
+        setDetailData({ weeks, months });
+      }
+    };
+    loadComparisonData();
+    return () => { active = false; };
+  }, [foodEntries]); // re-fetch when entries change
 
   // ── HELPERS ─────────────────────────────────────────────
   const todayStr = new Date().toISOString().split("T")[0];
@@ -1169,8 +1297,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
   const calculateTDEE = () => Math.round(calculateBMR() * goalActivity);
 
   const handleSaveGoals = () => {
-    const target = useManual ? manualKcal : calculateTDEE();
-    setNutritionGoals({ ...localGoals, kcalTarget: target });
+    // Goals are now managed in profile section (WeightTrackerApp)
     setFoodScreen("dashboard");
   };
 
@@ -1298,6 +1425,174 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
     return null;
   };
 
+  // ── CONFRONTI CARD ──────────────────────────────────────
+  const renderConfrontiCard = () => {
+    const data = compTab === "week" ? compData.weeks : compData.months;
+    if (!data || data.length === 0) return null;
+
+    return (
+      <div style={{ background: T.card, borderRadius: 18, padding: "12px 14px", boxShadow: T.shadow }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Confronti</div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[["week", "Sett."], ["month", "Mesi"]].map(([key, label]) => (
+              <button key={key} onClick={() => setCompTab(key)} style={{
+                padding: "4px 10px", borderRadius: 8, border: "none", fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                background: compTab === key ? T.teal : "#F0F2F5", color: compTab === key ? "#fff" : T.textSec,
+              }}>{label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Header row */}
+        <div style={{ display: "flex", alignItems: "center", padding: "0 10px 6px", borderBottom: `1px solid ${T.border}`, marginBottom: 4 }}>
+          <div style={{ flex: 1, fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>Periodo</div>
+          <span style={{ width: 32, textAlign: "center", fontSize: 9, fontWeight: 700, color: "#E85D4E" }}>G</span>
+          <span style={{ width: 32, textAlign: "center", fontSize: 9, fontWeight: 700, color: "#F0B429" }}>C</span>
+          <span style={{ width: 32, textAlign: "center", fontSize: 9, fontWeight: 700, color: "#3B82F6" }}>P</span>
+          <span style={{ width: 42, textAlign: "right", fontSize: 9, fontWeight: 700, color: T.textMuted }}>kcal</span>
+        </div>
+
+        {/* Period rows */}
+        {data.slice(0, 4).map((w) => (
+          <div key={w.label} style={{
+            display: "flex", alignItems: "center", padding: "8px 10px", borderRadius: 10, marginBottom: 4,
+            background: w.isCurrent ? "#F8FAFB" : "transparent",
+            borderLeft: w.isCurrent ? `3px solid ${T.teal}` : "3px solid transparent",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{w.label}</div>
+              <div style={{ fontSize: 8, color: T.textMuted, marginTop: 1 }}>{w.dateLabel}</div>
+            </div>
+            <span style={{ width: 32, textAlign: "center", fontSize: 12, fontWeight: 900, color: "#E85D4E" }}>{w.avg.g}</span>
+            <span style={{ width: 32, textAlign: "center", fontSize: 12, fontWeight: 900, color: "#F0B429" }}>{w.avg.c}</span>
+            <span style={{ width: 32, textAlign: "center", fontSize: 12, fontWeight: 900, color: "#3B82F6" }}>{w.avg.p}</span>
+            <span style={{ width: 42, textAlign: "right", fontSize: 15, fontWeight: 900, color: T.text }}>{w.avg.kcal}</span>
+          </div>
+        ))}
+
+        <button style={{
+          width: "100%", padding: 8, border: `1px dashed ${T.border}`, borderRadius: 10,
+          background: "transparent", fontSize: 11, fontWeight: 700, color: T.teal,
+          cursor: "pointer", fontFamily: "inherit",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 4,
+        }}>
+          Vedi {compTab === "week" ? "tutte le settimane" : "tutti i mesi"} ›
+        </button>
+      </div>
+    );
+  };
+
+  // ── DETTAGLIO BAR CHART CARD ───────────────────────────
+  const renderDettaglioCard = () => {
+    const idx = detailPeriod === "week" ? detailWeekIdx : detailMonthIdx;
+    const setIdx = detailPeriod === "week" ? setDetailWeekIdx : setDetailMonthIdx;
+    const allData = detailPeriod === "week" ? detailData.weeks : detailData.months;
+    if (!allData || allData.length === 0) return null;
+    const maxIdx = allData.length - 1;
+    const safeIdx = Math.min(idx, maxIdx);
+
+    const currentPeriod = allData[safeIdx];
+    const data = detailPeriod === "week" ? currentPeriod.days : currentPeriod.weeks;
+    if (!data || data.length === 0) return null;
+
+    const metricColor = { kcal: T.teal, p: "#3B82F6", c: "#F0B429", g: "#E85D4E" }[detailMetric];
+    const maxVal = Math.max(...data.map(d => d[detailMetric]), 1);
+    const avgVal = Math.round(data.reduce((s, d) => s + d[detailMetric], 0) / (data.filter(d => d[detailMetric] > 0).length || 1));
+    const canPrev = safeIdx < maxIdx;
+    const canNext = safeIdx > 0;
+
+    return (
+      <div style={{ background: T.card, borderRadius: 18, padding: 16, boxShadow: T.shadow }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Dettaglio</div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[["week", "Sett."], ["month", "Mese"]].map(([key, label]) => (
+              <button key={key} onClick={() => { setDetailPeriod(key); }} style={{
+                padding: "4px 10px", borderRadius: 8, border: "none", fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                background: detailPeriod === key ? T.teal : "#F0F2F5", color: detailPeriod === key ? "#fff" : T.textSec,
+              }}>{label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Navigation arrows */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <button onClick={() => canPrev && setIdx(safeIdx + 1)} style={{
+            width: 30, height: 30, borderRadius: 8, border: "none", cursor: canPrev ? "pointer" : "default",
+            background: canPrev ? "#F0F2F5" : "transparent", color: canPrev ? T.text : "#ddd",
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
+          }}>‹</button>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{currentPeriod.periodLabel || currentPeriod.dateLabel}</div>
+            {safeIdx === 0 && <div style={{ fontSize: 9, color: T.mint, fontWeight: 600 }}>Corrente</div>}
+          </div>
+          <button onClick={() => canNext && setIdx(safeIdx - 1)} style={{
+            width: 30, height: 30, borderRadius: 8, border: "none", cursor: canNext ? "pointer" : "default",
+            background: canNext ? "#F0F2F5" : "transparent", color: canNext ? T.text : "#ddd",
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
+          }}>›</button>
+        </div>
+
+        {/* Metric selector */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {[
+            { key: "kcal", label: "kcal", color: T.teal },
+            { key: "p", label: "P", color: "#3B82F6" },
+            { key: "c", label: "C", color: "#F0B429" },
+            { key: "g", label: "G", color: "#E85D4E" },
+          ].map(m => (
+            <button key={m.key} onClick={() => setDetailMetric(m.key)} style={{
+              flex: 1, padding: "6px 4px", borderRadius: 8,
+              border: detailMetric === m.key ? `2px solid ${m.color}` : "2px solid #eee",
+              background: detailMetric === m.key ? `${m.color}15` : "#fff",
+              cursor: "pointer", fontFamily: "inherit",
+              fontSize: 10, fontWeight: 700, color: detailMetric === m.key ? m.color : T.textSec, textAlign: "center",
+            }}>{m.label}</button>
+          ))}
+        </div>
+
+        {/* Bar chart */}
+        <div style={{ display: "flex", gap: detailPeriod === "week" ? 4 : 8, alignItems: "flex-end", height: 100, marginBottom: 10, padding: "0 2px" }}>
+          {data.map((d, i) => {
+            const h = maxVal > 0 ? (d[detailMetric] / maxVal) * 100 : 0;
+            const isAboveTarget = detailMetric === "kcal" && d[detailMetric] > nutritionGoals.kcalTarget;
+            return (
+              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <div style={{ fontSize: 8, fontWeight: 700, color: metricColor }}>{d[detailMetric] || ""}</div>
+                <div style={{ width: "100%", height: 80, position: "relative" }}>
+                  <div style={{
+                    position: "absolute", bottom: 0, left: "10%", width: "80%",
+                    height: `${Math.max(h, d[detailMetric] > 0 ? 2 : 0)}%`,
+                    background: isAboveTarget ? `${T.coral}CC` : metricColor, borderRadius: 4, opacity: 0.85,
+                    transition: "height 0.3s",
+                  }} />
+                </div>
+                <div style={{ fontSize: 8, color: T.textMuted, fontWeight: 600 }}>{d.label}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {detailMetric === "kcal" && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 6 }}>
+            <div style={{ width: 16, height: 1.5, background: T.coral, borderRadius: 1 }} />
+            <span style={{ fontSize: 9, color: T.textMuted }}>Obiettivo: {nutritionGoals.kcalTarget} kcal</span>
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "center", padding: "8px 0 0", borderTop: `1px solid ${T.border}` }}>
+          <div style={{ textAlign: "center" }}>
+            <span style={{ fontSize: 16, fontWeight: 800, color: metricColor }}>{avgVal}</span>
+            <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 4 }}>
+              {detailMetric === "kcal" ? "kcal/giorno media" : `${detailMetric.toUpperCase()} media/giorno`}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderDashboard = () => {
     const totals = getDayTotals();
     const remaining = nutritionGoals.kcalTarget - totals.kcal;
@@ -1409,6 +1704,12 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T }, ref) => {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* ─── Confronti + Dettaglio Cards ─── */}
+        <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
+          {renderConfrontiCard()}
+          {renderDettaglioCard()}
         </div>
 
         {/* ─── Meal Cards ─── */}
