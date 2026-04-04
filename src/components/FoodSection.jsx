@@ -1837,9 +1837,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Settimana</div>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 6 }}>
               {weekBarData.map((day) => {
-                const todayStr2 = today();
-                const isFuture = day.date > todayStr2;
-                const isToday = day.date === todayStr2;
+                const isFuture = day.date > todayStr;
+                const isToday = day.date === todayStr;
                 const dayTarget = getKcalTargetForDate(day.date);
                 const isOverTarget = day.kcal > dayTarget;
                 const barH = day.kcal > 0 ? Math.max(4, (day.kcal / maxBarKcal) * barMaxH) : 0;
