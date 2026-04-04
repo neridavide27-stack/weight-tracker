@@ -28,6 +28,27 @@ import {
   getSavedMeals, addSavedMeal, deleteSavedMeal,
 } from "../lib/food-db";
 
+// ─── FOCUS TRAP HOOK ─────────────────────────────────────
+const useFocusTrap = (ref, active) => {
+  useEffect(() => {
+    if (!active || !ref.current) return;
+    const el = ref.current;
+    const focusable = el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const trap = (e) => {
+      if (e.key !== "Tab") return;
+      if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
+      else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
+    };
+    el.addEventListener("keydown", trap);
+    // Auto-focus first element
+    requestAnimationFrame(() => first.focus());
+    return () => el.removeEventListener("keydown", trap);
+  }, [ref, active]);
+};
+
 // ─── CONSTANTS ────────────────────────────────────────────
 const FALLBACK_DB = [
   { id: "f1", name: "Pasta secca", kcal: 350, protein: 12, carbs: 72, fat: 1.5, fiber: 2, category: "Cereali e Pasta", defaultPortion: 80 },
@@ -118,6 +139,8 @@ const SwipeableItem = ({ entry, onDelete, onTap, T }) => {
 
 // ─── GRAM EDITOR MODAL (REPLACED renderGramPopup) ───────
 const GramEditorModal = ({ entry, onSave, onClose, onMoveMeal, currentMealType, T }) => {
+  const modalRef = useRef(null);
+  useFocusTrap(modalRef, true);
   const [grams, setGrams] = useState(entry.grams || entry.lastGrams || 100);
   const [showNumpad, setShowNumpad] = useState(false);
   const [numpadBuf, setNumpadBuf] = useState("");
@@ -147,7 +170,7 @@ const GramEditorModal = ({ entry, onSave, onClose, onMoveMeal, currentMealType, 
   const numBtnStyle = { height: 44, borderRadius: 12, border: `1.5px solid ${T.border}`, background: "#fff", fontSize: 18, fontWeight: 600, color: T.text, cursor: "pointer", fontFamily: "inherit" };
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={onClose}>
+    <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Modifica grammi" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={onClose}>
       <div style={{ background: "#fff", borderRadius: 24, width: "100%", maxWidth: 340, boxShadow: "0 25px 60px rgba(0,0,0,0.25)", overflow: "hidden", animation: "scaleIn .25s ease-out" }} onClick={(e) => e.stopPropagation()}>
         <style>{`@keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }`}</style>
         <div style={{ background: T.gradient, padding: "20px 22px 16px" }}>
@@ -178,11 +201,11 @@ const GramEditorModal = ({ entry, onSave, onClose, onMoveMeal, currentMealType, 
           {showNumpad && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, maxWidth: 220, margin: "0 auto 16px" }}>
               {["1","2","3","4","5","6","7","8","9"].map(d => (
-                <button key={d} onClick={() => numpadType(d)} style={numBtnStyle}>{d}</button>
+                <button key={d} onClick={() => numpadType(d)} aria-label={`Numero ${d}`} style={numBtnStyle}>{d}</button>
               ))}
-              <button onClick={numpadDel} style={{ ...numBtnStyle, fontSize: 14, color: T.coral }}>⌫</button>
-              <button onClick={() => numpadType("0")} style={numBtnStyle}>0</button>
-              <button onClick={numpadDone} style={{ ...numBtnStyle, background: T.gradient, color: "#fff", border: "none", fontSize: 14, fontWeight: 700 }}>OK</button>
+              <button onClick={numpadDel} aria-label="Cancella cifra" style={{ ...numBtnStyle, fontSize: 14, color: T.coral }}>⌫</button>
+              <button onClick={() => numpadType("0")} aria-label="Numero 0" style={numBtnStyle}>0</button>
+              <button onClick={numpadDone} aria-label="Conferma grammi" style={{ ...numBtnStyle, background: T.gradient, color: "#fff", border: "none", fontSize: 14, fontWeight: 700 }}>OK</button>
             </div>
           )}
 
@@ -213,7 +236,7 @@ const GramEditorModal = ({ entry, onSave, onClose, onMoveMeal, currentMealType, 
                 {MEAL_TYPES.filter(mt => mt !== currentMealType).map((mt) => {
                   const cfg = MEAL_CONFIG[mt];
                   return (
-                    <button key={mt} onClick={() => { onMoveMeal(entry.id, mt); }} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${cfg.color}`, background: cfg.bgColor, cursor: "pointer", textAlign: "center", fontFamily: "inherit" }}>
+                    <button key={mt} onClick={() => { onMoveMeal(entry.id, mt); }} aria-label={`Sposta a ${cfg.label}`} style={{ flex: 1, padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${cfg.color}`, background: cfg.bgColor, cursor: "pointer", textAlign: "center", fontFamily: "inherit" }}>
                       <div style={{ fontSize: 14 }}>{cfg.icon}</div>
                       <div style={{ fontSize: 8, fontWeight: 600, color: cfg.color, marginTop: 2 }}>{cfg.label}</div>
                     </button>
@@ -454,14 +477,27 @@ const LoadMealSheet = ({ mealType, savedMeals, onLoad, onDelete, onClose, T }) =
 // ─── COPY DAY SHEET ─────────────────────────────────────
 
 // ─── ADD FOOD SHEET (REPLACED renderBottomSheet) ────────
-const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onScannerOpen, T, initialView, initialBarcode }) => {
+const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAdd, onClose, onScannerOpen, T, initialView, initialBarcode }) => {
+  const sheetRef = useRef(null);
   const [activeMeal, setActiveMeal] = useState(initialMealType);
   const [view, setView] = useState(initialView || "main"); // "main" | "customFood" | "cheat"
   const [customBarcode, setCustomBarcode] = useState(initialBarcode || null);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
-  const [selections, setSelections] = useState(new Map());
+  const [localRecents, setLocalRecents] = useState(initialRecents || []);
   const searchTimeoutRef = useRef(null);
+  useFocusTrap(sheetRef, view === "main" && !gramFood);
+
+  // Full gram editor state
+  const [gramFood, setGramFood] = useState(null);
+  const [gramVal, setGramVal] = useState(100);
+  const [showNumpad, setShowNumpad] = useState(false);
+  const [numpadBuf, setNumpadBuf] = useState("");
+
+  // Reload recents when meal type tab changes
+  useEffect(() => {
+    getRecentFoodsByMeal(activeMeal).then(setLocalRecents);
+  }, [activeMeal]);
 
   const handleSearch = useCallback((query) => {
     setSearch(query);
@@ -499,7 +535,6 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
                   source: "api",
                 };
               });
-            // Deduplicate: skip API results whose name matches a local result
             setResults((prev) => {
               const existingNames = new Set(prev.map(r => (r.foodName || r.name || "").toLowerCase()));
               const unique = apiResults.filter(r => !existingNames.has((r.foodName || "").toLowerCase()));
@@ -511,37 +546,26 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
     }
   }, []);
 
-  const [editingFood, setEditingFood] = useState(null); // key of food being gram-edited
-
-  const toggleSelection = (food) => {
-    const key = food.foodName || food.name;
-    setSelections((prev) => {
-      const next = new Map(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.set(key, { food, grams: food.defaultPortion || food.lastGrams || 100 });
-      }
-      return next;
-    });
-  };
-
-  const updateGramsForFood = (key, newGrams) => {
-    setSelections((prev) => {
-      const next = new Map(prev);
-      const entry = next.get(key);
-      if (entry) next.set(key, { ...entry, grams: Math.max(1, newGrams) });
-      return next;
-    });
-  };
-
-  const handleAddSelected = () => {
+  // Open full gram editor for a food
+  const handleFoodClick = (food) => {
     haptic(15);
-    for (const [, sel] of selections) {
-      onAdd(sel.food, activeMeal, sel.grams);
-    }
-    onClose();
+    setGramFood(food);
+    setGramVal(food.defaultPortion || food.lastGrams || 100);
+    setShowNumpad(false);
   };
+
+  // Confirm gram editor → add food immediately
+  const handleGramConfirm = () => {
+    haptic(15);
+    onAdd(gramFood, activeMeal, gramVal);
+    setGramFood(null);
+  };
+
+  // Numpad helpers
+  const openNumpad = () => { setShowNumpad(true); setNumpadBuf(String(gramVal)); };
+  const numpadType = (digit) => { const next = numpadBuf === "0" ? digit : (numpadBuf + digit).slice(0, 5); setNumpadBuf(next); setGramVal(parseInt(next) || 0); };
+  const numpadDel = () => { const next = numpadBuf.slice(0, -1); setNumpadBuf(next); setGramVal(parseInt(next) || 0); };
+  const numpadDone = () => { if (gramVal < 1) setGramVal(1); setShowNumpad(false); };
 
   if (view === "customFood") {
     return (
@@ -565,10 +589,79 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
     );
   }
 
-  const list = search.length >= 2 ? results : recents;
+  // ─── Full Gram Editor Popup (overlays on top of food list) ───
+  if (gramFood) {
+    const gm = gramVal / 100;
+    const k100 = gramFood.kcalPer100 ?? gramFood.kcal ?? 0;
+    const fname = gramFood.foodName || gramFood.name;
+    const stepBtnStyle = (big) => ({
+      width: big ? 40 : 36, height: big ? 40 : 36, borderRadius: big ? 12 : 10,
+      border: `1.5px solid ${T.border}`, background: "#fff", cursor: "pointer",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: big ? 11 : 16, fontWeight: big ? 700 : 600, color: big ? T.textMuted : T.text,
+      fontFamily: "inherit",
+    });
+    const numBtnStyle = { height: 44, borderRadius: 12, border: `1.5px solid ${T.border}`, background: "#fff", fontSize: 18, fontWeight: 600, color: T.text, cursor: "pointer", fontFamily: "inherit" };
+
+    return (
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={() => setGramFood(null)}>
+        <div style={{ background: "#fff", borderRadius: 24, width: "100%", maxWidth: 340, boxShadow: "0 25px 60px rgba(0,0,0,0.25)", overflow: "hidden", animation: "scaleIn .25s ease-out" }} onClick={(e) => e.stopPropagation()}>
+          <style>{`@keyframes scaleIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }`}</style>
+          <div style={{ background: T.gradient, padding: "20px 22px 16px" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>{fname}</div>
+            {gramFood.brand && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>{gramFood.brand}</div>}
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>{k100} kcal per 100g</div>
+          </div>
+          <div style={{ padding: "20px 22px 24px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 18 }}>
+              <button onClick={() => setGramVal(Math.max(1, gramVal - 10))} aria-label="-10g" style={stepBtnStyle(true)}>-10</button>
+              <button onClick={() => setGramVal(Math.max(1, gramVal - 1))} aria-label="-1g" style={stepBtnStyle(false)}>−</button>
+              <div style={{ position: "relative" }}>
+                <div onClick={openNumpad} style={{
+                  width: 90, height: 52, borderRadius: 16, border: `2px solid ${showNumpad ? T.mint : T.teal}`,
+                  textAlign: "center", fontSize: 26, fontWeight: 800, color: T.text,
+                  background: showNumpad ? `${T.mint}18` : T.tealLight,
+                  display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                  boxShadow: showNumpad ? `0 0 0 3px ${T.mint}22` : "none", transition: "all 0.2s",
+                }}>{gramVal}</div>
+                <div style={{ position: "absolute", bottom: -6, left: "50%", transform: "translateX(-50%)", fontSize: 9, fontWeight: 700, color: T.teal, background: "#fff", padding: "0 6px" }}>grammi</div>
+              </div>
+              <button onClick={() => setGramVal(gramVal + 1)} aria-label="+1g" style={stepBtnStyle(false)}>+</button>
+              <button onClick={() => setGramVal(gramVal + 10)} aria-label="+10g" style={stepBtnStyle(true)}>+10</button>
+            </div>
+
+            {showNumpad && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, maxWidth: 220, margin: "0 auto 16px" }}>
+                {["1","2","3","4","5","6","7","8","9"].map(d => (
+                  <button key={d} onClick={() => numpadType(d)} aria-label={`Numero ${d}`} style={numBtnStyle}>{d}</button>
+                ))}
+                <button onClick={numpadDel} aria-label="Cancella cifra" style={{ ...numBtnStyle, fontSize: 14, color: T.coral }}>⌫</button>
+                <button onClick={() => numpadType("0")} aria-label="Numero 0" style={numBtnStyle}>0</button>
+                <button onClick={numpadDone} aria-label="Conferma grammi" style={{ ...numBtnStyle, background: T.gradient, color: "#fff", border: "none", fontSize: 14, fontWeight: 700 }}>OK</button>
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 16 }}>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>{Math.round(k100 * gm)}</div><div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>kcal</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 700, color: "#3B82F6" }}>{((gramFood.proteinPer100||0)*gm).toFixed(1)}</div><div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>P</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 700, color: "#F0B429" }}>{((gramFood.carbsPer100||0)*gm).toFixed(1)}</div><div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>C</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 700, color: "#E85D4E" }}>{((gramFood.fatPer100||0)*gm).toFixed(1)}</div><div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>G</div></div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setGramFood(null)} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F0F0", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec }}>Annulla</button>
+              <button onClick={handleGramConfirm} style={{ flex: 1, padding: 12, borderRadius: 12, border: "none", background: T.gradient, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Aggiungi</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const list = search.length >= 2 ? results : localRecents;
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.45)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+    <div ref={sheetRef} role="dialog" aria-modal="true" aria-label="Aggiungi cibo" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.45)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
       <div style={{ background: "#fff", width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "slideUp .3s ease-out" }} onClick={(e) => e.stopPropagation()}>
         <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
         <div style={{ width: 36, height: 4, background: "#ddd", borderRadius: 2, margin: "10px auto" }} />
@@ -586,7 +679,7 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
               const cfg = MEAL_CONFIG[mt];
               const sel = activeMeal === mt;
               return (
-                <button key={mt} onClick={() => setActiveMeal(mt)} style={{ flex: 1, padding: "10px 4px", borderRadius: 12, border: sel ? `2px solid ${T.teal}` : "2px solid #eee", background: sel ? T.tealLight : "#fff", cursor: "pointer", textAlign: "center", fontFamily: "inherit" }}>
+                <button key={mt} onClick={() => setActiveMeal(mt)} aria-label={`Seleziona ${cfg.label}`} aria-pressed={sel} style={{ flex: 1, padding: "10px 4px", borderRadius: 12, border: sel ? `2px solid ${T.teal}` : "2px solid #eee", background: sel ? T.tealLight : "#fff", cursor: "pointer", textAlign: "center", fontFamily: "inherit" }}>
                   <div style={{ fontSize: 16 }}>{cfg.icon}</div>
                   <div style={{ fontSize: 9, fontWeight: 600, color: sel ? T.teal : T.textSec, marginTop: 3 }}>{cfg.label}</div>
                 </button>
@@ -619,84 +712,34 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
 
           {list.map((food, idx) => {
             const key = food.foodName || food.name;
-            const isSelected = selections.has(key);
             const k100 = food.kcalPer100 ?? food.kcal ?? 0;
-            const portion = isSelected ? selections.get(key).grams : (food.defaultPortion || food.lastGrams || 100);
+            const portion = food.defaultPortion || food.lastGrams || 100;
             const pm = portion / 100;
-            const isEditing = editingFood === `${key}-${idx}`;
 
             return (
-              <div key={`${key}-${idx}`} style={{ borderBottom: `1px solid ${T.border}` }}>
-                {/* Main row: grams | name+brand | P C G kcal | checkbox */}
-                <div style={{ display: "flex", alignItems: "center", padding: "10px 0", gap: 0 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: T.mint, width: 36, textAlign: "right", flexShrink: 0, marginRight: 10 }}>{portion}g</span>
-                  <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => {
-                    // Clicking food name: auto-select if not selected, then open gram editor
-                    if (!isSelected) toggleSelection(food);
-                    setEditingFood(isEditing ? null : `${key}-${idx}`);
-                  }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {key}
-                      {food.brand && <span style={{ fontSize: 10, fontWeight: 400, color: T.textMuted, marginLeft: 5 }}>{food.brand}</span>}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
-                    <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#3B82F6" }}>{Math.round((food.proteinPer100 || 0) * pm)}</span>
-                    <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#F0B429" }}>{Math.round((food.carbsPer100 || 0) * pm)}</span>
-                    <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#E85D4E" }}>{Math.round((food.fatPer100 || 0) * pm)}</span>
-                    <span style={{ width: 40, textAlign: "right", fontSize: 12, fontWeight: 800, color: T.text }}>{Math.round(k100 * pm)}</span>
-                  </div>
-                  <div onClick={() => toggleSelection(food)} style={{
-                    width: 22, height: 22, borderRadius: 6, marginLeft: 10,
-                    border: isSelected ? `2px solid ${T.teal}` : "2px solid #ddd",
-                    background: isSelected ? T.teal : "transparent",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    flexShrink: 0, cursor: "pointer", transition: "all 0.2s", color: "#fff", fontSize: 13,
-                  }}>
-                    {isSelected && <Check size={14} />}
+              <div key={`${key}-${idx}`} onClick={() => handleFoodClick(food)} style={{ borderBottom: `1px solid ${T.border}`, cursor: "pointer", padding: "10px 0", display: "flex", alignItems: "center", gap: 0 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: T.mint, width: 36, textAlign: "right", flexShrink: 0, marginRight: 10 }}>{portion}g</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {key}
+                    {food.brand && <span style={{ fontSize: 10, fontWeight: 400, color: T.textMuted, marginLeft: 5 }}>{food.brand}</span>}
                   </div>
                 </div>
-
-                {/* Inline gram editor (opens when tapping food name) */}
-                {isEditing && isSelected && (() => {
-                  const sel = selections.get(key);
-                  const g = sel ? sel.grams : portion;
-                  const em = g / 100;
-                  const stepBtn = (big) => ({
-                    width: big ? 36 : 30, height: big ? 36 : 30, borderRadius: big ? 10 : 8,
-                    border: `1.5px solid ${T.border}`, background: "#fff", cursor: "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: big ? 10 : 14, fontWeight: big ? 700 : 600, color: big ? T.textMuted : T.text,
-                    fontFamily: "inherit",
-                  });
-                  return (
-                    <div style={{ padding: "6px 0 12px", background: `${T.teal}04`, borderRadius: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 8 }}>
-                        <button onClick={() => updateGramsForFood(key, g - 10)} style={stepBtn(true)}>-10</button>
-                        <button onClick={() => updateGramsForFood(key, g - 1)} style={stepBtn(false)}>−</button>
-                        <input type="tel" inputMode="numeric" value={g}
-                          onChange={(e) => { const v = parseInt(e.target.value.replace(/\D/g, "")) || 0; updateGramsForFood(key, v); }}
-                          style={{ width: 68, height: 38, borderRadius: 10, border: `2px solid ${T.teal}`, textAlign: "center", fontSize: 20, fontWeight: 800, fontFamily: "inherit", color: T.text, outline: "none", background: T.tealLight }} />
-                        <button onClick={() => updateGramsForFood(key, g + 1)} style={stepBtn(false)}>+</button>
-                        <button onClick={() => updateGramsForFood(key, g + 10)} style={stepBtn(true)}>+10</button>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "center", gap: 14 }}>
-                        <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{Math.round(k100 * em)}</div><div style={{ fontSize: 8, color: T.textMuted }}>kcal</div></div>
-                        <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: "#3B82F6" }}>{((food.proteinPer100||0)*em).toFixed(1)}</div><div style={{ fontSize: 8, color: T.textMuted }}>P</div></div>
-                        <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: "#F0B429" }}>{((food.carbsPer100||0)*em).toFixed(1)}</div><div style={{ fontSize: 8, color: T.textMuted }}>C</div></div>
-                        <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: "#E85D4E" }}>{((food.fatPer100||0)*em).toFixed(1)}</div><div style={{ fontSize: 8, color: T.textMuted }}>G</div></div>
-                      </div>
-                    </div>
-                  );
-                })()}
+                <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
+                  <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#3B82F6" }}>{Math.round((food.proteinPer100 || 0) * pm)}</span>
+                  <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#F0B429" }}>{Math.round((food.carbsPer100 || 0) * pm)}</span>
+                  <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#E85D4E" }}>{Math.round((food.fatPer100 || 0) * pm)}</span>
+                  <span style={{ width: 40, textAlign: "right", fontSize: 12, fontWeight: 800, color: T.text }}>{Math.round(k100 * pm)}</span>
+                </div>
+                <ChevronRight size={16} color={T.textMuted} style={{ flexShrink: 0, marginLeft: 6 }} />
               </div>
             );
           })}
         </div>
 
-        <div style={{ padding: "14px 20px", borderTop: `1px solid ${T.border}` }}>
-          <button disabled={selections.size === 0} onClick={handleAddSelected} style={{ width: "100%", padding: 14, borderRadius: 14, border: "none", background: selections.size > 0 ? T.gradient : "#ccc", color: "#fff", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: selections.size > 0 ? "pointer" : "default", boxShadow: selections.size > 0 ? "0 4px 15px rgba(2,128,144,0.3)" : "none" }}>
-            {selections.size > 0 ? `Aggiungi ${selections.size} cib${selections.size === 1 ? "o" : "i"}` : "Seleziona cibi da aggiungere"}
+        <div style={{ padding: "10px 20px 14px", borderTop: `1px solid ${T.border}` }}>
+          <button onClick={() => setView("customFood")} style={{ width: "100%", padding: 12, borderRadius: 14, border: `1.5px dashed ${T.border}`, background: "transparent", color: T.textSec, fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <Plus size={14} /> Crea alimento personalizzato
           </button>
         </div>
       </div>
@@ -779,6 +822,33 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   const lastCodeRef = useRef(null);
   const emptyFramesRef = useRef(0);
   const lastProgressRef = useRef(0);
+
+  // ── SWIPE to change day ─────────────────────────────────
+  const touchStartRef = useRef(null);
+  const handleTouchStart = useCallback((e) => {
+    if (e.touches.length === 1) touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+  }, []);
+  const handleTouchEnd = useCallback((e) => {
+    if (!touchStartRef.current) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchStartRef.current.x;
+    const dy = touch.clientY - touchStartRef.current.y;
+    const dt = Date.now() - touchStartRef.current.t;
+    touchStartRef.current = null;
+    // Must be horizontal swipe: |dx| > 60, |dy| < 80, within 400ms
+    if (Math.abs(dx) > 60 && Math.abs(dy) < 80 && dt < 400) {
+      const dir = dx > 0 ? -1 : 1; // swipe left = next day, swipe right = prev day
+      setSelectedDate((prev) => {
+        const d = new Date(prev + "T12:00:00");
+        d.setDate(d.getDate() + dir);
+        const newDate = d.toISOString().split("T")[0];
+        // Update week view if new date is outside current week
+        const newMonday = getMonday(newDate);
+        setViewWeekMonday((prevMon) => prevMon !== newMonday ? newMonday : prevMon);
+        return newDate;
+      });
+    }
+  }, []);
 
   // ── EXPOSE openAddFood to parent via ref ────────────────
   useImperativeHandle(ref, () => ({
@@ -928,7 +998,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         const totalG = dailyTotals.reduce((s, d) => s + d.fat, 0);
         const divisor = daysWithData || 1;
 
-        // Build per-week chart data for this month
+        // Build per-week chart data for this month (daily AVERAGES per week)
         const chartWeeks = [];
         let weekStart = new Date(dt);
         let wNum = 1;
@@ -939,11 +1009,12 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           const ws = toISO(weekStart);
           const we = toISO(weekEnd);
           const weekEntries = dailyTotals.filter(d => d.date >= ws && d.date <= we);
+          const wDays = weekEntries.length || 1;
           const wk = weekEntries.reduce((s, d) => s + d.kcal, 0);
           const wp = weekEntries.reduce((s, d) => s + d.protein, 0);
           const wc = weekEntries.reduce((s, d) => s + d.carbs, 0);
           const wg = weekEntries.reduce((s, d) => s + d.fat, 0);
-          chartWeeks.push({ label: `Sett ${wNum}`, kcal: Math.round(wk), p: Math.round(wp), c: Math.round(wc), g: Math.round(wg) });
+          chartWeeks.push({ label: `S${wNum}`, kcal: Math.round(wk / wDays), p: Math.round(wp / wDays), c: Math.round(wc / wDays), g: Math.round(wg / wDays), hasData: weekEntries.length > 0 });
           weekStart = new Date(weekEnd);
           weekStart.setDate(weekStart.getDate() + 1);
           wNum++;
@@ -1423,7 +1494,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     await addFoodEntry(entry);
     const updated = await getFoodEntriesByDate(selectedDate);
     setFoodEntries(updated);
-    showToast("Cibo aggiunto");
+    showToast(`${entry.foodName} aggiunto a ${MEAL_CONFIG[mealType].label}`);
     onDataChange?.();
   };
 
@@ -1671,7 +1742,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             { key: "c", label: "C", color: "#F0B429" },
             { key: "g", label: "G", color: "#E85D4E" },
           ].map(m => (
-            <button key={m.key} onClick={() => setDetailMetric(m.key)} style={{
+            <button key={m.key} onClick={() => setDetailMetric(m.key)} aria-label={`Mostra ${m.key === "kcal" ? "calorie" : m.key === "p" ? "proteine" : m.key === "c" ? "carboidrati" : "grassi"}`} aria-pressed={detailMetric === m.key} style={{
               flex: 1, padding: "6px 4px", borderRadius: 8,
               border: detailMetric === m.key ? `2px solid ${m.color}` : "2px solid #eee",
               background: detailMetric === m.key ? `${m.color}15` : "#fff",
@@ -1754,7 +1825,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     const barMaxH = 50;
 
     return (
-      <div style={{ padding: "0 0 100px" }}>
+      <div style={{ padding: "0 0 100px" }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
         {/* ─── Date Navigator ─── */}
         <div style={{ background: T.card, paddingBottom: 6, borderBottom: `1px solid ${T.border}` }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 8px" }}>
@@ -1930,7 +2001,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                   <div style={{ width: 4, background: cfg.color, flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     {/* Header */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px 12px 12px", cursor: "pointer" }} onClick={() => setExpandedMeals((prev) => ({ ...prev, [mt]: !prev[mt] }))}>
+                    <div role="button" tabIndex={0} aria-expanded={expanded} aria-label={`${expanded ? "Chiudi" : "Apri"} ${cfg.label}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px 12px 12px", cursor: "pointer" }} onClick={() => setExpandedMeals((prev) => ({ ...prev, [mt]: !prev[mt] }))} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedMeals((prev) => ({ ...prev, [mt]: !prev[mt] })); } }}>
                       <span style={{ fontSize: 15, fontWeight: 800, color: T.text }}>{cfg.icon} {cfg.label}</span>
                       {!expanded && count > 0 && <span style={{ fontSize: 9, fontWeight: 700, color: cfg.color, background: cfg.bgColor, padding: "2px 7px", borderRadius: 10 }}>{count}</span>}
                       <span style={{ marginLeft: "auto", fontSize: 17, fontWeight: 900, color: totals.kcal > 0 ? T.text : T.textMuted }}>{totals.kcal}</span>
@@ -2410,7 +2481,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                     <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Settimanale</div>
                     {renderTable(visibleWeeks, "week")}
                     {weeksAll.length > 4 && (
-                      <button onClick={() => setHistoryExpandWeeks(!historyExpandWeeks)} style={{
+                      <button onClick={() => setHistoryExpandWeeks(!historyExpandWeeks)} aria-label={historyExpandWeeks ? "Nascondi settimane" : "Mostra tutte le settimane"} aria-expanded={historyExpandWeeks} style={{
                         display: "flex", alignItems: "center", justifyContent: "center", gap: 4, width: "100%",
                         padding: "8px 0", marginTop: 6, border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
                         fontSize: 11, fontWeight: 600, color: T.teal,
@@ -2428,7 +2499,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                     <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Mensile</div>
                     {renderTable(visibleMonths, "month")}
                     {monthsAll.length > 4 && (
-                      <button onClick={() => setHistoryExpandMonths(!historyExpandMonths)} style={{
+                      <button onClick={() => setHistoryExpandMonths(!historyExpandMonths)} aria-label={historyExpandMonths ? "Nascondi mesi" : "Mostra tutti i mesi"} aria-expanded={historyExpandMonths} style={{
                         display: "flex", alignItems: "center", justifyContent: "center", gap: 4, width: "100%",
                         padding: "8px 0", marginTop: 6, border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
                         fontSize: 11, fontWeight: 600, color: T.teal,
