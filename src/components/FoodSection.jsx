@@ -106,32 +106,24 @@ const SwipeableItem = ({ entry, onDelete, onTap, T }) => {
         <Trash2 size={18} color="#fff" />
       </div>
       <div
-        style={{ display: "flex", alignItems: "center", padding: "10px 14px", background: T.card, position: "relative", zIndex: 2, transform: `translateX(${-offsetX}px)`, transition: swipingRef.current ? "none" : "transform 0.25s ease", cursor: "pointer" }}
+        style={{ display: "flex", alignItems: "center", padding: "10px 14px 10px 12px", background: T.card, position: "relative", zIndex: 2, transform: `translateX(${-offsetX}px)`, transition: swipingRef.current ? "none" : "transform 0.25s ease", cursor: "pointer" }}
         onTouchStart={(e) => { startXRef.current = e.touches[0].clientX; baseRef.current = offsetX; swipingRef.current = true; }}
         onTouchMove={(e) => { if (!swipingRef.current) return; setOffsetX(Math.max(0, Math.min(75, baseRef.current + (startXRef.current - e.touches[0].clientX)))); }}
         onTouchEnd={() => { swipingRef.current = false; setOffsetX((prev) => (prev > 35 ? 75 : 0)); }}
         onClick={() => { if (offsetX === 0 && onTap) onTap(entry); }}
       >
-        {entry.isCheat && <span style={{ fontSize: 14, marginRight: 6, flexShrink: 0 }}>🍕</span>}
-        <div style={{ flex: 1, minWidth: 0, paddingRight: 6 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {entry.foodName}
-            {entry.brand && <span style={{ fontSize: 10, fontWeight: 400, color: T.textMuted, marginLeft: 5 }}>{entry.brand}</span>}
-          </div>
+        {entry.isCheat && <span style={{ fontSize: 14, marginRight: 4, flexShrink: 0 }}>🍕</span>}
+        <span style={{ fontSize: 12, fontWeight: 700, color: T.mint, width: 36, textAlign: "right", flexShrink: 0, marginRight: 10 }}>{entry.grams ? `${entry.grams}g` : "—"}</span>
+        <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {entry.foodName}
+          {entry.brand && <span style={{ fontSize: 10, fontWeight: 400, color: T.textMuted, marginLeft: 5 }}>{entry.brand}</span>}
         </div>
-        {entry.isCheat ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0 }}>
-            <span style={{ width: W.gr, textAlign: "right", fontSize: 11, fontWeight: 600, color: T.mint, marginRight: 20 }}>{entry.grams || "—"}</span>
-            <span style={{ width: W.g, textAlign: "right", fontSize: 11, fontWeight: 600, color: "#E85D4E" }}>{Math.round(entry.fat)}</span>
-            <span style={{ width: W.c, textAlign: "right", fontSize: 11, fontWeight: 600, color: "#F0B429" }}>{Math.round(entry.carbs)}</span>
-            <span style={{ width: W.p, textAlign: "right", fontSize: 11, fontWeight: 600, color: "#3B82F6" }}>{Math.round(entry.protein)}</span>
-            <span style={{ width: W.kcal, textAlign: "right", fontSize: 11, fontWeight: 600, color: T.text }}>{entry.kcal}</span>
-          </div>
-        ) : (
-          <ValuesRow gr={entry.grams} g={Math.round(entry.fat)} c={Math.round(entry.carbs)} p={Math.round(entry.protein)} kcal={entry.kcal}
-            grColor={T.mint} gColor="#E85D4E" cColor="#F0B429" pColor="#3B82F6" kcalColor={T.text} fontSize={11} fontWeight={600} />
-        )}
-        <div style={{ width: 22, flexShrink: 0 }} />
+        <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
+          <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#3B82F6" }}>{Math.round(entry.protein)}</span>
+          <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#F0B429" }}>{Math.round(entry.carbs)}</span>
+          <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#E85D4E" }}>{Math.round(entry.fat)}</span>
+          <span style={{ width: 40, textAlign: "right", fontSize: 12, fontWeight: 800, color: T.text }}>{entry.kcal}</span>
+        </div>
       </div>
     </div>
   );
@@ -951,9 +943,19 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     return `${d.getDate()} ${monthNames[d.getMonth()]} ${d.getFullYear()}`;
   };
 
-  const changeDate = (delta) => {
-    const d = new Date(selectedDate + "T12:00:00");
-    d.setDate(d.getDate() + delta);
+  // Get the Monday of the week containing a given date
+  const getMonday = (dateStr) => {
+    const d = new Date(dateStr + "T12:00:00");
+    const day = d.getDay(); // 0=Sun, 1=Mon, ...
+    const diff = day === 0 ? -6 : 1 - day; // if Sunday go back 6, else go back to Monday
+    d.setDate(d.getDate() + diff);
+    return d.toISOString().split("T")[0];
+  };
+
+  const changeWeek = (delta) => {
+    const monday = getMonday(selectedDate);
+    const d = new Date(monday + "T12:00:00");
+    d.setDate(d.getDate() + delta * 7);
     setSelectedDate(d.toISOString().split("T")[0]);
   };
 
@@ -962,9 +964,10 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   useEffect(() => {
     let active = true;
     const loadWeekData = async () => {
+      const monday = getMonday(selectedDate);
       const dates = [];
-      for (let i = -3; i <= 3; i++) {
-        const d = new Date(selectedDate + "T12:00:00");
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(monday + "T12:00:00");
         d.setDate(d.getDate() + i);
         dates.push(d.toISOString().split("T")[0]);
       }
@@ -977,9 +980,10 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   }, [selectedDate, foodEntries]);
 
   const getWeekDays = () => {
+    const monday = getMonday(selectedDate);
     const days = [];
-    for (let i = -3; i <= 3; i++) {
-      const d = new Date(selectedDate + "T12:00:00");
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday + "T12:00:00");
       d.setDate(d.getDate() + i);
       const ds = d.toISOString().split("T")[0];
       days.push({
@@ -1701,14 +1705,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         {/* ─── Date Navigator ─── */}
         <div style={{ background: T.card, paddingBottom: 6, borderBottom: `1px solid ${T.border}` }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 8px" }}>
-            <button onClick={() => changeDate(-1)} aria-label="Giorno precedente" style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
+            <button onClick={() => changeWeek(-1)} aria-label="Settimana precedente" style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
               <ChevronLeft size={18} />
             </button>
             <div style={{ textAlign: "center", cursor: "pointer" }} onClick={() => setSelectedDate(todayStr)}>
               <div style={{ fontSize: 17, fontWeight: 800, color: T.text }}>{formatDateLabel(selectedDate)}</div>
               <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>{formatDateSub(selectedDate)}</div>
             </div>
-            <button onClick={() => changeDate(1)} aria-label="Giorno successivo" style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
+            <button onClick={() => changeWeek(1)} aria-label="Settimana successiva" style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
               <ChevronRight size={18} />
             </button>
           </div>
@@ -1792,15 +1796,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           </div>
         </div>
 
-        {/* ─── Meal Cards ─── */}
+        {/* ─── Meal Cards (Style 5C) ─── */}
         <div style={{ padding: "12px 16px 20px" }}>
-          {/* Single column header for all meals */}
-          <div style={{ display: "flex", alignItems: "center", padding: "6px 14px 8px", marginBottom: 6, borderBottom: `1.5px solid ${T.border}`, background: `${T.teal}06`, borderRadius: "10px 10px 0 0" }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Alimento</div>
-            <ValuesRow gr="gr" g="G" c="C" p="P" kcal="kcal"
-              grColor={T.mint} gColor={MC.fat} cColor={MC.carbs} pColor={MC.protein} kcalColor={T.text} fontSize={9} fontWeight={700} />
-            <div style={{ width: 22, flexShrink: 0 }} />
-          </div>
           {MEAL_TYPES.map((mt) => {
             const cfg = MEAL_CONFIG[mt];
             const expanded = expandedMeals[mt];
@@ -1810,53 +1807,70 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
 
             return (
               <div key={mt} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: T.card, borderRadius: 14, boxShadow: T.shadow, cursor: "pointer" }} onClick={() => setExpandedMeals((prev) => ({ ...prev, [mt]: !prev[mt] }))}>
-                  <div style={{ width: 32, height: 32, borderRadius: 10, background: cfg.bgColor, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{cfg.icon}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{cfg.label}</span>
-                      {!expanded && count > 0 && <span style={{ fontSize: 9, fontWeight: 700, color: cfg.color, background: cfg.bgColor, padding: "2px 7px", borderRadius: 10 }}>{count} {count === 1 ? "cibo" : "cibi"}</span>}
+                <div style={{ display: "flex", background: T.card, borderRadius: 14, boxShadow: T.shadow, overflow: "hidden" }}>
+                  {/* Colored left bar */}
+                  <div style={{ width: 4, background: cfg.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    {/* Header */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px 12px 12px", cursor: "pointer" }} onClick={() => setExpandedMeals((prev) => ({ ...prev, [mt]: !prev[mt] }))}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: T.text }}>{cfg.icon} {cfg.label}</span>
+                      {!expanded && count > 0 && <span style={{ fontSize: 9, fontWeight: 700, color: cfg.color, background: cfg.bgColor, padding: "2px 7px", borderRadius: 10 }}>{count}</span>}
+                      <span style={{ marginLeft: "auto", fontSize: 17, fontWeight: 900, color: totals.kcal > 0 ? T.text : T.textMuted }}>{totals.kcal}</span>
+                      <span style={{ fontSize: 9, color: T.textMuted }}>kcal</span>
+                      <ChevronDown size={14} color="#ccc" style={{ transition: "transform 0.2s", transform: expanded ? "rotate(180deg)" : "rotate(0)", flexShrink: 0 }} />
                     </div>
+
+                    {expanded && (
+                      <div>
+                        {/* Column header with P, C, G letters */}
+                        {mealEntries.length > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", padding: "5px 14px 5px 12px", borderTop: `1px solid ${T.border}`, background: `${T.teal}06` }}>
+                            <span style={{ width: 36, marginRight: 10 }} />
+                            <span style={{ flex: 1, fontSize: 9, fontWeight: 600, color: T.textMuted, textTransform: "uppercase" }}>Alimento</span>
+                            <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
+                              <span style={{ width: 28, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#3B82F6" }}>P</span>
+                              <span style={{ width: 28, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#F0B429" }}>C</span>
+                              <span style={{ width: 28, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#E85D4E" }}>G</span>
+                              <span style={{ width: 40, textAlign: "right", fontSize: 9, fontWeight: 700, color: T.textMuted }}>kcal</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Food entries */}
+                        {mealEntries.length > 0 && (
+                          <div>
+                            {mealEntries.map((entry) => (
+                              <SwipeableItem key={entry.id} entry={entry} onDelete={handleDeleteEntry}
+                                onTap={(e) => { if (!e.isCheat) setEditingEntry({ id: e.id, mealType: mt }); }} T={T} />
+                            ))}
+                          </div>
+                        )}
+
+                        {mealEntries.length === 0 && (
+                          <div style={{ borderTop: `1px solid ${T.border}`, padding: "24px 16px", textAlign: "center", background: `${cfg.bgColor}40` }}>
+                            <div style={{ fontSize: 28, marginBottom: 6, opacity: 0.7 }}>{cfg.icon}</div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: T.textMuted }}>Nessun cibo registrato</div>
+                            <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, opacity: 0.7 }}>Tocca "Aggiungi cibo" per iniziare</div>
+                          </div>
+                        )}
+
+                        <div style={{ display: "flex", gap: 6, padding: "8px 12px 12px", borderTop: mealEntries.length > 0 ? `1px solid ${T.border}` : "none" }}>
+                          <button onClick={(e) => { e.stopPropagation(); setShowAddSheet(mt); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 10, border: `1.5px dashed ${T.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: T.teal }}>
+                            <Plus size={14} /> Aggiungi cibo
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); setShowLoadPopup(mt); }} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${T.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: T.purple }}>
+                            <Download size={13} /> Carica pasto
+                          </button>
+                          {mealEntries.length >= 2 && (
+                            <button onClick={(e) => { e.stopPropagation(); setShowSavePopup(mt); setSaveMealName(""); }} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 10px", borderRadius: 10, border: `1.5px solid ${T.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: T.gold, flexShrink: 0 }}>
+                              <Bookmark size={13} /> Salva
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <ValuesRow gr="" g={Math.round(totals.fat)} c={Math.round(totals.carbs)} p={Math.round(totals.protein)} kcal={totals.kcal}
-                    grColor="transparent" gColor="#E85D4E" cColor="#F0B429" pColor="#3B82F6" kcalColor={totals.kcal > 0 ? T.text : T.textMuted} fontSize={11} fontWeight={700} />
-                  <ChevronDown size={14} color="#ccc" style={{ transition: "transform 0.2s", transform: expanded ? "rotate(180deg)" : "rotate(0)", flexShrink: 0 }} />
                 </div>
-
-                {expanded && (
-                  <div style={{ background: T.card, borderRadius: "0 0 14px 14px", boxShadow: T.shadow, marginTop: -1, overflow: "hidden" }}>
-                    {mealEntries.length > 0 && (
-                      <div style={{ borderTop: `1px solid ${T.border}` }}>
-                        {mealEntries.map((entry) => (
-                          <SwipeableItem key={entry.id} entry={entry} onDelete={handleDeleteEntry}
-                            onTap={(e) => { if (!e.isCheat) setEditingEntry({ id: e.id, mealType: mt }); }} T={T} />
-                        ))}
-                      </div>
-                    )}
-
-                    {mealEntries.length === 0 && (
-                      <div style={{ borderTop: `1px solid ${T.border}`, padding: "24px 16px", textAlign: "center", background: `${cfg.bgColor}40` }}>
-                        <div style={{ fontSize: 28, marginBottom: 6, opacity: 0.7 }}>{cfg.icon}</div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: T.textMuted }}>Nessun cibo registrato</div>
-                        <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, opacity: 0.7 }}>Tocca "Aggiungi cibo" per iniziare</div>
-                      </div>
-                    )}
-
-                    <div style={{ display: "flex", gap: 6, padding: "8px 12px 12px", borderTop: mealEntries.length > 0 ? `1px solid ${T.border}` : "none" }}>
-                      <button onClick={(e) => { e.stopPropagation(); setShowAddSheet(mt); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 10, border: `1.5px dashed ${T.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: T.teal }}>
-                        <Plus size={14} /> Aggiungi cibo
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); setShowLoadPopup(mt); }} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${T.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: T.purple }}>
-                        <Download size={13} /> Carica pasto
-                      </button>
-                      {mealEntries.length >= 2 && (
-                        <button onClick={(e) => { e.stopPropagation(); setShowSavePopup(mt); setSaveMealName(""); }} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "9px 10px", borderRadius: 10, border: `1.5px solid ${T.border}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600, color: T.gold, flexShrink: 0 }}>
-                          <Bookmark size={13} /> Salva
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}
