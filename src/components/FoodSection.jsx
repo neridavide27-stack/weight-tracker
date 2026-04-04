@@ -718,7 +718,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   const [foodEntries, setFoodEntries] = useState([]);
   // nutritionGoals comes from parent (persisted in Dexie via profile)
   const nutritionGoals = nutritionGoalsProp || { kcalTarget: 2000, proteinPct: 30, carbsPct: 40, fatPct: 30 };
-  const [expandedMeals, setExpandedMeals] = useState({ breakfast: true, lunch: false, dinner: false, snack: false });
+  const [expandedMeals, setExpandedMeals] = useState(() => {
+    const h = new Date().getHours();
+    if (h >= 6 && h < 11) return { breakfast: true, lunch: false, dinner: false, snack: false };
+    if (h >= 11 && h < 15) return { breakfast: false, lunch: true, dinner: false, snack: false };
+    if (h >= 15 && h < 17) return { breakfast: false, lunch: false, dinner: false, snack: true };
+    if (h >= 17 && h < 22) return { breakfast: false, lunch: false, dinner: true, snack: false };
+    return { breakfast: false, lunch: false, dinner: false, snack: false };
+  });
 
   // Bottom sheet state
   const [showAddSheet, setShowAddSheet] = useState(null); // null or mealType
@@ -726,6 +733,10 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   const [addSheetRecents, setAddSheetRecents] = useState([]);
   const [addSheetView, setAddSheetView] = useState("main"); // "main" | "customFood" | "cheat"
   const [customBarcode, setCustomBarcode] = useState(null);
+
+  // History card expand state
+  const [historyExpandWeeks, setHistoryExpandWeeks] = useState(false);
+  const [historyExpandMonths, setHistoryExpandMonths] = useState(false);
 
   // Gram editor state
   const [editingEntry, setEditingEntry] = useState(null); // { id, mealType }
@@ -773,6 +784,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   useImperativeHandle(ref, () => ({
     openAddFood: () => {
       setShowAddSheet("breakfast");
+    },
+    closeAllSheets: () => {
+      setShowAddSheet(null);
+      setGramPopup(null);
+      setEditingEntry(null);
+      setShowLoadPopup(false);
+      setShowSavePopup(false);
+      setFoodScreen("dashboard");
     },
   }));
 
@@ -1864,12 +1883,12 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                       {day.hasCheat && day.hasData && !isFuture && barH > 0 && (
                         <div style={{
                           position: "absolute",
-                          bottom: barH - 6,
-                          right: "5%",
-                          width: 16, height: 16, borderRadius: "50%",
+                          bottom: Math.min(barH - 6, barMaxH - 16),
+                          left: "-2px",
+                          width: 14, height: 14, borderRadius: "50%",
                           background: "#FFF", boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 9, lineHeight: 1, zIndex: 2,
+                          fontSize: 8, lineHeight: 1, zIndex: 2,
                         }}>🍕</div>
                       )}
                       {/* target line */}
@@ -1973,11 +1992,6 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
               </div>
             );
           })}
-        </div>
-
-        {/* ─── Dettaglio Card ─── */}
-        <div style={{ padding: "0 16px 12px" }}>
-          {renderDettaglioCard()}
         </div>
 
         {/* ─── Action Buttons ─── */}
@@ -2149,52 +2163,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             }}>›</button>
           </div>
 
-          {/* Weekly kcal bar chart with today highlight */}
-          <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>
-              <BarChart3 size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.teal} />
-              Calorie Settimanali
-            </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.textMuted }} />
-                <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
-                <Tooltip contentStyle={{ borderRadius: 12, border: "none", boxShadow: T.shadow, fontSize: 12 }} />
-                <ReferenceLine y={nutritionGoals.kcalTarget} stroke={T.coral} strokeDasharray="5 5" label={{ value: "Obiettivo", fontSize: 9, fill: T.coral }} />
-                <Bar dataKey="kcal" radius={[4, 4, 0, 0]}>
-                  {chartData.map((_, i) => (
-                    <Cell key={i} fill={safeIdx === 0 && i === todayDow ? T.mint : T.teal} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Macro stacked bar chart for the week */}
-          <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>
-              Macro Settimanali (g)
-            </div>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.textMuted }} />
-                <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
-                <Tooltip contentStyle={{ borderRadius: 12, border: "none", boxShadow: T.shadow, fontSize: 12 }} />
-                <Bar dataKey="p" name="Proteine" stackId="macro" fill={MC.protein} radius={[0, 0, 0, 0]} />
-                <Bar dataKey="c" name="Carbs" stackId="macro" fill={MC.carbs} radius={[0, 0, 0, 0]} />
-                <Bar dataKey="g" name="Grassi" stackId="macro" fill={MC.fat} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-            <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 8 }}>
-              {[{ label: "Proteine", color: MC.protein }, { label: "Carbs", color: MC.carbs }, { label: "Grassi", color: MC.fat }].map(l => (
-                <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: 2, background: l.color }} />
-                  <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600 }}>{l.label}</span>
-                </div>
-              ))}
-            </div>
+          {/* ─── Dettaglio Card ─── */}
+          <div style={{ marginBottom: 12 }}>
+            {renderDettaglioCard()}
           </div>
 
           {/* ─── 1. Week vs Week Comparison ─── */}
@@ -2379,50 +2350,95 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             );
           })()}
 
-          {/* ─── 4. Meal Distribution ─── */}
+          {/* ─── 4. Storico ─── */}
           {(() => {
-            const mealKcal = currentWeek ? currentWeek.mealKcal : null;
-            if (!mealKcal) return null;
-            const totalMealKcal = Object.values(mealKcal).reduce((s, v) => s + v, 0);
-            if (totalMealKcal === 0) return null;
-            const mealItems = [
-              { key: "breakfast", label: "Colazione", icon: "\u2615", color: "#F0B429" },
-              { key: "lunch", label: "Pranzo", icon: "\u2600\uFE0F", color: "#028090" },
-              { key: "dinner", label: "Cena", icon: "\uD83C\uDF19", color: "#7C5CFC" },
-              { key: "snack", label: "Snack", icon: "\uD83C\uDF4E", color: "#E85D4E" },
-            ];
-            const maxMeal = Math.max(...Object.values(mealKcal));
+            const weeksAll = compData.weeks || [];
+            const monthsAll = compData.months || [];
+            if (weeksAll.length === 0 && monthsAll.length === 0) return null;
+
+            const visibleWeeks = historyExpandWeeks ? weeksAll : weeksAll.slice(0, 4);
+            const visibleMonths = historyExpandMonths ? monthsAll : monthsAll.slice(0, 4);
+
+            const renderTable = (rows, type) => (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${T.border}` }}>
+                      <th style={{ textAlign: "left", padding: "6px 4px", fontWeight: 700, color: T.textMuted, fontSize: 10 }}>
+                        {type === "week" ? "Settimana" : "Mese"}
+                      </th>
+                      <th style={{ textAlign: "right", padding: "6px 4px", fontWeight: 700, color: T.teal, fontSize: 10 }}>kcal</th>
+                      <th style={{ textAlign: "right", padding: "6px 4px", fontWeight: 700, color: MC.protein, fontSize: 10 }}>P</th>
+                      <th style={{ textAlign: "right", padding: "6px 4px", fontWeight: 700, color: MC.carbs, fontSize: 10 }}>C</th>
+                      <th style={{ textAlign: "right", padding: "6px 4px", fontWeight: 700, color: MC.fat, fontSize: 10 }}>G</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, i) => {
+                      const isFirst = i === 0;
+                      return (
+                        <tr key={i} style={{
+                          borderBottom: `1px solid ${T.border}`,
+                          background: isFirst ? `${T.teal}08` : "transparent",
+                        }}>
+                          <td style={{ padding: "8px 4px", fontWeight: isFirst ? 700 : 500, color: isFirst ? T.teal : T.text, fontSize: 10, whiteSpace: "nowrap" }}>
+                            {row.periodLabel}
+                            {isFirst && <span style={{ fontSize: 8, color: T.mint, marginLeft: 4, fontWeight: 600 }}>attuale</span>}
+                          </td>
+                          <td style={{ textAlign: "right", padding: "8px 4px", fontWeight: 700, color: T.text }}>{row.avg.kcal}</td>
+                          <td style={{ textAlign: "right", padding: "8px 4px", fontWeight: 600, color: MC.protein }}>{row.avg.p}g</td>
+                          <td style={{ textAlign: "right", padding: "8px 4px", fontWeight: 600, color: MC.carbs }}>{row.avg.c}g</td>
+                          <td style={{ textAlign: "right", padding: "8px 4px", fontWeight: 600, color: MC.fat }}>{row.avg.g}g</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+
             return (
               <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>
-                  <Activity size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={MC.protein} />
-                  Distribuzione Pasti
+                  <Clock size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.purple} />
+                  Storico
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {mealItems.map((m) => {
-                    const val = Math.round(mealKcal[m.key]);
-                    const pct = totalMealKcal > 0 ? Math.round((val / totalMealKcal) * 100) : 0;
-                    const barW = maxMeal > 0 ? Math.max(2, (val / maxMeal) * 100) : 0;
-                    return (
-                      <div key={m.key}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ fontSize: 14 }}>{m.icon}</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{m.label}</span>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                            <span style={{ fontSize: 14, fontWeight: 800, color: m.color }}>{val}</span>
-                            <span style={{ fontSize: 10, color: T.textMuted }}>kcal</span>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, marginLeft: 4 }}>{pct}%</span>
-                          </div>
-                        </div>
-                        <div style={{ height: 6, borderRadius: 3, background: "#F0F2F5", overflow: "hidden" }}>
-                          <div style={{ height: "100%", borderRadius: 3, background: m.color, width: `${barW}%`, transition: "width 0.4s ease" }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+
+                {/* Weekly history */}
+                {weeksAll.length > 0 && (
+                  <div style={{ marginBottom: monthsAll.length > 0 ? 16 : 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Settimanale</div>
+                    {renderTable(visibleWeeks, "week")}
+                    {weeksAll.length > 4 && (
+                      <button onClick={() => setHistoryExpandWeeks(!historyExpandWeeks)} style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 4, width: "100%",
+                        padding: "8px 0", marginTop: 6, border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
+                        fontSize: 11, fontWeight: 600, color: T.teal,
+                      }}>
+                        {historyExpandWeeks ? "Mostra meno" : `Mostra tutte (${weeksAll.length})`}
+                        {historyExpandWeeks ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Monthly history */}
+                {monthsAll.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Mensile</div>
+                    {renderTable(visibleMonths, "month")}
+                    {monthsAll.length > 4 && (
+                      <button onClick={() => setHistoryExpandMonths(!historyExpandMonths)} style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 4, width: "100%",
+                        padding: "8px 0", marginTop: 6, border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
+                        fontSize: 11, fontWeight: 600, color: T.teal,
+                      }}>
+                        {historyExpandMonths ? "Mostra meno" : `Mostra tutti (${monthsAll.length})`}
+                        {historyExpandMonths ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })()}

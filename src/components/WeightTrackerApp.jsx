@@ -832,7 +832,17 @@ export default function WeightTrackerApp() {
 
   const deleteEntry = useCallback((id) => { setEntries(prev => prev.filter(e => e.id !== id)); setShowConfirmDelete(null); }, []);
 
-  const goTo = useCallback((s) => { setScreen(s); setShowConfirmDelete(null); setEditingEntry(null); }, []);
+  const goTo = useCallback((s) => {
+    setScreen(s);
+    setShowConfirmDelete(null);
+    setEditingEntry(null);
+    // Close all FoodSection sheets when navigating
+    if (foodSectionRef.current && foodSectionRef.current.closeAllSheets) {
+      foodSectionRef.current.closeAllSheets();
+    }
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const activeTab = ["dashboard", "food", "fitness", "profile"].includes(screen) ? screen : "dashboard";
 
