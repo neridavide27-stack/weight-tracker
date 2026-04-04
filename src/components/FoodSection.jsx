@@ -1,3 +1,4 @@
+"use client";
 // FoodSection.jsx — Complete food tracking module with Card 2 Meal Cards
 // Features: calorie ring, macro cards, meal diary, barcode scanner,
 // OpenFoodFacts API, local caching (Dexie), bottom sheet, gram editor modal,
