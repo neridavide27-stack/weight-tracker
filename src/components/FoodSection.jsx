@@ -489,13 +489,14 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
   const [results, setResults] = useState([]);
   const [localRecents, setLocalRecents] = useState(initialRecents || []);
   const searchTimeoutRef = useRef(null);
-  useFocusTrap(sheetRef, view === "main" && !gramFood);
 
   // Full gram editor state
   const [gramFood, setGramFood] = useState(null);
   const [gramVal, setGramVal] = useState(100);
   const [showNumpad, setShowNumpad] = useState(false);
   const [numpadBuf, setNumpadBuf] = useState("");
+
+  useFocusTrap(sheetRef, view === "main" && !gramFood);
 
   // Reload recents when meal type tab changes
   useEffect(() => {
