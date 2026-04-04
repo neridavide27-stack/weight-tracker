@@ -1180,8 +1180,8 @@ export default function WeightTrackerApp() {
                 {showSyncGuide ? "Nascondi guida" : "Come configurare il sync"}
               </span>
               {showSyncGuide
-                ? React.createElement(ChevronLeft, { size: 14, color: T.teal, style: { transform: "rotate(90deg)" } })
-                : React.createElement(ChevronRight, { size: 14, color: T.teal, style: { transform: "rotate(90deg)" } })
+                ? <ChevronLeft size={14} color={T.teal} style={{ transform: "rotate(90deg)" }} />
+                : <ChevronRight size={14} color={T.teal} style={{ transform: "rotate(90deg)" }} />
               }
             </button>
 
