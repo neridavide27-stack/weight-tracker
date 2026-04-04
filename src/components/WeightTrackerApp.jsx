@@ -3,7 +3,7 @@ import FoodSection from "./FoodSection";
 import {
   getNutritionGoals, saveNutritionGoals, clearAllFoodData, populateDemoData,
   getSheetsUrl, saveSheetsUrl, pingSheets, fullSyncToSheets, restoreFromSheets,
-  getLastSyncTime, getSyncQueueCount,
+  getLastSyncTime, getAutoSync, saveAutoSync, syncResetToSheets,
 } from "../lib/food-db";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -59,23 +59,23 @@ function doGet(e) {
 function handleSync(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let counts = {};
-  if (data.diario && data.diario.length > 0) {
+  if (data.diario) {
     const sheet = getOrCreate(ss, SHEET_DIARIO, HEADERS_DIARIO);
     if (data.fullSync) {
-      sheet.getRange(2,1,Math.max(1,sheet.getLastRow()-1),HEADERS_DIARIO.length).clearContent();
-    }
-    const rows = data.diario.map(e => [e.date,e.mealType,e.foodName,e.brand||"",e.grams,e.kcal,rnd(e.protein),rnd(e.carbs),rnd(e.fat),e.category||"",e.isCheat?"SI":""]);
-    if (rows.length > 0) {
-      const startRow = data.fullSync ? 2 : sheet.getLastRow() + 1;
-      sheet.getRange(startRow,1,rows.length,HEADERS_DIARIO.length).setValues(rows);
+      if (sheet.getLastRow()>1) sheet.getRange(2,1,sheet.getLastRow()-1,HEADERS_DIARIO.length).clearContent();
+      const rows = data.diario.map(e => [e.date,e.mealType,e.foodName,e.brand||"",e.grams,e.kcal,rnd(e.protein),rnd(e.carbs),rnd(e.fat),e.category||"",e.isCheat?"SI":""]);
+      if (rows.length>0) sheet.getRange(2,1,rows.length,HEADERS_DIARIO.length).setValues(rows);
+    } else if (data.diario.length>0) {
+      const rows = data.diario.map(e => [e.date,e.mealType,e.foodName,e.brand||"",e.grams,e.kcal,rnd(e.protein),rnd(e.carbs),rnd(e.fat),e.category||"",e.isCheat?"SI":""]);
+      sheet.getRange(sheet.getLastRow()+1,1,rows.length,HEADERS_DIARIO.length).setValues(rows);
     }
     counts.diario = data.diario.length;
   }
-  if (data.riepilogo && data.riepilogo.length > 0) {
+  if (data.riepilogo) {
     const sheet = getOrCreate(ss, SHEET_RIEPILOGO, HEADERS_RIEPILOGO);
-    sheet.getRange(2,1,Math.max(1,sheet.getLastRow()-1),HEADERS_RIEPILOGO.length).clearContent();
+    if (sheet.getLastRow()>1) sheet.getRange(2,1,sheet.getLastRow()-1,HEADERS_RIEPILOGO.length).clearContent();
     const rows = data.riepilogo.map(r => [r.date,rnd(r.kcal),rnd(r.protein),rnd(r.carbs),rnd(r.fat),r.targetKcal,rnd(r.targetP),rnd(r.targetC),rnd(r.targetG),rnd(r.kcal-r.targetKcal)]);
-    if (rows.length > 0) sheet.getRange(2,1,rows.length,HEADERS_RIEPILOGO.length).setValues(rows);
+    if (rows.length>0) sheet.getRange(2,1,rows.length,HEADERS_RIEPILOGO.length).setValues(rows);
     counts.riepilogo = data.riepilogo.length;
   }
   if (data.database && data.database.length > 0) {
@@ -519,18 +519,23 @@ export default function WeightTrackerApp() {
   const [editingEntry, setEditingEntry] = useState(null);
   const [editWeight, setEditWeight] = useState("");
   const [showConfirmDelete, setShowConfirmDelete] = useState(null);
-  const [confirmReset, setConfirmReset] = useState(false);
+  const [showResetSheet, setShowResetSheet] = useState(false);
+  const [resetDeleteDb, setResetDeleteDb] = useState(false);
+  const [resetInput, setResetInput] = useState("");
+  const [resetting, setResetting] = useState(false);
 
   // Sync state
   const [sheetsUrl, setSheetsUrl] = useState("");
   const [sheetsUrlInput, setSheetsUrlInput] = useState("");
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | success | error
   const [syncMessage, setSyncMessage] = useState("");
-  const [syncQueueCount, setSyncQueueCount] = useState(0);
   const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [autoSyncToast, setAutoSyncToast] = useState(false);
   const [sheetsConnected, setSheetsConnected] = useState(false);
   const [showSyncGuide, setShowSyncGuide] = useState(false);
   const [scriptCopied, setScriptCopied] = useState(false);
+  const [autoSync, setAutoSync] = useState(false);
+  const autoSyncTimerRef = useRef(null);
 
   // Dashboard UI state
   const [compTab, setCompTab] = useState("week");
@@ -563,18 +568,12 @@ export default function WeightTrackerApp() {
       }
       const ts = await getLastSyncTime();
       if (ts) setLastSyncTime(ts);
-      const qc = await getSyncQueueCount();
-      setSyncQueueCount(qc);
+      const as = await getAutoSync();
+      setAutoSync(as);
     };
     loadSync();
   }, []);
 
-  // Refresh queue count when screen changes to profile
-  useEffect(() => {
-    if (screen === "profile") {
-      getSyncQueueCount().then(setSyncQueueCount);
-    }
-  }, [screen]);
 
   const handleSaveNutritionGoals = useCallback((goals) => {
     setNutritionGoals(goals);
@@ -605,7 +604,6 @@ export default function WeightTrackerApp() {
         const c = result.counts || {};
         setSyncMessage(`Sincronizzato! Diario: ${c.diario || 0} voci, Riepilogo: ${c.riepilogo || 0} giorni, DB: ${c.database || 0} nuovi alimenti`);
         setLastSyncTime(Date.now());
-        setSyncQueueCount(0);
       } else {
         setSyncStatus("error");
         setSyncMessage("Errore: " + (result.error || "sconosciuto"));
@@ -632,6 +630,27 @@ export default function WeightTrackerApp() {
       setSyncMessage("Errore: " + err.message);
     }
   }, [sheetsUrl]);
+
+  // Auto-sync: debounced trigger (10s after last change)
+  const triggerAutoSync = useCallback(() => {
+    if (!autoSync || !sheetsUrl || !sheetsConnected) return;
+    if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
+    autoSyncTimerRef.current = setTimeout(async () => {
+      try {
+        const result = await fullSyncToSheets(sheetsUrl, nutritionGoals);
+        if (result.success) {
+          setLastSyncTime(Date.now());
+          setAutoSyncToast(true);
+          setTimeout(() => setAutoSyncToast(false), 2500);
+        }
+      } catch { /* silent fail for auto-sync */ }
+    }, 10000);
+  }, [autoSync, sheetsUrl, sheetsConnected, nutritionGoals]);
+
+  const handleToggleAutoSync = useCallback(async (enabled) => {
+    setAutoSync(enabled);
+    await saveAutoSync(enabled);
+  }, []);
 
   // Derived data
   const sorted = useMemo(() => [...entries].sort((a, b) => a.date.localeCompare(b.date)), [entries]);
@@ -985,14 +1004,29 @@ export default function WeightTrackerApp() {
   /* ═══════════════════════════════════════
      SCREEN: FOOD (Nutrition Tracking)
      ═══════════════════════════════════════ */
+  // Auto-sync toast overlay (shown on any screen)
+  const autoSyncToastEl = autoSyncToast ? (
+    <div style={{
+      position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 12px)", left: "50%", transform: "translateX(-50%)",
+      background: T.card, borderRadius: 20, padding: "8px 16px", boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+      display: "flex", alignItems: "center", gap: 8, zIndex: 8000, border: `1px solid ${T.mint}30`,
+      animation: "fadeInDown 0.3s ease-out",
+    }}>
+      <CheckCircle2 size={14} color={T.mint} />
+      <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>Backup aggiornato</span>
+    </div>
+  ) : null;
+
   if (screen === "food") {
     return (
       <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
-        <FoodSection ref={foodSectionRef} settings={settings} weightEntries={sorted} goTo={goTo} T={T} nutritionGoals={nutritionGoals} />
+        {autoSyncToastEl}
+        <FoodSection ref={foodSectionRef} settings={settings} weightEntries={sorted} goTo={goTo} T={T} nutritionGoals={nutritionGoals} onDataChange={triggerAutoSync} />
         <BottomNav active="food" onNavigate={goTo} onAdd={() => {
           if (foodSectionRef.current) foodSectionRef.current.openAddFood();
           else goTo("add");
         }} />
+        <style>{`@keyframes fadeInDown { from { opacity: 0; transform: translateX(-50%) translateY(-20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }`}</style>
       </div>
     );
   }
@@ -1202,7 +1236,13 @@ export default function WeightTrackerApp() {
               </span>
               {lastSyncTime && (
                 <span style={{ fontSize: 10, color: T.textMuted, marginLeft: "auto" }}>
-                  Ultimo sync: {new Date(lastSyncTime).toLocaleDateString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  Ultimo sync: {(() => {
+                    const diff = Math.floor((Date.now() - lastSyncTime) / 1000);
+                    if (diff < 60) return "adesso";
+                    if (diff < 3600) return `${Math.floor(diff / 60)} min fa`;
+                    if (diff < 86400) return `${Math.floor(diff / 3600)} ore fa`;
+                    return new Date(lastSyncTime).toLocaleDateString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+                  })()}
                 </span>
               )}
             </div>
@@ -1263,6 +1303,32 @@ export default function WeightTrackerApp() {
               </div>
             )}
 
+            {/* Auto-sync toggle */}
+            {sheetsConnected && (
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "12px 14px", background: autoSync ? `${T.teal}08` : T.bg,
+                borderRadius: 12, border: `1px solid ${autoSync ? `${T.teal}30` : T.border}`,
+                marginTop: 4,
+              }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Sync automatico</div>
+                  <div style={{ fontSize: 11, color: T.textSec, marginTop: 2 }}>Sincronizza 10s dopo ogni modifica</div>
+                </div>
+                <button onClick={() => handleToggleAutoSync(!autoSync)} style={{
+                  width: 48, height: 28, borderRadius: 14, border: "none", cursor: "pointer",
+                  background: autoSync ? T.gradient : "#d1d5db", position: "relative",
+                  transition: "background 0.2s",
+                }}>
+                  <div style={{
+                    width: 22, height: 22, borderRadius: 11, background: "#fff",
+                    position: "absolute", top: 3, left: autoSync ? 23 : 3,
+                    transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }} />
+                </button>
+              </div>
+            )}
+
             {/* Guide toggle */}
             <button onClick={() => setShowSyncGuide(!showSyncGuide)} style={{
               width: "100%", padding: "10px 0", marginTop: 12, border: "none", background: "transparent",
@@ -1290,6 +1356,33 @@ export default function WeightTrackerApp() {
                   creare grafici, e ripristinare tutto su un nuovo dispositivo in un tap.
                 </div>
 
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.teal, textTransform: "uppercase", marginBottom: 6 }}>Come vengono salvati i dati</div>
+                <div style={{ marginBottom: 14, fontSize: 11, color: T.textMuted }}>
+                  Lo script crea automaticamente 3 fogli nel tuo Google Sheet:
+                </div>
+                <div style={{ marginBottom: 14, fontSize: 11 }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700, color: T.teal, whiteSpace: "nowrap" }}>📋 Diario</span>
+                    <span style={{ color: T.textMuted }}>— ogni cibo registrato con data, pasto, grammi, kcal e macro</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700, color: T.teal, whiteSpace: "nowrap" }}>📊 Riepilogo</span>
+                    <span style={{ color: T.textMuted }}>— totali giornalieri con obiettivi e scostamento kcal</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <span style={{ fontWeight: 700, color: T.teal, whiteSpace: "nowrap" }}>🗄️ Database</span>
+                    <span style={{ color: T.textMuted }}>— tutti i cibi unici (da scanner, ricerca, manuali) per ricerche future</span>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.teal, textTransform: "uppercase", marginBottom: 6 }}>Sync automatico</div>
+                <div style={{ marginBottom: 14, fontSize: 11, color: T.textMuted }}>
+                  Con il sync automatico attivo, ogni volta che aggiungi, modifichi o elimini un cibo, i dati vengono
+                  sincronizzati su Sheets dopo 10 secondi dall{"'"}ultima modifica. Se fai più modifiche ravvicinate,
+                  il timer si resetta per inviarle tutte insieme. Puoi attivare/disattivare il sync automatico con
+                  il toggle qui sopra. Il sync manuale è sempre disponibile con il pulsante {"\""}Sincronizza Tutto{"\""}.
+                </div>
+
                 <div style={{ fontSize: 11, fontWeight: 700, color: T.teal, textTransform: "uppercase", marginBottom: 6 }}>Setup (una volta sola, 5 minuti)</div>
 
                 {[
@@ -1299,7 +1392,7 @@ export default function WeightTrackerApp() {
                   { n: "4", title: "Deploy come Web App", desc: "Clicca Deploy → Nuova distribuzione → seleziona \"App web\". Imposta: Esegui come → Me, Accesso → Chiunque. Clicca Deploy." },
                   { n: "5", title: "Autorizza", desc: "Google ti chiederà di autorizzare. Clicca Avanzate → Vai a (nome progetto) → Consenti." },
                   { n: "6", title: "Copia l'URL", desc: "Dopo il deploy, copia l'URL della web app (inizia con https://script.google.com/macros/s/...). Incollalo qui sopra e premi Salva." },
-                  { n: "7", title: "Sincronizza", desc: "Premi \"Sincronizza Tutto\" per il primo backup. Apri il Google Sheet: vedrai 3 fogli creati automaticamente (Diario, Riepilogo, Database Alimenti)." },
+                  { n: "7", title: "Primo sync e auto-sync", desc: "Premi \"Sincronizza Tutto\" per il primo backup. Vedrai 3 fogli creati automaticamente. Attiva il toggle \"Sync automatico\" per mantenere i dati sempre aggiornati senza doverci pensare." },
                 ].map(step => (
                   <div key={step.n} style={{ display: "flex", gap: 10, marginBottom: step.hasButton ? 4 : 10 }}>
                     <div style={{
@@ -1344,26 +1437,22 @@ export default function WeightTrackerApp() {
             Gestione Dati
           </div>
           <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-            <button onClick={() => {
-              if (confirmReset) {
-                clearAllFoodData().then(() => window.location.reload());
-              } else {
-                setConfirmReset(true);
-                setTimeout(() => setConfirmReset(false), 3000);
-              }
-            }} style={{
+            <button onClick={() => { setShowResetSheet(true); setResetInput(""); setResetDeleteDb(false); }} style={{
               flex: 1, padding: "14px 12px", borderRadius: 14,
-              border: confirmReset ? `2px solid ${T.coral}` : `1.5px solid ${T.coral}30`,
-              background: confirmReset ? `${T.coral}08` : T.card,
+              border: `1.5px solid ${T.coral}30`,
+              background: T.card,
               cursor: "pointer", fontFamily: "inherit", boxShadow: T.shadow,
               display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
             }}>
               <Trash2 size={18} color={T.coral} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: T.coral }}>{confirmReset ? "Sei sicuro? Tocca ancora" : "Reset Dati Cibo"}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.coral }}>Reset Dati Cibo</span>
               <span style={{ fontSize: 10, color: T.textMuted }}>Cancella tutti i cibi</span>
             </button>
             <button onClick={async () => {
-              const count = await populateDemoData();
+              await populateDemoData();
+              if (autoSync && sheetsConnected && sheetsUrl) {
+                try { await fullSyncToSheets(sheetsUrl, nutritionGoals); } catch {}
+              }
               window.location.reload();
             }} style={{
               flex: 1, padding: "14px 12px", borderRadius: 14, border: `1.5px solid ${T.teal}30`,
@@ -1375,6 +1464,143 @@ export default function WeightTrackerApp() {
               <span style={{ fontSize: 10, color: T.textMuted }}>30 giorni di esempio</span>
             </button>
           </div>
+
+          {/* ─── Reset Bottom Sheet ─── */}
+          {showResetSheet && (
+            <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9000 }}>
+              {/* Overlay */}
+              <div onClick={() => !resetting && setShowResetSheet(false)} style={{
+                position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+              }} />
+              {/* Sheet */}
+              <div style={{
+                position: "absolute", bottom: 0, left: 0, right: 0,
+                background: T.card, borderRadius: "20px 20px 0 0",
+                padding: "20px 20px calc(env(safe-area-inset-bottom, 0px) + 20px)",
+                boxShadow: "0 -4px 20px rgba(0,0,0,0.15)",
+                animation: "slideUp 0.3s ease-out",
+              }}>
+                {/* Handle */}
+                <div style={{ width: 40, height: 4, borderRadius: 2, background: T.border, margin: "0 auto 16px" }} />
+
+                {/* Warning icon + title */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: `${T.coral}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <AlertCircle size={22} color={T.coral} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Reset Dati Cibo</div>
+                    <div style={{ fontSize: 12, color: T.coral, fontWeight: 600 }}>Questa azione è irreversibile</div>
+                  </div>
+                </div>
+
+                {/* What will be deleted */}
+                <div style={{ padding: 14, background: `${T.coral}08`, borderRadius: 12, marginBottom: 14, fontSize: 12, lineHeight: 1.7, color: T.text }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Verranno cancellati:</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <Trash2 size={12} color={T.coral} />
+                    <span>Tutti i cibi registrati (Diario)</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <Trash2 size={12} color={T.coral} />
+                    <span>Tutti i riepiloghi giornalieri</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <Trash2 size={12} color={T.coral} />
+                    <span>Tutti i pasti salvati</span>
+                  </div>
+                  {sheetsConnected && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: T.textMuted }}>
+                      I fogli Diario e Riepilogo su Google Sheets verranno svuotati al prossimo sync.
+                    </div>
+                  )}
+                </div>
+
+                {/* Database choice */}
+                <div style={{ marginBottom: 16 }}>
+                  <button onClick={() => setResetDeleteDb(!resetDeleteDb)} style={{
+                    width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${resetDeleteDb ? T.coral : T.border}`,
+                    background: resetDeleteDb ? `${T.coral}08` : T.bg, cursor: "pointer", fontFamily: "inherit",
+                    display: "flex", alignItems: "center", gap: 10, textAlign: "left",
+                  }}>
+                    <div style={{
+                      width: 22, height: 22, borderRadius: 6, border: `2px solid ${resetDeleteDb ? T.coral : T.border}`,
+                      background: resetDeleteDb ? T.coral : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>
+                      {resetDeleteDb && <Check size={14} color="#fff" />}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Cancella anche il Database Alimenti</div>
+                      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
+                        {resetDeleteDb
+                          ? "Il database cibi verrà cancellato dal dispositivo e da Sheets"
+                          : "Il database cibi verrà mantenuto per ricerche future"}
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* DELETE input */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>
+                    Scrivi <span style={{ fontWeight: 800, color: T.coral, fontFamily: "monospace", letterSpacing: 1 }}>DELETE</span> per confermare:
+                  </div>
+                  <input
+                    type="text"
+                    value={resetInput}
+                    onChange={(e) => setResetInput(e.target.value.toUpperCase())}
+                    placeholder="Scrivi DELETE"
+                    autoCapitalize="characters"
+                    style={{
+                      width: "100%", padding: "12px 14px", borderRadius: 12, fontSize: 16, fontWeight: 700,
+                      fontFamily: "monospace", letterSpacing: 2, textAlign: "center",
+                      border: `2px solid ${resetInput === "DELETE" ? T.coral : T.border}`,
+                      background: T.bg, color: T.text, outline: "none", boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                {/* Action buttons */}
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={() => setShowResetSheet(false)} disabled={resetting} style={{
+                    flex: 1, padding: 14, borderRadius: 14, border: `1.5px solid ${T.border}`,
+                    background: T.card, color: T.text, fontSize: 14, fontWeight: 700,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                    Annulla
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (resetInput !== "DELETE") return;
+                      setResetting(true);
+                      try {
+                        await clearAllFoodData(!resetDeleteDb ? false : true);
+                        if (sheetsConnected && sheetsUrl) {
+                          await syncResetToSheets(sheetsUrl, resetDeleteDb);
+                        }
+                        window.location.reload();
+                      } catch (err) {
+                        setResetting(false);
+                      }
+                    }}
+                    disabled={resetInput !== "DELETE" || resetting}
+                    style={{
+                      flex: 1, padding: 14, borderRadius: 14, border: "none",
+                      background: resetInput === "DELETE" ? T.coral : "#d1d5db",
+                      color: "#fff", fontSize: 14, fontWeight: 800,
+                      cursor: resetInput === "DELETE" ? "pointer" : "default",
+                      fontFamily: "inherit", opacity: resetting ? 0.7 : 1,
+                    }}
+                  >
+                    {resetting ? "Cancellando..." : "Cancella Tutto"}
+                  </button>
+                </div>
+              </div>
+              <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
+            </div>
+          )}
 
           <div style={{ marginTop: 24, padding: "14px 16px", borderRadius: 14, background: T.tealLight, textAlign: "center" }}>
             <div style={{ fontSize: 12, color: T.teal, fontWeight: 600 }}>
