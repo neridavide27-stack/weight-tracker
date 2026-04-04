@@ -15,7 +15,7 @@ import {
   ArrowUp, Minus, Edit3, Check, X, Home, Utensils, Dumbbell,
   User, ChevronRight, Clock, Droplets, Zap, Activity,
   Sun, Moon, Sunrise, Star, Heart, BarChart3, AlertCircle,
-  Sparkles, Trophy, CheckCircle2, Info
+  Sparkles, Trophy, CheckCircle2, Info, Copy
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════
@@ -26,6 +26,98 @@ const formatDate = (d) => new Date(d).toLocaleDateString("it-IT", { day: "numeri
 const formatDateFull = (d) => new Date(d).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" });
 const toISO = (d) => new Date(d).toISOString().split("T")[0];
 const today = () => toISO(new Date());
+
+// Google Apps Script code for sync (embedded for copy button)
+const APPS_SCRIPT_CODE = `// Google Apps Script — Weight Tracker Sync
+// Deploy: App Web → Esegui come: Me, Accesso: Chiunque
+
+const SHEET_DIARIO = "Diario";
+const SHEET_RIEPILOGO = "Riepilogo";
+const SHEET_DATABASE = "Database Alimenti";
+const HEADERS_DIARIO = ["data","pasto","cibo","brand","grammi","kcal","proteine","carbo","grassi","categoria","sgarro"];
+const HEADERS_RIEPILOGO = ["data","kcal","proteine","carbo","grassi","obiettivo_kcal","obiettivo_P","obiettivo_C","obiettivo_G","delta_kcal"];
+const HEADERS_DATABASE = ["nome","brand","barcode","kcalPer100","proteinePer100","carboPer100","grassiPer100","categoria","fonte"];
+
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    if (data.action === "sync") return handleSync(data);
+    if (data.action === "clear") return handleClear(data);
+    return jsonRes({ success: false, error: "Azione non riconosciuta" });
+  } catch (err) { return jsonRes({ success: false, error: err.message }); }
+}
+
+function doGet(e) {
+  try {
+    const a = e.parameter.action;
+    if (a === "ping") return jsonRes({ success: true, message: "Connesso!" });
+    if (a === "export") return handleExport(e.parameter.sheet);
+    return jsonRes({ success: false, error: "Parametro action mancante" });
+  } catch (err) { return jsonRes({ success: false, error: err.message }); }
+}
+
+function handleSync(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let counts = {};
+  if (data.diario && data.diario.length > 0) {
+    const sheet = getOrCreate(ss, SHEET_DIARIO, HEADERS_DIARIO);
+    if (data.fullSync) {
+      sheet.getRange(2,1,Math.max(1,sheet.getLastRow()-1),HEADERS_DIARIO.length).clearContent();
+    }
+    const rows = data.diario.map(e => [e.date,e.mealType,e.foodName,e.brand||"",e.grams,e.kcal,rnd(e.protein),rnd(e.carbs),rnd(e.fat),e.category||"",e.isCheat?"SI":""]);
+    if (rows.length > 0) {
+      const startRow = data.fullSync ? 2 : sheet.getLastRow() + 1;
+      sheet.getRange(startRow,1,rows.length,HEADERS_DIARIO.length).setValues(rows);
+    }
+    counts.diario = data.diario.length;
+  }
+  if (data.riepilogo && data.riepilogo.length > 0) {
+    const sheet = getOrCreate(ss, SHEET_RIEPILOGO, HEADERS_RIEPILOGO);
+    sheet.getRange(2,1,Math.max(1,sheet.getLastRow()-1),HEADERS_RIEPILOGO.length).clearContent();
+    const rows = data.riepilogo.map(r => [r.date,rnd(r.kcal),rnd(r.protein),rnd(r.carbs),rnd(r.fat),r.targetKcal,rnd(r.targetP),rnd(r.targetC),rnd(r.targetG),rnd(r.kcal-r.targetKcal)]);
+    if (rows.length > 0) sheet.getRange(2,1,rows.length,HEADERS_RIEPILOGO.length).setValues(rows);
+    counts.riepilogo = data.riepilogo.length;
+  }
+  if (data.database && data.database.length > 0) {
+    const sheet = getOrCreate(ss, SHEET_DATABASE, HEADERS_DATABASE);
+    const existing = getExisting(sheet);
+    const keys = new Set(existing.map(r => (r[0]+"||"+r[1]).toLowerCase()));
+    const newRows = data.database.filter(f => !keys.has((f.name+"||"+(f.brand||"")).toLowerCase())).map(f => [f.name,f.brand||"",f.barcode||"",f.kcalPer100||0,rnd(f.proteinPer100||0),rnd(f.carbsPer100||0),rnd(f.fatPer100||0),f.category||"",f.source||""]);
+    if (newRows.length > 0) sheet.getRange(sheet.getLastRow()+1,1,newRows.length,HEADERS_DATABASE.length).setValues(newRows);
+    counts.database = newRows.length;
+  }
+  return jsonRes({ success: true, counts, timestamp: new Date().toISOString() });
+}
+
+function handleExport(sheetName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (sheetName) {
+    const s = ss.getSheetByName(sheetName);
+    if (!s) return jsonRes({ success: false, error: "Foglio non trovato: "+sheetName });
+    return jsonRes({ success: true, sheet: sheetName, data: toJson(s) });
+  }
+  const result = {};
+  [SHEET_DIARIO,SHEET_RIEPILOGO,SHEET_DATABASE].forEach(n => { const s = ss.getSheetByName(n); if (s) result[n] = toJson(s); });
+  return jsonRes({ success: true, data: result });
+}
+
+function handleClear(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const s = ss.getSheetByName(data.sheet||SHEET_DIARIO);
+  if (!s) return jsonRes({ success: false, error: "Foglio non trovato" });
+  if (s.getLastRow() > 1) s.getRange(2,1,s.getLastRow()-1,s.getLastColumn()).clearContent();
+  return jsonRes({ success: true, cleared: data.sheet||SHEET_DIARIO });
+}
+
+function getOrCreate(ss, name, headers) {
+  let s = ss.getSheetByName(name);
+  if (!s) { s = ss.insertSheet(name); s.getRange(1,1,1,headers.length).setValues([headers]).setFontWeight("bold"); s.setFrozenRows(1); }
+  return s;
+}
+function getExisting(s) { const lr = s.getLastRow(); return lr <= 1 ? [] : s.getRange(2,1,lr-1,s.getLastColumn()).getValues(); }
+function toJson(s) { const d = s.getDataRange().getValues(); if (d.length<=1) return []; const h = d[0]; return d.slice(1).map(r => { const o = {}; h.forEach((k,i) => { o[k]=r[i]; }); return o; }); }
+function rnd(v) { return Math.round((v||0)*10)/10; }
+function jsonRes(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }`;
 
 const calcEMA = (entries, alpha = 0.15) => {
   if (entries.length === 0) return [];
@@ -438,6 +530,7 @@ export default function WeightTrackerApp() {
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [sheetsConnected, setSheetsConnected] = useState(false);
   const [showSyncGuide, setShowSyncGuide] = useState(false);
+  const [scriptCopied, setScriptCopied] = useState(false);
 
   // Dashboard UI state
   const [compTab, setCompTab] = useState("week");
@@ -1202,21 +1295,37 @@ export default function WeightTrackerApp() {
                 {[
                   { n: "1", title: "Crea un nuovo Google Sheet", desc: "Vai su sheets.google.com e crea un foglio vuoto. Chiamalo come vuoi (es. \"Weight Tracker Backup\")." },
                   { n: "2", title: "Apri Apps Script", desc: "Nel foglio, vai su Estensioni → Apps Script. Si apre l'editor di codice." },
-                  { n: "3", title: "Incolla lo script", desc: "Cancella il codice esistente e incolla lo script fornito con l'app (file google-apps-script.js). Salva con Ctrl+S." },
+                  { n: "3", title: "Copia e incolla lo script", desc: "Premi il bottone qui sotto per copiare lo script, poi incollalo nell'editor Apps Script (sostituisci tutto il codice). Salva con Ctrl+S.", hasButton: true },
                   { n: "4", title: "Deploy come Web App", desc: "Clicca Deploy → Nuova distribuzione → seleziona \"App web\". Imposta: Esegui come → Me, Accesso → Chiunque. Clicca Deploy." },
                   { n: "5", title: "Autorizza", desc: "Google ti chiederà di autorizzare. Clicca Avanzate → Vai a (nome progetto) → Consenti." },
                   { n: "6", title: "Copia l'URL", desc: "Dopo il deploy, copia l'URL della web app (inizia con https://script.google.com/macros/s/...). Incollalo qui sopra e premi Salva." },
-                  { n: "7", title: "Sincronizza", desc: "Premi \"Sincronizza Tutto\" per il primo backup. Apri il Google Sheet: vedrai 3 fogli creati automaticamente." },
+                  { n: "7", title: "Sincronizza", desc: "Premi \"Sincronizza Tutto\" per il primo backup. Apri il Google Sheet: vedrai 3 fogli creati automaticamente (Diario, Riepilogo, Database Alimenti)." },
                 ].map(step => (
-                  <div key={step.n} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                  <div key={step.n} style={{ display: "flex", gap: 10, marginBottom: step.hasButton ? 4 : 10 }}>
                     <div style={{
                       width: 24, height: 24, borderRadius: 8, background: T.teal,
                       color: "#fff", fontSize: 12, fontWeight: 800,
                       display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                     }}>{step.n}</div>
-                    <div>
+                    <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{step.title}</div>
                       <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{step.desc}</div>
+                      {step.hasButton && (
+                        <button onClick={() => {
+                          navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(() => {
+                            setScriptCopied(true);
+                            setTimeout(() => setScriptCopied(false), 3000);
+                          });
+                        }} style={{
+                          marginTop: 8, marginBottom: 8, padding: "10px 16px", borderRadius: 10, border: "none",
+                          background: scriptCopied ? T.mint : T.gradient,
+                          color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "center",
+                        }}>
+                          {scriptCopied ? <Check size={14} /> : <Copy size={14} />}
+                          {scriptCopied ? "Copiato negli appunti!" : "Copia Script per Apps Script"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
