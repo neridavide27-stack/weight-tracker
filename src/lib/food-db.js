@@ -125,11 +125,12 @@ export const getDailyTotalsForRange = async (startDate, endDate) => {
   const entries = await getFoodEntriesByDateRange(startDate, endDate);
   const byDate = {};
   for (const e of entries) {
-    if (!byDate[e.date]) byDate[e.date] = { date: e.date, kcal: 0, protein: 0, carbs: 0, fat: 0 };
+    if (!byDate[e.date]) byDate[e.date] = { date: e.date, kcal: 0, protein: 0, carbs: 0, fat: 0, hasCheat: false };
     byDate[e.date].kcal += e.kcal || 0;
     byDate[e.date].protein += e.protein || 0;
     byDate[e.date].carbs += e.carbs || 0;
     byDate[e.date].fat += e.fat || 0;
+    if (e.isCheat) byDate[e.date].hasCheat = true;
   }
   return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
 };
@@ -167,6 +168,28 @@ export const getNutritionGoals = async () => {
 
 export const saveNutritionGoals = async (goals) => {
   return await foodDb.appSettings.put({ key: 'nutritionGoals', value: goals });
+};
+
+// Goal history: array of { effectiveFrom: "YYYY-MM-DD", kcalTarget, proteinPct, carbsPct, fatPct }
+// Sorted by effectiveFrom descending (newest first)
+export const getGoalHistory = async () => {
+  const row = await foodDb.appSettings.get('goalHistory');
+  return row ? row.value : [];
+};
+
+export const saveGoalHistory = async (history) => {
+  return await foodDb.appSettings.put({ key: 'goalHistory', value: history });
+};
+
+// Returns the goal that was active on a given date
+export const getGoalForDate = (goalHistory, date) => {
+  if (!goalHistory || goalHistory.length === 0) return null;
+  // goalHistory sorted descending by effectiveFrom
+  for (const g of goalHistory) {
+    if (date >= g.effectiveFrom) return g;
+  }
+  // If date is before all entries, use the oldest one
+  return goalHistory[goalHistory.length - 1];
 };
 
 // ========== RESET / DEMO DATA ==========
