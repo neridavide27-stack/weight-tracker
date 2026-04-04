@@ -1,6 +1,10 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import FoodSection from "./FoodSection";
-import { getNutritionGoals, saveNutritionGoals } from "../lib/food-db";
+import {
+  getNutritionGoals, saveNutritionGoals, clearAllFoodData, populateDemoData,
+  getSheetsUrl, saveSheetsUrl, pingSheets, fullSyncToSheets, restoreFromSheets,
+  getLastSyncTime, getSyncQueueCount,
+} from "../lib/food-db";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Area, ComposedChart, ReferenceArea
@@ -423,6 +427,17 @@ export default function WeightTrackerApp() {
   const [editingEntry, setEditingEntry] = useState(null);
   const [editWeight, setEditWeight] = useState("");
   const [showConfirmDelete, setShowConfirmDelete] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  // Sync state
+  const [sheetsUrl, setSheetsUrl] = useState("");
+  const [sheetsUrlInput, setSheetsUrlInput] = useState("");
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | syncing | success | error
+  const [syncMessage, setSyncMessage] = useState("");
+  const [syncQueueCount, setSyncQueueCount] = useState(0);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [sheetsConnected, setSheetsConnected] = useState(false);
+  const [showSyncGuide, setShowSyncGuide] = useState(false);
 
   // Dashboard UI state
   const [compTab, setCompTab] = useState("week");
@@ -443,10 +458,87 @@ export default function WeightTrackerApp() {
     });
   }, []);
 
+  // Load sync settings on mount
+  useEffect(() => {
+    const loadSync = async () => {
+      const url = await getSheetsUrl();
+      if (url) {
+        setSheetsUrl(url);
+        setSheetsUrlInput(url);
+        const ok = await pingSheets(url);
+        setSheetsConnected(ok);
+      }
+      const ts = await getLastSyncTime();
+      if (ts) setLastSyncTime(ts);
+      const qc = await getSyncQueueCount();
+      setSyncQueueCount(qc);
+    };
+    loadSync();
+  }, []);
+
+  // Refresh queue count when screen changes to profile
+  useEffect(() => {
+    if (screen === "profile") {
+      getSyncQueueCount().then(setSyncQueueCount);
+    }
+  }, [screen]);
+
   const handleSaveNutritionGoals = useCallback((goals) => {
     setNutritionGoals(goals);
     saveNutritionGoals(goals);
   }, []);
+
+  const handleSaveSheetsUrl = useCallback(async (url) => {
+    const trimmed = url.trim();
+    await saveSheetsUrl(trimmed);
+    setSheetsUrl(trimmed);
+    if (trimmed) {
+      const ok = await pingSheets(trimmed);
+      setSheetsConnected(ok);
+      setSyncMessage(ok ? "Connesso a Google Sheets!" : "URL non valido o script non deployato");
+    } else {
+      setSheetsConnected(false);
+    }
+  }, []);
+
+  const handleFullSync = useCallback(async () => {
+    if (!sheetsUrl) return;
+    setSyncStatus("syncing");
+    setSyncMessage("Sincronizzazione in corso...");
+    try {
+      const result = await fullSyncToSheets(sheetsUrl, nutritionGoals);
+      if (result.success) {
+        setSyncStatus("success");
+        const c = result.counts || {};
+        setSyncMessage(`Sincronizzato! Diario: ${c.diario || 0} voci, Riepilogo: ${c.riepilogo || 0} giorni, DB: ${c.database || 0} nuovi alimenti`);
+        setLastSyncTime(Date.now());
+        setSyncQueueCount(0);
+      } else {
+        setSyncStatus("error");
+        setSyncMessage("Errore: " + (result.error || "sconosciuto"));
+      }
+    } catch (err) {
+      setSyncStatus("error");
+      setSyncMessage("Errore di rete: " + err.message);
+    }
+    setTimeout(() => setSyncStatus("idle"), 5000);
+  }, [sheetsUrl, nutritionGoals]);
+
+  const handleRestore = useCallback(async () => {
+    if (!sheetsUrl) return;
+    setSyncStatus("syncing");
+    setSyncMessage("Ripristino dati da Sheets...");
+    try {
+      const counts = await restoreFromSheets(sheetsUrl);
+      setSyncStatus("success");
+      setSyncMessage(`Ripristinato! ${counts.diario} voci diario, ${counts.database} alimenti nel DB`);
+      setLastSyncTime(Date.now());
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (err) {
+      setSyncStatus("error");
+      setSyncMessage("Errore: " + err.message);
+    }
+  }, [sheetsUrl]);
 
   // Derived data
   const sorted = useMemo(() => [...entries].sort((a, b) => a.date.localeCompare(b.date)), [entries]);
@@ -998,6 +1090,181 @@ export default function WeightTrackerApp() {
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{item.value}</span>
               </div>
             ))}
+          </div>
+
+          {/* ─── Sync Google Sheets ─── */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 20 }}>
+            Sync Google Sheets
+          </div>
+          <div style={{ background: T.card, borderRadius: 14, padding: 16, boxShadow: T.shadow, marginBottom: 8 }}>
+            {/* Connection status */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <div style={{
+                width: 10, height: 10, borderRadius: "50%",
+                background: sheetsConnected ? T.mint : sheetsUrl ? T.coral : T.border,
+                boxShadow: sheetsConnected ? `0 0 8px ${T.mint}` : "none",
+              }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>
+                {sheetsConnected ? "Connesso" : sheetsUrl ? "Non connesso" : "Non configurato"}
+              </span>
+              {lastSyncTime && (
+                <span style={{ fontSize: 10, color: T.textMuted, marginLeft: "auto" }}>
+                  Ultimo sync: {new Date(lastSyncTime).toLocaleDateString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+            </div>
+
+            {/* URL input */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, marginBottom: 6 }}>URL Web App (Apps Script)</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input type="url" value={sheetsUrlInput}
+                  onChange={(e) => setSheetsUrlInput(e.target.value)}
+                  placeholder="https://script.google.com/macros/s/.../exec"
+                  style={{
+                    flex: 1, padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${T.border}`,
+                    fontSize: 12, fontFamily: "inherit", color: T.text, outline: "none", background: T.bg,
+                  }} />
+                <button onClick={() => handleSaveSheetsUrl(sheetsUrlInput)} style={{
+                  padding: "10px 14px", borderRadius: 10, border: "none",
+                  background: T.gradient, color: "#fff", fontSize: 11, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                }}>
+                  {sheetsUrl ? "Aggiorna" : "Salva"}
+                </button>
+              </div>
+            </div>
+
+            {/* Sync status message */}
+            {syncMessage && (
+              <div style={{
+                padding: "8px 12px", borderRadius: 8, marginBottom: 12, fontSize: 11, fontWeight: 600,
+                background: syncStatus === "success" ? `${T.mint}15` : syncStatus === "error" ? `${T.coral}15` : `${T.teal}10`,
+                color: syncStatus === "success" ? T.mint : syncStatus === "error" ? T.coral : T.teal,
+              }}>
+                {syncStatus === "syncing" && "⏳ "}{syncMessage}
+              </div>
+            )}
+
+            {/* Sync buttons */}
+            {sheetsConnected && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={handleFullSync} disabled={syncStatus === "syncing"} style={{
+                  flex: 1, padding: 12, borderRadius: 12, border: "none",
+                  background: syncStatus === "syncing" ? "#ccc" : T.gradient,
+                  color: "#fff", fontSize: 12, fontWeight: 700, cursor: syncStatus === "syncing" ? "default" : "pointer",
+                  fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                }}>
+                  <ArrowUp size={14} />
+                  Sincronizza Tutto
+                </button>
+                <button onClick={handleRestore} disabled={syncStatus === "syncing"} style={{
+                  flex: 1, padding: 12, borderRadius: 12, border: `1.5px solid ${T.border}`,
+                  background: T.card, color: T.text, fontSize: 12, fontWeight: 700,
+                  cursor: syncStatus === "syncing" ? "default" : "pointer",
+                  fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                }}>
+                  <ArrowDown size={14} />
+                  Ripristina
+                </button>
+              </div>
+            )}
+
+            {/* Guide toggle */}
+            <button onClick={() => setShowSyncGuide(!showSyncGuide)} style={{
+              width: "100%", padding: "10px 0", marginTop: 12, border: "none", background: "transparent",
+              cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            }}>
+              <Info size={14} color={T.teal} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: T.teal }}>
+                {showSyncGuide ? "Nascondi guida" : "Come configurare il sync"}
+              </span>
+              {showSyncGuide
+                ? React.createElement(ChevronLeft, { size: 14, color: T.teal, style: { transform: "rotate(90deg)" } })
+                : React.createElement(ChevronRight, { size: 14, color: T.teal, style: { transform: "rotate(90deg)" } })
+              }
+            </button>
+
+            {/* Step-by-step guide */}
+            {showSyncGuide && (
+              <div style={{ marginTop: 8, padding: 16, background: T.bg, borderRadius: 12, fontSize: 12, lineHeight: 1.7, color: T.textSec }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 12 }}>Guida Setup Google Sheets Sync</div>
+
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.teal, textTransform: "uppercase", marginBottom: 6 }}>Perché è utile?</div>
+                <div style={{ marginBottom: 14, fontSize: 11, color: T.textMuted }}>
+                  I tuoi dati sono salvati nel browser. Se cambi telefono, pulisci la cache o reinstalli, li perdi.
+                  Con il sync su Google Sheets hai un backup cloud gratuito, puoi vedere i dati in formato tabella,
+                  creare grafici, e ripristinare tutto su un nuovo dispositivo in un tap.
+                </div>
+
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.teal, textTransform: "uppercase", marginBottom: 6 }}>Setup (una volta sola, 5 minuti)</div>
+
+                {[
+                  { n: "1", title: "Crea un nuovo Google Sheet", desc: "Vai su sheets.google.com e crea un foglio vuoto. Chiamalo come vuoi (es. \"Weight Tracker Backup\")." },
+                  { n: "2", title: "Apri Apps Script", desc: "Nel foglio, vai su Estensioni → Apps Script. Si apre l'editor di codice." },
+                  { n: "3", title: "Incolla lo script", desc: "Cancella il codice esistente e incolla lo script fornito con l'app (file google-apps-script.js). Salva con Ctrl+S." },
+                  { n: "4", title: "Deploy come Web App", desc: "Clicca Deploy → Nuova distribuzione → seleziona \"App web\". Imposta: Esegui come → Me, Accesso → Chiunque. Clicca Deploy." },
+                  { n: "5", title: "Autorizza", desc: "Google ti chiederà di autorizzare. Clicca Avanzate → Vai a (nome progetto) → Consenti." },
+                  { n: "6", title: "Copia l'URL", desc: "Dopo il deploy, copia l'URL della web app (inizia con https://script.google.com/macros/s/...). Incollalo qui sopra e premi Salva." },
+                  { n: "7", title: "Sincronizza", desc: "Premi \"Sincronizza Tutto\" per il primo backup. Apri il Google Sheet: vedrai 3 fogli creati automaticamente." },
+                ].map(step => (
+                  <div key={step.n} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                    <div style={{
+                      width: 24, height: 24, borderRadius: 8, background: T.teal,
+                      color: "#fff", fontSize: 12, fontWeight: 800,
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>{step.n}</div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{step.title}</div>
+                      <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{step.desc}</div>
+                    </div>
+                  </div>
+                ))}
+
+                <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 8, background: `${T.gold}15`, fontSize: 11, color: T.text }}>
+                  <strong style={{ color: T.gold }}>Nota:</strong> i tuoi dati restano nel TUO Google Sheet personale.
+                  L'URL dello script non è indicizzato e non è accessibile senza il link diretto.
+                  Per uso personale è perfettamente sicuro.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ─── Gestione Dati ─── */}
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 20 }}>
+            Gestione Dati
+          </div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+            <button onClick={() => {
+              if (confirmReset) {
+                clearAllFoodData().then(() => window.location.reload());
+              } else {
+                setConfirmReset(true);
+                setTimeout(() => setConfirmReset(false), 3000);
+              }
+            }} style={{
+              flex: 1, padding: "14px 12px", borderRadius: 14,
+              border: confirmReset ? `2px solid ${T.coral}` : `1.5px solid ${T.coral}30`,
+              background: confirmReset ? `${T.coral}08` : T.card,
+              cursor: "pointer", fontFamily: "inherit", boxShadow: T.shadow,
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+            }}>
+              <Trash2 size={18} color={T.coral} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.coral }}>{confirmReset ? "Sei sicuro? Tocca ancora" : "Reset Dati Cibo"}</span>
+              <span style={{ fontSize: 10, color: T.textMuted }}>Cancella tutti i cibi</span>
+            </button>
+            <button onClick={async () => {
+              const count = await populateDemoData();
+              window.location.reload();
+            }} style={{
+              flex: 1, padding: "14px 12px", borderRadius: 14, border: `1.5px solid ${T.teal}30`,
+              background: T.card, cursor: "pointer", fontFamily: "inherit", boxShadow: T.shadow,
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+            }}>
+              <Sparkles size={18} color={T.teal} />
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.teal }}>Carica Dati Demo</span>
+              <span style={{ fontSize: 10, color: T.textMuted }}>30 giorni di esempio</span>
+            </button>
           </div>
 
           <div style={{ marginTop: 24, padding: "14px 16px", borderRadius: 14, background: T.tealLight, textAlign: "center" }}>
