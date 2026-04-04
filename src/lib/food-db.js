@@ -15,7 +15,7 @@ foodDb.version(4).stores({
   cachedFoods: 'id, barcode',
   savedMeals: '++id, mealType',
   appSettings: 'key',
-  syncQueue: '++id, type, timestamp',
+  syncQueue: null, // removed — no longer used
 });
 
 // ========== FOOD ENTRIES ==========
@@ -171,11 +171,36 @@ export const saveNutritionGoals = async (goals) => {
 
 // ========== RESET / DEMO DATA ==========
 
-export const clearAllFoodData = async () => {
+export const clearAllFoodData = async (alsoDatabase = true) => {
   await foodDb.foodEntries.clear();
-  await foodDb.cachedFoods.clear();
   await foodDb.savedMeals.clear();
+  if (alsoDatabase) {
+    await foodDb.cachedFoods.clear();
+  }
   // Keep appSettings (nutrition goals etc.)
+};
+
+// Sync reset to Google Sheets (clear Diario + Riepilogo, optionally Database)
+export const syncResetToSheets = async (url, clearDatabase = false) => {
+  if (!url) return;
+  // Clear Diario
+  await fetch(url, {
+    method: "POST", redirect: "follow",
+    body: JSON.stringify({ action: "clear", sheet: "Diario" }),
+  });
+  // Clear Riepilogo
+  await fetch(url, {
+    method: "POST", redirect: "follow",
+    body: JSON.stringify({ action: "clear", sheet: "Riepilogo" }),
+  });
+  // Optionally clear Database Alimenti
+  if (clearDatabase) {
+    await fetch(url, {
+      method: "POST", redirect: "follow",
+      body: JSON.stringify({ action: "clear", sheet: "Database Alimenti" }),
+    });
+  }
+  await saveLastSyncTime(new Date().toISOString());
 };
 
 export const populateDemoData = async () => {
@@ -328,24 +353,6 @@ export const populateDemoData = async () => {
   return entries.length;
 };
 
-// ========== SYNC QUEUE ==========
-
-export const addToSyncQueue = async (type, payload) => {
-  return await foodDb.syncQueue.add({ type, payload, timestamp: Date.now() });
-};
-
-export const getSyncQueue = async () => {
-  return await foodDb.syncQueue.toArray();
-};
-
-export const getSyncQueueCount = async () => {
-  return await foodDb.syncQueue.count();
-};
-
-export const clearSyncQueue = async () => {
-  return await foodDb.syncQueue.clear();
-};
-
 // ========== GOOGLE SHEETS SYNC ==========
 
 // Get the stored Sheets webhook URL
@@ -366,6 +373,16 @@ export const getLastSyncTime = async () => {
 
 export const saveLastSyncTime = async (ts) => {
   return await foodDb.appSettings.put({ key: 'lastSyncTime', value: ts });
+};
+
+// Auto-sync setting
+export const getAutoSync = async () => {
+  const row = await foodDb.appSettings.get('autoSync');
+  return row ? row.value : false;
+};
+
+export const saveAutoSync = async (enabled) => {
+  return await foodDb.appSettings.put({ key: 'autoSync', value: enabled });
 };
 
 // Ping the webhook to verify connection
@@ -454,7 +471,6 @@ export const fullSyncToSheets = async (url, nutritionGoals) => {
   const json = await res.json();
   if (json.success) {
     await saveLastSyncTime(Date.now());
-    await clearSyncQueue();
   }
   return json;
 };
