@@ -941,7 +941,7 @@ export default function WeightTrackerApp() {
                     const v = parseInt(e.target.value.replace(/\D/g, "")) || 0;
                     handleSaveNutritionGoals({ ...nutritionGoals, kcalTarget: v });
                   }}
-                  style={{ border: "none", outline: "none", fontSize: 16, fontWeight: 700, color: T.text, fontFamily: "'Inter', sans-serif", background: "transparent", width: "100%" }}
+                  style={{ border: `1.5px solid ${T.border}`, outline: "none", fontSize: 16, fontWeight: 700, color: T.text, fontFamily: "'Inter', sans-serif", background: T.bg, width: "100%", borderRadius: 8, padding: "6px 8px" }}
                 />
               </div>
               <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 500 }}>kcal</span>
@@ -963,7 +963,7 @@ export default function WeightTrackerApp() {
                         const v = Math.min(100, parseInt(e.target.value.replace(/\D/g, "")) || 0);
                         handleSaveNutritionGoals({ ...nutritionGoals, [key]: v });
                       }}
-                      style={{ width: 32, border: "none", outline: "none", fontSize: 16, fontWeight: 800, color, fontFamily: "'Inter', sans-serif", background: "transparent", textAlign: "center" }}
+                      style={{ width: 40, border: `1.5px solid ${color}40`, outline: "none", fontSize: 16, fontWeight: 800, color, fontFamily: "'Inter', sans-serif", background: `${color}08`, textAlign: "center", borderRadius: 6, padding: "4px 2px" }}
                     />
                     <span style={{ fontSize: 12, fontWeight: 600, color }}>%</span>
                   </div>
