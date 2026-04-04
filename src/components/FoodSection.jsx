@@ -25,7 +25,6 @@ import {
   getRecentFoodsByMeal, getAllCachedFoods, getLastEntryByFoodName,
   getDailyTotalsForRange,
   getSavedMeals, addSavedMeal, deleteSavedMeal,
-  addToSyncQueue,
 } from "../lib/food-db";
 
 // ─── CONSTANTS ────────────────────────────────────────────
@@ -703,7 +702,7 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
 const haptic = (ms = 10) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
 
 // ─── COMPONENT ────────────────────────────────────────────
-const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoals: nutritionGoalsProp }, ref) => {
+const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoals: nutritionGoalsProp, onDataChange }, ref) => {
 
   // ── STATE ───────────────────────────────────────────────
   const [foodScreen, setFoodScreen] = useState("dashboard");
@@ -1345,18 +1344,18 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
       isCheat: food.isCheat || false,
     };
     await addFoodEntry(entry);
-    addToSyncQueue("add", { date: selectedDate, foodName: entry.foodName }).catch(() => {});
     const updated = await getFoodEntriesByDate(selectedDate);
     setFoodEntries(updated);
     showToast("Cibo aggiunto");
+    onDataChange?.();
   };
 
   const handleDeleteEntry = async (id) => {
     haptic(20);
     await deleteFoodEntry(id);
-    addToSyncQueue("delete", { id }).catch(() => {});
     setFoodEntries((prev) => prev.filter((e) => e.id !== id));
     showToast("Eliminato");
+    onDataChange?.();
   };
 
   const handleMoveMeal = async (entryId, newMealType) => {
@@ -1382,6 +1381,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     );
     setEditingEntry(null);
     showToast("Grammi aggiornati");
+    onDataChange?.();
   };
 
   const handleSaveMeal = async (mealType) => {
@@ -1408,6 +1408,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     }
     setShowLoadPopup(null);
     showToast("Pasto caricato");
+    onDataChange?.();
   };
 
   const handleCopyDay = async (sourceDate) => {
@@ -1437,11 +1438,11 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
       isCheat: e.isCheat || false,
     }));
     await addFoodEntries(copies);
-    addToSyncQueue("copy_day", { date: selectedDate, count: copies.length }).catch(() => {});
     const updated = await getFoodEntriesByDate(selectedDate);
     setFoodEntries(updated);
     setShowCopyDay(false);
     showToast(`${copies.length} cibi copiati`);
+    onDataChange?.();
   };
 
   // ─── RENDER FUNCTIONS ──────────────────────────────────
