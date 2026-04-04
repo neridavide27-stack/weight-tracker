@@ -15,7 +15,7 @@ import {
   Search, Plus, X, Check, ChevronLeft, ChevronRight, ChevronDown,
   ChevronUp, Trash2, Camera, Target, BarChart3, Calendar,
   Clock, Star, Flame, Activity, TrendingUp, ScanLine, Settings, Zap,
-  Bookmark, Download, Minus, Pizza, ArrowLeft,
+  Bookmark, Download, Minus, Pizza, ArrowLeft, Copy,
 } from "lucide-react";
 import { FOOD_DATABASE as EXTERNAL_DB } from "./food-database";
 import {
@@ -25,6 +25,7 @@ import {
   getRecentFoodsByMeal, getAllCachedFoods, getLastEntryByFoodName,
   getDailyTotalsForRange,
   getSavedMeals, addSavedMeal, deleteSavedMeal,
+  addToSyncQueue,
 } from "../lib/food-db";
 
 // ─── CONSTANTS ────────────────────────────────────────────
@@ -155,13 +156,13 @@ const GramEditorModal = ({ entry, onSave, onClose, onMoveMeal, currentMealType, 
         </div>
         <div style={{ padding: "20px 22px 24px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginBottom: 18 }}>
-            <button onClick={() => setGrams(Math.max(1, grams - 10))} style={{ width: 44, height: 44, borderRadius: 14, border: `2px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><Minus size={18} /></button>
+            <button onClick={() => setGrams(Math.max(1, grams - 10))} aria-label="Meno 10 grammi" style={{ width: 44, height: 44, borderRadius: 14, border: `2px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><Minus size={18} /></button>
             <div style={{ position: "relative" }}>
               <input type="tel" inputMode="numeric" pattern="[0-9]*" value={grams} onChange={(e) => setGrams(Math.max(0, parseInt(e.target.value.replace(/\D/g, "")) || 0))} autoFocus
                 style={{ width: 90, height: 52, borderRadius: 16, border: `2px solid ${T.teal}`, textAlign: "center", fontSize: 26, fontWeight: 800, fontFamily: "inherit", color: T.text, outline: "none", background: T.tealLight }} />
               <div style={{ position: "absolute", bottom: -6, left: "50%", transform: "translateX(-50%)", fontSize: 9, fontWeight: 700, color: T.teal, background: "#fff", padding: "0 6px" }}>grammi</div>
             </div>
-            <button onClick={() => setGrams(grams + 10)} style={{ width: 44, height: 44, borderRadius: 14, border: `2px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><Plus size={18} /></button>
+            <button onClick={() => setGrams(grams + 10)} aria-label="Più 10 grammi" style={{ width: 44, height: 44, borderRadius: 14, border: `2px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><Plus size={18} /></button>
           </div>
           <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 16, fontSize: 12 }}>
             <div style={{ textAlign: "center" }}>
@@ -371,7 +372,12 @@ const CheatFoodForm = ({ onSave, onBack, T }) => {
 
 // ─── LOAD MEAL SHEET ────────────────────────────────────
 const LoadMealSheet = ({ mealType, savedMeals, onLoad, onDelete, onClose, T }) => {
-  const filtered = savedMeals.filter(m => m.mealType === mealType);
+  // Show all saved meals, sorted: current mealType first, then the rest
+  const sorted = [...savedMeals].sort((a, b) => {
+    if (a.mealType === mealType && b.mealType !== mealType) return -1;
+    if (a.mealType !== mealType && b.mealType === mealType) return 1;
+    return 0;
+  });
 
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.45)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
@@ -380,21 +386,26 @@ const LoadMealSheet = ({ mealType, savedMeals, onLoad, onDelete, onClose, T }) =
         <div style={{ width: 36, height: 4, background: "#ddd", borderRadius: 2, margin: "10px auto" }} />
         <div style={{ padding: "4px 20px 12px" }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>Carica Pasto</div>
-          <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>{MEAL_CONFIG[mealType].label}</div>
+          <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>Tutti i pasti salvati</div>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 10px" }}>
-          {filtered.length === 0 ? (
+          {sorted.length === 0 ? (
             <div style={{ textAlign: "center", padding: 30, color: T.textMuted, fontSize: 13 }}>Nessun pasto salvato</div>
           ) : (
-            filtered.map((meal) => {
+            sorted.map((meal) => {
               const totP = meal.items.reduce((s, i) => s + (i.protein || 0), 0);
               const totC = meal.items.reduce((s, i) => s + (i.carbs || 0), 0);
               const totG = meal.items.reduce((s, i) => s + (i.fat || 0), 0);
+              const cfg = MEAL_CONFIG[meal.mealType] || { emoji: "🍽️", label: meal.mealType };
+              const isCurrent = meal.mealType === mealType;
               return (
                 <div key={meal.id} style={{ padding: "12px 0", borderBottom: `1px solid ${T.border}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{meal.name}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{meal.name}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 6, background: isCurrent ? `${T.teal}18` : "#f3f4f6", color: isCurrent ? T.teal : T.textMuted }}>{cfg.emoji} {cfg.label}</span>
+                      </div>
                       <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{meal.items.length} cibi • {meal.totalKcal} kcal</div>
                       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                         <span style={{ fontSize: 10, fontWeight: 600, color: "#E85D4E" }}>{Math.round(totG)}G</span>
@@ -403,8 +414,8 @@ const LoadMealSheet = ({ mealType, savedMeals, onLoad, onDelete, onClose, T }) =
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => onLoad(meal)} style={{ padding: "6px 12px", borderRadius: 10, border: "none", background: T.gradient, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600 }}>Carica</button>
-                      <button onClick={() => onDelete(meal.id)} style={{ padding: "6px 8px", borderRadius: 10, border: "none", background: "#FEE2E2", color: T.coral, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600 }}>Elimina</button>
+                      <button onClick={() => onLoad(meal)} aria-label={`Carica pasto ${meal.name}`} style={{ padding: "6px 12px", borderRadius: 10, border: "none", background: T.gradient, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600 }}>Carica</button>
+                      <button onClick={() => onDelete(meal.id)} aria-label={`Elimina pasto ${meal.name}`} style={{ padding: "6px 8px", borderRadius: 10, border: "none", background: "#FEE2E2", color: T.coral, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600 }}>Elimina</button>
                     </div>
                   </div>
                 </div>
@@ -417,8 +428,80 @@ const LoadMealSheet = ({ mealType, savedMeals, onLoad, onDelete, onClose, T }) =
   );
 };
 
+// ─── COPY DAY SHEET ─────────────────────────────────────
+const CopyDaySheet = ({ selectedDate, onCopy, onClose, T }) => {
+  const [recentDays, setRecentDays] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      // Get last 14 days (excluding today/selectedDate)
+      const days = [];
+      for (let i = 1; i <= 14; i++) {
+        const d = new Date(selectedDate + "T12:00:00");
+        d.setDate(d.getDate() - i);
+        days.push(d.toISOString().split("T")[0]);
+      }
+      const start = days[days.length - 1];
+      const end = days[0];
+      const totals = await getDailyTotalsForRange(start, end);
+      const totMap = {};
+      totals.forEach((t) => { totMap[t.date] = t; });
+      const result = days.filter((d) => totMap[d]).map((d) => ({ date: d, ...totMap[d] }));
+      if (active) { setRecentDays(result); setLoading(false); }
+    };
+    load();
+    return () => { active = false; };
+  }, [selectedDate]);
+
+  const fmtDate = (ds) => {
+    const d = new Date(ds + "T12:00:00");
+    const dayNames = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
+    return `${dayNames[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
+  };
+
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.45)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "60vh", display: "flex", flexDirection: "column", animation: "slideUp .3s ease-out" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ width: 36, height: 4, background: "#ddd", borderRadius: 2, margin: "10px auto" }} />
+        <div style={{ padding: "4px 20px 12px" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>Copia Giorno</div>
+          <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>Copia tutti i cibi da un altro giorno</div>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 20px" }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: 30, color: T.textMuted, fontSize: 13 }}>Caricamento...</div>
+          ) : recentDays.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 30, color: T.textMuted, fontSize: 13 }}>Nessun giorno con dati trovato</div>
+          ) : (
+            recentDays.map((day) => (
+              <button key={day.date} onClick={() => onCopy(day.date)} style={{
+                width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${T.border}`,
+                background: T.card, cursor: "pointer", fontFamily: "inherit", marginBottom: 8,
+                display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left",
+              }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{fmtDate(day.date)}</div>
+                  <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{Math.round(day.kcal)} kcal</div>
+                </div>
+                <div style={{ display: "flex", gap: 8, fontSize: 10, fontWeight: 600 }}>
+                  <span style={{ color: "#E85D4E" }}>{Math.round(day.fat || 0)}G</span>
+                  <span style={{ color: "#F0B429" }}>{Math.round(day.carbs || 0)}C</span>
+                  <span style={{ color: "#3B82F6" }}>{Math.round(day.protein || 0)}P</span>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── ADD FOOD SHEET (REPLACED renderBottomSheet) ────────
-const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, initialView, initialBarcode }) => {
+const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onScannerOpen, T, initialView, initialBarcode }) => {
+  const [activeMeal, setActiveMeal] = useState(initialMealType);
   const [view, setView] = useState(initialView || "main"); // "main" | "customFood" | "cheat"
   const [customBarcode, setCustomBarcode] = useState(initialBarcode || null);
   const [search, setSearch] = useState("");
@@ -462,7 +545,12 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
                   source: "api",
                 };
               });
-            setResults((prev) => [...prev, ...apiResults]);
+            // Deduplicate: skip API results whose name matches a local result
+            setResults((prev) => {
+              const existingNames = new Set(prev.map(r => (r.foodName || r.name || "").toLowerCase()));
+              const unique = apiResults.filter(r => !existingNames.has((r.foodName || "").toLowerCase()));
+              return [...prev, ...unique];
+            });
           }
         } catch (e) { /* */ }
       }, 500);
@@ -483,8 +571,9 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
   };
 
   const handleAddSelected = () => {
+    haptic(15);
     for (const [, sel] of selections) {
-      onAdd(sel.food, mealType, sel.grams);
+      onAdd(sel.food, activeMeal, sel.grams);
     }
     onClose();
   };
@@ -494,7 +583,7 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.45)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
         <div style={{ background: "#fff", width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "slideUp .3s ease-out" }} onClick={(e) => e.stopPropagation()}>
           <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
-          <CustomFoodForm onSave={(food) => { onAdd(food, mealType, 100); onClose(); }} onBack={() => setView("main")} T={T} initialBarcode={customBarcode} />
+          <CustomFoodForm onSave={(food) => { onAdd(food, activeMeal, 100); onClose(); }} onBack={() => setView("main")} T={T} initialBarcode={customBarcode} />
         </div>
       </div>
     );
@@ -505,7 +594,7 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.45)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
         <div style={{ background: "#fff", width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "slideUp .3s ease-out" }} onClick={(e) => e.stopPropagation()}>
           <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
-          <CheatFoodForm onSave={(food) => { onAdd(food, mealType, food.grams); onClose(); }} onBack={() => setView("main")} T={T} />
+          <CheatFoodForm onSave={(food) => { onAdd(food, activeMeal, food.grams); onClose(); }} onBack={() => setView("main")} T={T} />
         </div>
       </div>
     );
@@ -530,9 +619,9 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
           <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
             {MEAL_TYPES.map((mt) => {
               const cfg = MEAL_CONFIG[mt];
-              const sel = mealType === mt;
+              const sel = activeMeal === mt;
               return (
-                <button key={mt} style={{ flex: 1, padding: "10px 4px", borderRadius: 12, border: sel ? `2px solid ${T.teal}` : "2px solid #eee", background: sel ? T.tealLight : "#fff", cursor: "pointer", textAlign: "center", fontFamily: "inherit" }}>
+                <button key={mt} onClick={() => setActiveMeal(mt)} style={{ flex: 1, padding: "10px 4px", borderRadius: 12, border: sel ? `2px solid ${T.teal}` : "2px solid #eee", background: sel ? T.tealLight : "#fff", cursor: "pointer", textAlign: "center", fontFamily: "inherit" }}>
                   <div style={{ fontSize: 16 }}>{cfg.icon}</div>
                   <div style={{ fontSize: 9, fontWeight: 600, color: sel ? T.teal : T.textSec, marginTop: 3 }}>{cfg.label}</div>
                 </button>
@@ -549,7 +638,7 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
 
         <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 10px" }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>
-            {search.length >= 2 ? "Risultati" : `Recenti per ${MEAL_CONFIG[mealType].label}`}
+            {search.length >= 2 ? "Risultati" : `Recenti per ${MEAL_CONFIG[activeMeal].label}`}
           </div>
 
           {list.length === 0 && (
@@ -570,15 +659,31 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
             const portion = isSelected ? selections.get(key).grams : (food.defaultPortion || food.lastGrams || 100);
 
             return (
-              <div key={`${key}-${idx}`} style={{ display: "flex", alignItems: "center", padding: "11px 0", borderBottom: `1px solid ${T.border}`, cursor: "pointer", gap: 10 }}>
-                <div onClick={() => toggleSelection(food)} style={{ width: 22, height: 22, borderRadius: 6, border: isSelected ? `2px solid ${T.teal}` : "2px solid #ddd", background: isSelected ? T.teal : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", color: "#fff", fontSize: 13 }}>
-                  {isSelected && <Check size={14} />}
+              <div key={`${key}-${idx}`} style={{ borderBottom: `1px solid ${T.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", padding: "11px 0", cursor: "pointer", gap: 10 }} onClick={() => toggleSelection(food)}>
+                  <div style={{ width: 22, height: 22, borderRadius: 6, border: isSelected ? `2px solid ${T.teal}` : "2px solid #ddd", background: isSelected ? T.teal : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", color: "#fff", fontSize: 13 }}>
+                    {isSelected && <Check size={14} />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{key}</div>
+                    {food.brand && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>{food.brand}</div>}
+                  </div>
+                  <MacroRowCompact grams={portion} kcalPer100={k100} fatPer100={food.fatPer100 || 0} carbsPer100={food.carbsPer100 || 0} proteinPer100={food.proteinPer100 || 0} T={T} />
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{key}</div>
-                  {food.brand && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>{food.brand}</div>}
-                </div>
-                <MacroRowCompact grams={portion} kcalPer100={k100} fatPer100={food.fatPer100 || 0} carbsPer100={food.carbsPer100 || 0} proteinPer100={food.proteinPer100 || 0} T={T} />
+                {isSelected && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 0 10px 32px" }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: T.textMuted }}>Grammi:</span>
+                    <button onClick={() => setSelections(prev => { const n = new Map(prev); const s = n.get(key); n.set(key, { ...s, grams: Math.max(1, s.grams - 10) }); return n; })}
+                      aria-label="Meno 10 grammi" style={{ width: 26, height: 26, borderRadius: 6, border: `1px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: T.text }}>−</button>
+                    <input type="tel" inputMode="numeric" value={selections.get(key).grams}
+                      onChange={(e) => { const v = Math.max(0, parseInt(e.target.value.replace(/\D/g, "")) || 0); setSelections(prev => { const n = new Map(prev); const s = n.get(key); n.set(key, { ...s, grams: v }); return n; }); }}
+                      style={{ width: 50, textAlign: "center", padding: "4px 6px", borderRadius: 8, border: `1.5px solid ${T.teal}`, fontSize: 13, fontWeight: 700, fontFamily: "inherit", color: T.text, outline: "none" }} />
+                    <button onClick={() => setSelections(prev => { const n = new Map(prev); const s = n.get(key); n.set(key, { ...s, grams: s.grams + 10 }); return n; })}
+                      aria-label="Più 10 grammi" style={{ width: 26, height: 26, borderRadius: 6, border: `1px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: T.text }}>+</button>
+                    <span style={{ fontSize: 10, color: T.textMuted }}>g</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: T.teal, marginLeft: "auto" }}>{Math.round(k100 * (selections.get(key).grams / 100))} kcal</span>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -593,6 +698,9 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
     </div>
   );
 };
+
+// ─── HAPTIC FEEDBACK HELPER ───────────────────────────────
+const haptic = (ms = 10) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
 
 // ─── COMPONENT ────────────────────────────────────────────
 const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoals: nutritionGoalsProp }, ref) => {
@@ -623,6 +731,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   const [showSavePopup, setShowSavePopup] = useState(null); // null or mealType
   const [saveMealName, setSaveMealName] = useState("");
   const [showLoadPopup, setShowLoadPopup] = useState(null); // null or mealType
+  const [showCopyDay, setShowCopyDay] = useState(false);
   const [toast, setToast] = useState("");
 
   // Scanner state
@@ -632,19 +741,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   const [scanStatus, setScanStatus] = useState("");
   const [verifyProgress, setVerifyProgress] = useState(0);
 
-  // Goals state
-  const [localGoals, setLocalGoals] = useState(nutritionGoals);
-  const [useManual, setUseManual] = useState(false);
-  const [manualKcal, setManualKcal] = useState(nutritionGoals.kcalTarget);
-  const [goalAge, setGoalAge] = useState(25);
-  const [goalSex, setGoalSex] = useState("M");
-  const [goalActivity, setGoalActivity] = useState(1.55);
-  const [goalWeight, setGoalWeight] = useState(settings?.goalWeight || 75);
-  const [goalHeight, setGoalHeight] = useState(settings?.height || 175);
-
-  // Confronti + Dettaglio card state
-  const [compTab, setCompTab] = useState("week"); // "week" | "month"
+  // Dettaglio card + Report state
   const [detailPeriod, setDetailPeriod] = useState("week");
+  const [reportWeekIdx, setReportWeekIdx] = useState(0);
   const [detailWeekIdx, setDetailWeekIdx] = useState(0);
   const [detailMonthIdx, setDetailMonthIdx] = useState(0);
   const [detailMetric, setDetailMetric] = useState("kcal");
@@ -716,13 +815,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     return () => { active = false; };
   }, [showAddSheet]);
 
-  // Sync localGoals with nutritionGoals
-  useEffect(() => {
-    setLocalGoals(nutritionGoals);
-    setManualKcal(nutritionGoals.kcalTarget);
-  }, [nutritionGoals]);
-
-  // ── Load Confronti + Dettaglio data ────────────────────
+  // ── Load Dettaglio data ─────────────────────────────────
   useEffect(() => {
     let active = true;
     const loadComparisonData = async () => {
@@ -865,6 +958,25 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     setSelectedDate(d.toISOString().split("T")[0]);
   };
 
+  // Track which dates have food data (loaded async)
+  const [datesWithData, setDatesWithData] = useState(new Set());
+  useEffect(() => {
+    let active = true;
+    const loadWeekData = async () => {
+      const dates = [];
+      for (let i = -3; i <= 3; i++) {
+        const d = new Date(selectedDate + "T12:00:00");
+        d.setDate(d.getDate() + i);
+        dates.push(d.toISOString().split("T")[0]);
+      }
+      const start = dates[0], end = dates[dates.length - 1];
+      const totals = await getDailyTotalsForRange(start, end);
+      if (active) setDatesWithData(new Set(totals.map(t => t.date)));
+    };
+    loadWeekData();
+    return () => { active = false; };
+  }, [selectedDate, foodEntries]);
+
   const getWeekDays = () => {
     const days = [];
     for (let i = -3; i <= 3; i++) {
@@ -877,7 +989,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         dayName: dayNamesShort[d.getDay()],
         isToday: ds === todayStr,
         isSelected: ds === selectedDate,
-        hasFoodData: true,
+        hasFoodData: datesWithData.has(ds),
       });
     }
     return days;
@@ -1192,6 +1304,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   };
 
   const handleBarcodeDetected = async (code) => {
+    haptic(25);
     setScanLoading(true);
     const food = await lookupBarcode(code);
     setScanLoading(false);
@@ -1232,13 +1345,16 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
       isCheat: food.isCheat || false,
     };
     await addFoodEntry(entry);
+    addToSyncQueue("add", { date: selectedDate, foodName: entry.foodName }).catch(() => {});
     const updated = await getFoodEntriesByDate(selectedDate);
     setFoodEntries(updated);
     showToast("Cibo aggiunto");
   };
 
   const handleDeleteEntry = async (id) => {
+    haptic(20);
     await deleteFoodEntry(id);
+    addToSyncQueue("delete", { id }).catch(() => {});
     setFoodEntries((prev) => prev.filter((e) => e.id !== id));
     showToast("Eliminato");
   };
@@ -1273,6 +1389,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
       showToast("Inserisci un nome per il pasto");
       return;
     }
+    haptic(15);
     const items = getMealEntries(mealType);
     const totalKcal = items.reduce((s, i) => s + i.kcal, 0);
     const newMeal = { name: saveMealName, mealType, items, totalKcal };
@@ -1284,6 +1401,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   };
 
   const handleLoadMeal = async (meal) => {
+    haptic(15);
     for (const item of meal.items) {
       const grams = item.grams || 100;
       await handleAddFood(item, showLoadPopup, grams);
@@ -1292,17 +1410,38 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     showToast("Pasto caricato");
   };
 
-  // ── GOALS CALCULATIONS ──────────────────────────────────
-  const calculateBMR = () => {
-    if (goalSex === "M") return 10 * goalWeight + 6.25 * goalHeight - 5 * goalAge + 5;
-    return 10 * goalWeight + 6.25 * goalHeight - 5 * goalAge - 161;
-  };
-
-  const calculateTDEE = () => Math.round(calculateBMR() * goalActivity);
-
-  const handleSaveGoals = () => {
-    // Goals are now managed in profile section (WeightTrackerApp)
-    setFoodScreen("dashboard");
+  const handleCopyDay = async (sourceDate) => {
+    haptic(15);
+    const entries = await getFoodEntriesByDate(sourceDate);
+    if (entries.length === 0) {
+      showToast("Nessun cibo in quel giorno");
+      return;
+    }
+    const copies = entries.map((e) => ({
+      date: selectedDate,
+      mealType: e.mealType,
+      foodName: e.foodName,
+      brand: e.brand || "",
+      grams: e.grams,
+      kcal: e.kcal,
+      protein: e.protein,
+      carbs: e.carbs,
+      fat: e.fat,
+      kcalPer100: e.kcalPer100 || 0,
+      proteinPer100: e.proteinPer100 || 0,
+      carbsPer100: e.carbsPer100 || 0,
+      fatPer100: e.fatPer100 || 0,
+      fiberPer100: e.fiberPer100 || 0,
+      category: e.category || "Altro",
+      source: e.source || "local",
+      isCheat: e.isCheat || false,
+    }));
+    await addFoodEntries(copies);
+    addToSyncQueue("copy_day", { date: selectedDate, count: copies.length }).catch(() => {});
+    const updated = await getFoodEntriesByDate(selectedDate);
+    setFoodEntries(updated);
+    setShowCopyDay(false);
+    showToast(`${copies.length} cibi copiati`);
   };
 
   // ─── RENDER FUNCTIONS ──────────────────────────────────
@@ -1318,9 +1457,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
 
           {/* Top bar: close + title + flash */}
           <div style={{ position: "absolute", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 14px", zIndex: 5, background: "linear-gradient(to bottom, rgba(0,0,0,0.65), transparent)" }}>
-            <button onClick={stopScanner} style={{ width: 36, height: 36, background: "rgba(0,0,0,0.4)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", color: "#fff", fontSize: 18 }}>✕</button>
+            <button onClick={stopScanner} aria-label="Chiudi scanner" style={{ width: 36, height: 36, background: "rgba(0,0,0,0.4)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", color: "#fff", fontSize: 18 }}>✕</button>
             <div style={{ color: "#fff", fontSize: 13, fontWeight: 500 }}>Scansiona barcode</div>
-            <button onClick={toggleFlash} style={{ width: 36, height: 36, background: flashOn ? "rgba(2,192,154,0.5)" : "rgba(0,0,0,0.4)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", fontSize: 20 }}>🔦</button>
+            <button onClick={toggleFlash} aria-label={flashOn ? "Disattiva flash" : "Attiva flash"} style={{ width: 36, height: 36, background: flashOn ? "rgba(2,192,154,0.5)" : "rgba(0,0,0,0.4)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", fontSize: 20 }}>🔦</button>
           </div>
 
           {/* Corner viewfinder */}
@@ -1427,64 +1566,6 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
 
     // Product found — handled directly in handleBarcodeDetected (skips to gram editor)
     return null;
-  };
-
-  // ── CONFRONTI CARD ──────────────────────────────────────
-  const renderConfrontiCard = () => {
-    const data = compTab === "week" ? compData.weeks : compData.months;
-    if (!data || data.length === 0) return null;
-
-    return (
-      <div style={{ background: T.card, borderRadius: 18, padding: "12px 14px", boxShadow: T.shadow }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Confronti</div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {[["week", "Sett."], ["month", "Mesi"]].map(([key, label]) => (
-              <button key={key} onClick={() => setCompTab(key)} style={{
-                padding: "4px 10px", borderRadius: 8, border: "none", fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                background: compTab === key ? T.teal : "#F0F2F5", color: compTab === key ? "#fff" : T.textSec,
-              }}>{label}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Header row */}
-        <div style={{ display: "flex", alignItems: "center", padding: "0 10px 6px", borderBottom: `1px solid ${T.border}`, marginBottom: 4 }}>
-          <div style={{ flex: 1, fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>Periodo</div>
-          <span style={{ width: 32, textAlign: "center", fontSize: 9, fontWeight: 700, color: "#E85D4E" }}>G</span>
-          <span style={{ width: 32, textAlign: "center", fontSize: 9, fontWeight: 700, color: "#F0B429" }}>C</span>
-          <span style={{ width: 32, textAlign: "center", fontSize: 9, fontWeight: 700, color: "#3B82F6" }}>P</span>
-          <span style={{ width: 42, textAlign: "right", fontSize: 9, fontWeight: 700, color: T.textMuted }}>kcal</span>
-        </div>
-
-        {/* Period rows */}
-        {data.slice(0, 4).map((w) => (
-          <div key={w.label} style={{
-            display: "flex", alignItems: "center", padding: "8px 10px", borderRadius: 10, marginBottom: 4,
-            background: w.isCurrent ? "#F8FAFB" : "transparent",
-            borderLeft: w.isCurrent ? `3px solid ${T.teal}` : "3px solid transparent",
-          }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{w.label}</div>
-              <div style={{ fontSize: 8, color: T.textMuted, marginTop: 1 }}>{w.dateLabel}</div>
-            </div>
-            <span style={{ width: 32, textAlign: "center", fontSize: 12, fontWeight: 900, color: "#E85D4E" }}>{w.avg.g}</span>
-            <span style={{ width: 32, textAlign: "center", fontSize: 12, fontWeight: 900, color: "#F0B429" }}>{w.avg.c}</span>
-            <span style={{ width: 32, textAlign: "center", fontSize: 12, fontWeight: 900, color: "#3B82F6" }}>{w.avg.p}</span>
-            <span style={{ width: 42, textAlign: "right", fontSize: 15, fontWeight: 900, color: T.text }}>{w.avg.kcal}</span>
-          </div>
-        ))}
-
-        <button style={{
-          width: "100%", padding: 8, border: `1px dashed ${T.border}`, borderRadius: 10,
-          background: "transparent", fontSize: 11, fontWeight: 700, color: T.teal,
-          cursor: "pointer", fontFamily: "inherit",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 4,
-        }}>
-          Vedi {compTab === "week" ? "tutte le settimane" : "tutti i mesi"} ›
-        </button>
-      </div>
-    );
   };
 
   // ── DETTAGLIO BAR CHART CARD ───────────────────────────
@@ -1785,16 +1866,24 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           {renderDettaglioCard()}
         </div>
 
-        {/* ─── Report Button ─── */}
-        <div style={{ padding: "0 16px 16px" }}>
+        {/* ─── Action Buttons ─── */}
+        <div style={{ padding: "0 16px 16px", display: "flex", gap: 10 }}>
           <button onClick={() => setFoodScreen("reports")} aria-label="Vedi report calorie" style={{
-            width: "100%", padding: 14, borderRadius: 14, border: `1.5px solid ${T.border}`,
+            flex: 1, padding: 14, borderRadius: 14, border: `1.5px solid ${T.border}`,
             background: T.card, cursor: "pointer", fontFamily: "inherit", boxShadow: T.shadow,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           }}>
             <BarChart3 size={16} color={T.teal} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Report Calorie</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Report</span>
             <ChevronRight size={14} color={T.textMuted} />
+          </button>
+          <button onClick={() => setShowCopyDay(true)} aria-label="Copia giorno" style={{
+            flex: 1, padding: 14, borderRadius: 14, border: `1.5px solid ${T.border}`,
+            background: T.card, cursor: "pointer", fontFamily: "inherit", boxShadow: T.shadow,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <Copy size={16} color={T.purple} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Copia Giorno</span>
           </button>
         </div>
 
@@ -1856,6 +1945,11 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             onClose={() => setShowLoadPopup(null)} T={T} />
         )}
 
+        {/* Copy day sheet */}
+        {showCopyDay && (
+          <CopyDaySheet selectedDate={selectedDate} onCopy={handleCopyDay} onClose={() => setShowCopyDay(false)} T={T} />
+        )}
+
         {/* Add food sheet */}
         {showAddSheet && (
           <AddFoodSheet mealType={showAddSheet === "_barcode_" ? addSheetMeal : showAddSheet} recents={addSheetRecents}
@@ -1909,106 +2003,18 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     );
   };
 
-  const renderGoals = () => {
-    return (
-      <div style={{ padding: "20px 16px 100px", minHeight: "100vh", background: T.bg }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 20 }}>Impostazioni Obiettivi</div>
-
-        <div style={{ background: T.card, borderRadius: 16, padding: 20, marginBottom: 20, boxShadow: T.shadow }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 16 }}>Metodo di calcolo</div>
-
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 12 }}>
-              <input type="radio" checked={!useManual} onChange={() => setUseManual(false)} style={{ width: 18, height: 18, cursor: "pointer" }} />
-              <span style={{ fontSize: 14, color: T.text, fontWeight: 500 }}>Calcola da peso/altezza</span>
-            </label>
-
-            {!useManual && (
-              <div style={{ background: T.tealLight, padding: 14, borderRadius: 12, marginLeft: 28 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                  <div>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>Sesso</label>
-                    <select value={goalSex} onChange={(e) => setGoalSex(e.target.value)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit" }}>
-                      <option value="M">Uomo</option>
-                      <option value="F">Donna</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>Età</label>
-                    <input type="tel" inputMode="numeric" value={goalAge} onChange={(e) => setGoalAge(parseInt(e.target.value.replace(/\D/g, "")) || 25)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
-                  </div>
-                  <div>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>Peso (kg)</label>
-                    <input type="tel" inputMode="numeric" value={goalWeight} onChange={(e) => setGoalWeight(parseInt(e.target.value.replace(/\D/g, "")) || 75)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
-                  </div>
-                  <div>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>Altezza (cm)</label>
-                    <input type="tel" inputMode="numeric" value={goalHeight} onChange={(e) => setGoalHeight(parseInt(e.target.value.replace(/\D/g, "")) || 175)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
-                  </div>
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>Attività fisica</label>
-                  <select value={goalActivity} onChange={(e) => setGoalActivity(parseFloat(e.target.value))} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}>
-                    <option value="1.2">Sedentaria</option>
-                    <option value="1.375">Lieve (1-3 giorni/sett)</option>
-                    <option value="1.55">Moderata (3-5 giorni/sett)</option>
-                    <option value="1.725">Intenso (6-7 giorni/sett)</option>
-                    <option value="1.9">Molto intenso</option>
-                  </select>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-              <input type="radio" checked={useManual} onChange={() => setUseManual(true)} style={{ width: 18, height: 18, cursor: "pointer" }} />
-              <span style={{ fontSize: 14, color: T.text, fontWeight: 500 }}>Inserisci manualmente</span>
-            </label>
-
-            {useManual && (
-              <div style={{ background: "#F0F2F5", padding: 14, borderRadius: 12, marginLeft: 28, marginTop: 10 }}>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.textSec, marginBottom: 6 }}>kcal giornaliere</label>
-                <input type="tel" inputMode="numeric" value={manualKcal} onChange={(e) => setManualKcal(parseInt(e.target.value.replace(/\D/g, "")) || 2000)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "none", fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div style={{ background: T.card, borderRadius: 16, padding: 20, marginBottom: 20, boxShadow: T.shadow }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 16 }}>Distribuzione Macro</div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-            {[
-              { label: "Proteine", key: "proteinPct", color: "#3B82F6" },
-              { label: "Carbs", key: "carbsPct", color: "#F0B429" },
-              { label: "Grassi", key: "fatPct", color: "#E85D4E" },
-            ].map((m) => (
-              <div key={m.key} style={{ background: "#F0F2F5", padding: 12, borderRadius: 12 }}>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: m.color, marginBottom: 8 }}>{m.label}</label>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <input type="range" min="0" max="100" value={localGoals[m.key]} onChange={(e) => setLocalGoals((prev) => ({ ...prev, [m.key]: parseInt(e.target.value) }))} style={{ flex: 1 }} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: T.text, minWidth: 30 }}>{localGoals[m.key]}%</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <button onClick={handleSaveGoals} style={{ width: "100%", padding: 16, borderRadius: 14, border: "none", background: T.gradient, color: "#fff", fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", marginBottom: 10 }}>
-          Salva Obiettivi
-        </button>
-        <button onClick={() => setFoodScreen("dashboard")} style={{ width: "100%", padding: 16, borderRadius: 14, border: `1.5px solid ${T.border}`, background: "transparent", color: T.text, fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}>
-          Annulla
-        </button>
-      </div>
-    );
-  };
-
   const renderReports = () => {
-    // Use real data from compData (loaded via useEffect from Dexie)
-    const currentWeek = compData.weeks && compData.weeks[0];
-    const chartData = currentWeek ? currentWeek.days : dayNamesShort.slice(1).concat(dayNamesShort[0]).map(n => ({ label: n, kcal: 0 }));
+    // Use real data from compData with week navigation
+    const weeks = compData.weeks || [];
+    const maxWeekIdx = weeks.length - 1;
+    const safeIdx = Math.min(reportWeekIdx, Math.max(0, maxWeekIdx));
+    const currentWeek = weeks[safeIdx];
+    const chartData = currentWeek ? currentWeek.days : dayNamesShort.slice(1).concat(dayNamesShort[0]).map(n => ({ label: n, kcal: 0, p: 0, c: 0, g: 0 }));
+    const canPrev = safeIdx < maxWeekIdx;
+    const canNext = safeIdx > 0;
+
+    // Identify today's day-of-week index (Mon=0) for highlight
+    const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
 
     const pieData = [];
     const dayTotals = getDayTotals();
@@ -2023,9 +2029,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
 
     return (
       <div style={{ padding: "0 0 100px", background: T.bg }}>
-        {/* Header with back button */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 16px 12px" }}>
-          <button onClick={() => setFoodScreen("dashboard")} aria-label="Torna alla dashboard" style={{
+        {/* Sticky header with back button */}
+        <div style={{ position: "sticky", top: 0, zIndex: 10, background: T.bg, display: "flex", alignItems: "center", gap: 12, padding: "16px 16px 12px" }}>
+          <button onClick={() => { setFoodScreen("dashboard"); setReportWeekIdx(0); }} aria-label="Torna alla dashboard" style={{
             width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none",
             display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal,
           }}><ChevronLeft size={18} /></button>
@@ -2033,7 +2039,25 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         </div>
 
         <div style={{ padding: "0 16px" }}>
-          {/* Weekly bar chart */}
+          {/* Week navigation */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <button onClick={() => canPrev && setReportWeekIdx(safeIdx + 1)} aria-label="Settimana precedente" style={{
+              width: 30, height: 30, borderRadius: 8, border: "none", cursor: canPrev ? "pointer" : "default",
+              background: canPrev ? "#F0F2F5" : "transparent", color: canPrev ? T.text : "#ddd",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
+            }}>‹</button>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{currentWeek ? currentWeek.periodLabel : "—"}</div>
+              {safeIdx === 0 && <div style={{ fontSize: 9, color: T.mint, fontWeight: 600 }}>Settimana corrente</div>}
+            </div>
+            <button onClick={() => canNext && setReportWeekIdx(safeIdx - 1)} aria-label="Settimana successiva" style={{
+              width: 30, height: 30, borderRadius: 8, border: "none", cursor: canNext ? "pointer" : "default",
+              background: canNext ? "#F0F2F5" : "transparent", color: canNext ? T.text : "#ddd",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
+            }}>›</button>
+          </div>
+
+          {/* Weekly kcal bar chart with today highlight */}
           <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>
               <BarChart3 size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.teal} />
@@ -2046,9 +2070,39 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                 <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
                 <Tooltip contentStyle={{ borderRadius: 12, border: "none", boxShadow: T.shadow, fontSize: 12 }} />
                 <ReferenceLine y={nutritionGoals.kcalTarget} stroke={T.coral} strokeDasharray="5 5" label={{ value: "Obiettivo", fontSize: 9, fill: T.coral }} />
-                <Bar dataKey="kcal" fill={T.teal} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="kcal" radius={[4, 4, 0, 0]}>
+                  {chartData.map((_, i) => (
+                    <Cell key={i} fill={safeIdx === 0 && i === todayDow ? T.mint : T.teal} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </div>
+
+          {/* Macro stacked bar chart for the week */}
+          <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>
+              Macro Settimanali (g)
+            </div>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.textMuted }} />
+                <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                <Tooltip contentStyle={{ borderRadius: 12, border: "none", boxShadow: T.shadow, fontSize: 12 }} />
+                <Bar dataKey="p" name="Proteine" stackId="macro" fill={MC.protein} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="c" name="Carbs" stackId="macro" fill={MC.carbs} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="g" name="Grassi" stackId="macro" fill={MC.fat} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 8 }}>
+              {[{ label: "Proteine", color: MC.protein }, { label: "Carbs", color: MC.carbs }, { label: "Grassi", color: MC.fat }].map(l => (
+                <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 2, background: l.color }} />
+                  <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600 }}>{l.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Macro pie chart */}
@@ -2080,20 +2134,23 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             </div>
           )}
 
-          {/* Stats grid */}
+          {/* Stats grid with units */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             {[
-              { label: "Media kcal", value: `${avgKcal}`, icon: <Flame size={16} color={T.coral} /> },
-              { label: "Obiettivo", value: `${nutritionGoals.kcalTarget}`, icon: <Target size={16} color={T.teal} /> },
-              { label: "Giorno max", value: `${maxKcal}`, icon: <TrendingUp size={16} color={T.gold} /> },
-              { label: "Giorno min", value: `${minKcal}`, icon: <Activity size={16} color={MC.protein} /> },
+              { label: "Media", value: avgKcal, unit: "kcal", icon: <Flame size={16} color={T.coral} /> },
+              { label: "Obiettivo", value: nutritionGoals.kcalTarget, unit: "kcal", icon: <Target size={16} color={T.teal} /> },
+              { label: "Giorno max", value: maxKcal, unit: "kcal", icon: <TrendingUp size={16} color={T.gold} /> },
+              { label: "Giorno min", value: minKcal, unit: "kcal", icon: <Activity size={16} color={MC.protein} /> },
             ].map((stat) => (
               <div key={stat.label} style={{ background: T.card, borderRadius: 14, padding: 14, boxShadow: T.shadow }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                   {stat.icon}
                   <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 600 }}>{stat.label}</span>
                 </div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: T.text }}>{stat.value}</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                  <span style={{ fontSize: 20, fontWeight: 800, color: T.text }}>{stat.value}</span>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: T.textMuted }}>{stat.unit}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -2106,7 +2163,6 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
       {foodScreen === "dashboard" && renderDashboard()}
-      {foodScreen === "goals" && renderGoals()}
       {foodScreen === "reports" && renderReports()}
 
       {renderScanner()}
