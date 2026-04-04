@@ -1,17 +1,18 @@
 import "./globals.css";
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#028090",
+};
+
 export const metadata = {
   title: "Weight Tracker",
   description: "Traccia il tuo peso e raggiungi i tuoi obiettivi",
   manifest: "/manifest.json",
-  themeColor: "#028090",
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-    viewportFit: "cover",
-  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
