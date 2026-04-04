@@ -7,23 +7,23 @@ import React, {
   forwardRef, useImperativeHandle,
 } from "react";
 import {
-  BarChart, Bar, PieChart, Pie, Cell, ComposedChart, Line, Area,
+  BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ReferenceLine, Legend,
+  ReferenceLine,
 } from "recharts";
 import {
   Search, Plus, X, Check, ChevronLeft, ChevronRight, ChevronDown,
   ChevronUp, Trash2, Camera, Target, BarChart3, Calendar,
   Clock, Star, Flame, Activity, TrendingUp, ScanLine, Settings, Zap,
-  Bookmark, Download, Minus, Pizza, ArrowLeft, Copy,
+  Bookmark, Download, Minus, Pizza, ArrowLeft,
 } from "lucide-react";
 import { FOOD_DATABASE as EXTERNAL_DB } from "./food-database";
 import {
-  getFoodEntriesByDate, addFoodEntry, addFoodEntries,
+  getFoodEntriesByDate, addFoodEntry,
   deleteFoodEntry, updateFoodEntry, cacheFood,
   getCachedFoodByBarcode, searchCachedFoods,
   getRecentFoodsByMeal, getAllCachedFoods, getLastEntryByFoodName,
-  getDailyTotalsForRange,
+  getDailyTotalsForRange, getFoodEntriesByDateRange, getGoalForDate,
   getSavedMeals, addSavedMeal, deleteSavedMeal,
 } from "../lib/food-db";
 
@@ -79,20 +79,6 @@ const ValuesRow = ({ gr, g, c, p, kcal, grColor, gColor, cColor, pColor, kcalCol
   </div>
 );
 
-const MacroRowCompact = ({ grams, kcalPer100, fatPer100, carbsPer100, proteinPer100, T }) => {
-  const m = grams / 100;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 0, flexShrink: 0 }}>
-      <span style={{ width: 32, textAlign: "right", fontSize: 11, fontWeight: 700, color: T.mint }}>{grams}</span>
-      <span style={{ width: 8 }} />
-      <span style={{ width: 26, textAlign: "right", fontSize: 10, fontWeight: 600, color: "#E85D4E" }}>{Math.round(fatPer100 * m)}</span>
-      <span style={{ width: 26, textAlign: "right", fontSize: 10, fontWeight: 600, color: "#F0B429" }}>{Math.round(carbsPer100 * m)}</span>
-      <span style={{ width: 26, textAlign: "right", fontSize: 10, fontWeight: 600, color: "#3B82F6" }}>{Math.round(proteinPer100 * m)}</span>
-      <span style={{ width: 34, textAlign: "right", fontSize: 10, fontWeight: 700, color: T.text }}>{Math.round(kcalPer100 * m)}</span>
-    </div>
-  );
-};
-
 // ─── SWIPEABLE ITEM (REPLACED) ──────────────────────────
 const SwipeableItem = ({ entry, onDelete, onTap, T }) => {
   const [offsetX, setOffsetX] = useState(0);
@@ -132,9 +118,32 @@ const SwipeableItem = ({ entry, onDelete, onTap, T }) => {
 // ─── GRAM EDITOR MODAL (REPLACED renderGramPopup) ───────
 const GramEditorModal = ({ entry, onSave, onClose, onMoveMeal, currentMealType, T }) => {
   const [grams, setGrams] = useState(entry.grams || entry.lastGrams || 100);
+  const [showNumpad, setShowNumpad] = useState(false);
+  const [numpadBuf, setNumpadBuf] = useState("");
   const [showMovePicker, setShowMovePicker] = useState(false);
   const m = grams / 100;
   const pv = { kcal: Math.round((entry.kcalPer100||0)*m), protein: +((entry.proteinPer100||0)*m).toFixed(1), carbs: +((entry.carbsPer100||0)*m).toFixed(1), fat: +((entry.fatPer100||0)*m).toFixed(1) };
+
+  const openNumpad = () => { setShowNumpad(true); setNumpadBuf(String(grams)); };
+  const numpadType = (digit) => {
+    const next = numpadBuf === "0" ? digit : (numpadBuf + digit).slice(0, 5);
+    setNumpadBuf(next); setGrams(parseInt(next) || 0);
+  };
+  const numpadDel = () => {
+    const next = numpadBuf.slice(0, -1);
+    setNumpadBuf(next); setGrams(parseInt(next) || 0);
+  };
+  const numpadDone = () => { if (grams < 1) setGrams(1); setShowNumpad(false); };
+
+  const stepBtnStyle = (big) => ({
+    width: big ? 40 : 36, height: big ? 40 : 36, borderRadius: big ? 12 : 10,
+    border: `1.5px solid ${T.border}`, background: "#fff", cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: big ? 11 : 16, fontWeight: big ? 700 : 600, color: big ? T.textMuted : T.text,
+    fontFamily: "inherit",
+  });
+
+  const numBtnStyle = { height: 44, borderRadius: 12, border: `1.5px solid ${T.border}`, background: "#fff", fontSize: 18, fontWeight: 600, color: T.text, cursor: "pointer", fontFamily: "inherit" };
 
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={onClose}>
@@ -146,15 +155,37 @@ const GramEditorModal = ({ entry, onSave, onClose, onMoveMeal, currentMealType, 
           <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 4 }}>{entry.kcalPer100} kcal per 100g</div>
         </div>
         <div style={{ padding: "20px 22px 24px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginBottom: 18 }}>
-            <button onClick={() => setGrams(Math.max(1, grams - 10))} aria-label="Meno 10 grammi" style={{ width: 44, height: 44, borderRadius: 14, border: `2px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><Minus size={18} /></button>
+          {/* Gram controls: -10, -1, [number], +1, +10 */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 18 }}>
+            <button onClick={() => setGrams(Math.max(1, grams - 10))} aria-label="-10g" style={stepBtnStyle(true)}>-10</button>
+            <button onClick={() => setGrams(Math.max(1, grams - 1))} aria-label="-1g" style={stepBtnStyle(false)}>−</button>
             <div style={{ position: "relative" }}>
-              <input type="tel" inputMode="numeric" pattern="[0-9]*" value={grams} onChange={(e) => setGrams(Math.max(0, parseInt(e.target.value.replace(/\D/g, "")) || 0))} autoFocus
-                style={{ width: 90, height: 52, borderRadius: 16, border: `2px solid ${T.teal}`, textAlign: "center", fontSize: 26, fontWeight: 800, fontFamily: "inherit", color: T.text, outline: "none", background: T.tealLight }} />
+              <div onClick={openNumpad} style={{
+                width: 90, height: 52, borderRadius: 16, border: `2px solid ${showNumpad ? T.mint : T.teal}`,
+                textAlign: "center", fontSize: 26, fontWeight: 800, color: T.text,
+                background: showNumpad ? `${T.mint}18` : T.tealLight,
+                display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                boxShadow: showNumpad ? `0 0 0 3px ${T.mint}22` : "none", transition: "all 0.2s",
+              }}>{grams}</div>
               <div style={{ position: "absolute", bottom: -6, left: "50%", transform: "translateX(-50%)", fontSize: 9, fontWeight: 700, color: T.teal, background: "#fff", padding: "0 6px" }}>grammi</div>
             </div>
-            <button onClick={() => setGrams(grams + 10)} aria-label="Più 10 grammi" style={{ width: 44, height: 44, borderRadius: 14, border: `2px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><Plus size={18} /></button>
+            <button onClick={() => setGrams(grams + 1)} aria-label="+1g" style={stepBtnStyle(false)}>+</button>
+            <button onClick={() => setGrams(grams + 10)} aria-label="+10g" style={stepBtnStyle(true)}>+10</button>
           </div>
+
+          {/* Numpad — only shown when tapping the number */}
+          {showNumpad && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, maxWidth: 220, margin: "0 auto 16px" }}>
+              {["1","2","3","4","5","6","7","8","9"].map(d => (
+                <button key={d} onClick={() => numpadType(d)} style={numBtnStyle}>{d}</button>
+              ))}
+              <button onClick={numpadDel} style={{ ...numBtnStyle, fontSize: 14, color: T.coral }}>⌫</button>
+              <button onClick={() => numpadType("0")} style={numBtnStyle}>0</button>
+              <button onClick={numpadDone} style={{ ...numBtnStyle, background: T.gradient, color: "#fff", border: "none", fontSize: 14, fontWeight: 700 }}>OK</button>
+            </div>
+          )}
+
+          {/* Macro preview */}
           <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 16, fontSize: 12 }}>
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>{pv.kcal}</div>
@@ -420,75 +451,6 @@ const LoadMealSheet = ({ mealType, savedMeals, onLoad, onDelete, onClose, T }) =
 };
 
 // ─── COPY DAY SHEET ─────────────────────────────────────
-const CopyDaySheet = ({ selectedDate, onCopy, onClose, T }) => {
-  const [recentDays, setRecentDays] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      // Get last 14 days (excluding today/selectedDate)
-      const days = [];
-      for (let i = 1; i <= 14; i++) {
-        const d = new Date(selectedDate + "T12:00:00");
-        d.setDate(d.getDate() - i);
-        days.push(d.toISOString().split("T")[0]);
-      }
-      const start = days[days.length - 1];
-      const end = days[0];
-      const totals = await getDailyTotalsForRange(start, end);
-      const totMap = {};
-      totals.forEach((t) => { totMap[t.date] = t; });
-      const result = days.filter((d) => totMap[d]).map((d) => ({ date: d, ...totMap[d] }));
-      if (active) { setRecentDays(result); setLoading(false); }
-    };
-    load();
-    return () => { active = false; };
-  }, [selectedDate]);
-
-  const fmtDate = (ds) => {
-    const d = new Date(ds + "T12:00:00");
-    const dayNames = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
-    return `${dayNames[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`;
-  };
-
-  return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.45)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 440, borderRadius: "24px 24px 0 0", maxHeight: "60vh", display: "flex", flexDirection: "column", animation: "slideUp .3s ease-out" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ width: 36, height: 4, background: "#ddd", borderRadius: 2, margin: "10px auto" }} />
-        <div style={{ padding: "4px 20px 12px" }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>Copia Giorno</div>
-          <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>Copia tutti i cibi da un altro giorno</div>
-        </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 20px" }}>
-          {loading ? (
-            <div style={{ textAlign: "center", padding: 30, color: T.textMuted, fontSize: 13 }}>Caricamento...</div>
-          ) : recentDays.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 30, color: T.textMuted, fontSize: 13 }}>Nessun giorno con dati trovato</div>
-          ) : (
-            recentDays.map((day) => (
-              <button key={day.date} onClick={() => onCopy(day.date)} style={{
-                width: "100%", padding: "14px 16px", borderRadius: 14, border: `1.5px solid ${T.border}`,
-                background: T.card, cursor: "pointer", fontFamily: "inherit", marginBottom: 8,
-                display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left",
-              }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{fmtDate(day.date)}</div>
-                  <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{Math.round(day.kcal)} kcal</div>
-                </div>
-                <div style={{ display: "flex", gap: 8, fontSize: 10, fontWeight: 600 }}>
-                  <span style={{ color: "#E85D4E" }}>{Math.round(day.fat || 0)}G</span>
-                  <span style={{ color: "#F0B429" }}>{Math.round(day.carbs || 0)}C</span>
-                  <span style={{ color: "#3B82F6" }}>{Math.round(day.protein || 0)}P</span>
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // ─── ADD FOOD SHEET (REPLACED renderBottomSheet) ────────
 const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onScannerOpen, T, initialView, initialBarcode }) => {
@@ -548,6 +510,8 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
     }
   }, []);
 
+  const [editingFood, setEditingFood] = useState(null); // key of food being gram-edited
+
   const toggleSelection = (food) => {
     const key = food.foodName || food.name;
     setSelections((prev) => {
@@ -557,6 +521,15 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
       } else {
         next.set(key, { food, grams: food.defaultPortion || food.lastGrams || 100 });
       }
+      return next;
+    });
+  };
+
+  const updateGramsForFood = (key, newGrams) => {
+    setSelections((prev) => {
+      const next = new Map(prev);
+      const entry = next.get(key);
+      if (entry) next.set(key, { ...entry, grams: Math.max(1, newGrams) });
       return next;
     });
   };
@@ -648,33 +621,73 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
             const isSelected = selections.has(key);
             const k100 = food.kcalPer100 ?? food.kcal ?? 0;
             const portion = isSelected ? selections.get(key).grams : (food.defaultPortion || food.lastGrams || 100);
+            const pm = portion / 100;
+            const isEditing = editingFood === `${key}-${idx}`;
 
             return (
               <div key={`${key}-${idx}`} style={{ borderBottom: `1px solid ${T.border}` }}>
-                <div style={{ display: "flex", alignItems: "center", padding: "11px 0", cursor: "pointer", gap: 10 }} onClick={() => toggleSelection(food)}>
-                  <div style={{ width: 22, height: 22, borderRadius: 6, border: isSelected ? `2px solid ${T.teal}` : "2px solid #ddd", background: isSelected ? T.teal : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "all 0.2s", color: "#fff", fontSize: 13 }}>
+                {/* Main row: grams | name+brand | P C G kcal | checkbox */}
+                <div style={{ display: "flex", alignItems: "center", padding: "10px 0", gap: 0 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: T.mint, width: 36, textAlign: "right", flexShrink: 0, marginRight: 10 }}>{portion}g</span>
+                  <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => {
+                    // Clicking food name: auto-select if not selected, then open gram editor
+                    if (!isSelected) toggleSelection(food);
+                    setEditingFood(isEditing ? null : `${key}-${idx}`);
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {key}
+                      {food.brand && <span style={{ fontSize: 10, fontWeight: 400, color: T.textMuted, marginLeft: 5 }}>{food.brand}</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
+                    <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#3B82F6" }}>{Math.round((food.proteinPer100 || 0) * pm)}</span>
+                    <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#F0B429" }}>{Math.round((food.carbsPer100 || 0) * pm)}</span>
+                    <span style={{ width: 28, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#E85D4E" }}>{Math.round((food.fatPer100 || 0) * pm)}</span>
+                    <span style={{ width: 40, textAlign: "right", fontSize: 12, fontWeight: 800, color: T.text }}>{Math.round(k100 * pm)}</span>
+                  </div>
+                  <div onClick={() => toggleSelection(food)} style={{
+                    width: 22, height: 22, borderRadius: 6, marginLeft: 10,
+                    border: isSelected ? `2px solid ${T.teal}` : "2px solid #ddd",
+                    background: isSelected ? T.teal : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    flexShrink: 0, cursor: "pointer", transition: "all 0.2s", color: "#fff", fontSize: 13,
+                  }}>
                     {isSelected && <Check size={14} />}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{key}</div>
-                    {food.brand && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 1 }}>{food.brand}</div>}
-                  </div>
-                  <MacroRowCompact grams={portion} kcalPer100={k100} fatPer100={food.fatPer100 || 0} carbsPer100={food.carbsPer100 || 0} proteinPer100={food.proteinPer100 || 0} T={T} />
                 </div>
-                {isSelected && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 0 10px 32px" }}>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: T.textMuted }}>Grammi:</span>
-                    <button onClick={() => setSelections(prev => { const n = new Map(prev); const s = n.get(key); n.set(key, { ...s, grams: Math.max(1, s.grams - 10) }); return n; })}
-                      aria-label="Meno 10 grammi" style={{ width: 26, height: 26, borderRadius: 6, border: `1px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: T.text }}>−</button>
-                    <input type="tel" inputMode="numeric" value={selections.get(key).grams}
-                      onChange={(e) => { const v = Math.max(0, parseInt(e.target.value.replace(/\D/g, "")) || 0); setSelections(prev => { const n = new Map(prev); const s = n.get(key); n.set(key, { ...s, grams: v }); return n; }); }}
-                      style={{ width: 50, textAlign: "center", padding: "4px 6px", borderRadius: 8, border: `1.5px solid ${T.teal}`, fontSize: 13, fontWeight: 700, fontFamily: "inherit", color: T.text, outline: "none" }} />
-                    <button onClick={() => setSelections(prev => { const n = new Map(prev); const s = n.get(key); n.set(key, { ...s, grams: s.grams + 10 }); return n; })}
-                      aria-label="Più 10 grammi" style={{ width: 26, height: 26, borderRadius: 6, border: `1px solid ${T.border}`, background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: T.text }}>+</button>
-                    <span style={{ fontSize: 10, color: T.textMuted }}>g</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: T.teal, marginLeft: "auto" }}>{Math.round(k100 * (selections.get(key).grams / 100))} kcal</span>
-                  </div>
-                )}
+
+                {/* Inline gram editor (opens when tapping food name) */}
+                {isEditing && isSelected && (() => {
+                  const sel = selections.get(key);
+                  const g = sel ? sel.grams : portion;
+                  const em = g / 100;
+                  const stepBtn = (big) => ({
+                    width: big ? 36 : 30, height: big ? 36 : 30, borderRadius: big ? 10 : 8,
+                    border: `1.5px solid ${T.border}`, background: "#fff", cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: big ? 10 : 14, fontWeight: big ? 700 : 600, color: big ? T.textMuted : T.text,
+                    fontFamily: "inherit",
+                  });
+                  return (
+                    <div style={{ padding: "6px 0 12px", background: `${T.teal}04`, borderRadius: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 8 }}>
+                        <button onClick={() => updateGramsForFood(key, g - 10)} style={stepBtn(true)}>-10</button>
+                        <button onClick={() => updateGramsForFood(key, g - 1)} style={stepBtn(false)}>−</button>
+                        <input type="tel" inputMode="numeric" value={g}
+                          onChange={(e) => { const v = parseInt(e.target.value.replace(/\D/g, "")) || 0; updateGramsForFood(key, v); }}
+                          style={{ width: 68, height: 38, borderRadius: 10, border: `2px solid ${T.teal}`, textAlign: "center", fontSize: 20, fontWeight: 800, fontFamily: "inherit", color: T.text, outline: "none", background: T.tealLight }} />
+                        <button onClick={() => updateGramsForFood(key, g + 1)} style={stepBtn(false)}>+</button>
+                        <button onClick={() => updateGramsForFood(key, g + 10)} style={stepBtn(true)}>+10</button>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "center", gap: 14 }}>
+                        <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{Math.round(k100 * em)}</div><div style={{ fontSize: 8, color: T.textMuted }}>kcal</div></div>
+                        <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: "#3B82F6" }}>{((food.proteinPer100||0)*em).toFixed(1)}</div><div style={{ fontSize: 8, color: T.textMuted }}>P</div></div>
+                        <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: "#F0B429" }}>{((food.carbsPer100||0)*em).toFixed(1)}</div><div style={{ fontSize: 8, color: T.textMuted }}>C</div></div>
+                        <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: "#E85D4E" }}>{((food.fatPer100||0)*em).toFixed(1)}</div><div style={{ fontSize: 8, color: T.textMuted }}>G</div></div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -694,7 +707,7 @@ const AddFoodSheet = ({ mealType: initialMealType, recents, onAdd, onClose, onSc
 const haptic = (ms = 10) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
 
 // ─── COMPONENT ────────────────────────────────────────────
-const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoals: nutritionGoalsProp, onDataChange }, ref) => {
+const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoals: nutritionGoalsProp, goalHistory = [], onDataChange }, ref) => {
 
   // ── STATE ───────────────────────────────────────────────
   const [foodScreen, setFoodScreen] = useState("dashboard");
@@ -722,7 +735,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   const [showSavePopup, setShowSavePopup] = useState(null); // null or mealType
   const [saveMealName, setSaveMealName] = useState("");
   const [showLoadPopup, setShowLoadPopup] = useState(null); // null or mealType
-  const [showCopyDay, setShowCopyDay] = useState(false);
+
   const [toast, setToast] = useState("");
 
   // Scanner state
@@ -840,6 +853,11 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         const totalG = dailyTotals.reduce((s, d) => s + d.fat, 0);
         const divisor = daysWithData || 1;
 
+        // Meal distribution for week
+        const weekEntries = await getFoodEntriesByDateRange(start, end);
+        const mealKcal = { breakfast: 0, lunch: 0, dinner: 0, snack: 0 };
+        weekEntries.forEach(e => { if (mealKcal[e.mealType] !== undefined) mealKcal[e.mealType] += (e.kcal || 0); });
+
         // Build per-day chart data (Mon-Sun)
         const chartDays = [];
         for (let di = 0; di < 7; di++) {
@@ -849,13 +867,17 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           const dayEntry = dailyTotals.find(d => d.date === ds);
           chartDays.push({
             label: dayLabelsShort[di],
+            date: ds,
             kcal: dayEntry ? Math.round(dayEntry.kcal) : 0,
             p: dayEntry ? Math.round(dayEntry.protein) : 0,
             c: dayEntry ? Math.round(dayEntry.carbs) : 0,
             g: dayEntry ? Math.round(dayEntry.fat) : 0,
+            hasCheat: dayEntry ? dayEntry.hasCheat || false : false,
+            hasData: !!dayEntry,
           });
         }
 
+        const cheatCount = chartDays.filter(d => d.hasCheat).length;
         const dateLabel = `${mon.getDate()} ${monthNames[mon.getMonth()]} – ${sun.getDate()} ${monthNames[sun.getMonth()]}`;
         weeks.push({
           label: weekLabels[w] || `${w} settimane fa`,
@@ -864,6 +886,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           avg: { kcal: Math.round(totalKcal / divisor), p: Math.round(totalP / divisor), c: Math.round(totalC / divisor), g: Math.round(totalG / divisor) },
           days: chartDays,
           periodLabel: dateLabel,
+          mealKcal,
+          cheatCount,
         });
       }
 
@@ -905,6 +929,15 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           wNum++;
         }
 
+        // Meal distribution for month
+        const monthEntries = await getFoodEntriesByDateRange(start, end);
+        const monthMealKcal = { breakfast: 0, lunch: 0, dinner: 0, snack: 0 };
+        monthEntries.forEach(e => { if (monthMealKcal[e.mealType] !== undefined) monthMealKcal[e.mealType] += (e.kcal || 0); });
+
+        // Count cheat days in month (days that have at least one cheat entry)
+        const monthCheatDays = new Set();
+        monthEntries.forEach(e => { if (e.isCheat) monthCheatDays.add(e.date); });
+
         const dateLabel = `${monthLabelsFull[dt.getMonth()]} ${dt.getFullYear()}`;
         months.push({
           label: monthLabelsRel[m] || `${m} mesi fa`,
@@ -913,6 +946,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           avg: { kcal: Math.round(totalKcal / divisor), p: Math.round(totalP / divisor), c: Math.round(totalC / divisor), g: Math.round(totalG / divisor) },
           weeks: chartWeeks,
           periodLabel: dateLabel,
+          daysTracked: daysWithData,
+          mealKcal: monthMealKcal,
+          cheatCount: monthCheatDays.size,
         });
       }
 
@@ -952,38 +988,55 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     return d.toISOString().split("T")[0];
   };
 
+  const [viewWeekMonday, setViewWeekMonday] = useState(() => getMonday(selectedDate));
+
   const changeWeek = (delta) => {
-    const monday = getMonday(selectedDate);
-    const d = new Date(monday + "T12:00:00");
-    d.setDate(d.getDate() + delta * 7);
-    setSelectedDate(d.toISOString().split("T")[0]);
+    setViewWeekMonday((prev) => {
+      const d = new Date(prev + "T12:00:00");
+      d.setDate(d.getDate() + delta * 7);
+      return d.toISOString().split("T")[0];
+    });
   };
 
-  // Track which dates have food data (loaded async)
+  // Track which dates have food data + daily totals for week bar chart
   const [datesWithData, setDatesWithData] = useState(new Set());
+  const [weekBarData, setWeekBarData] = useState([]);
   useEffect(() => {
     let active = true;
     const loadWeekData = async () => {
-      const monday = getMonday(selectedDate);
       const dates = [];
       for (let i = 0; i < 7; i++) {
-        const d = new Date(monday + "T12:00:00");
+        const d = new Date(viewWeekMonday + "T12:00:00");
         d.setDate(d.getDate() + i);
         dates.push(d.toISOString().split("T")[0]);
       }
       const start = dates[0], end = dates[dates.length - 1];
       const totals = await getDailyTotalsForRange(start, end);
-      if (active) setDatesWithData(new Set(totals.map(t => t.date)));
+      const totMap = {};
+      totals.forEach(t => { totMap[t.date] = t; });
+      const bars = dates.map((ds, i) => {
+        const t = totMap[ds];
+        return {
+          date: ds,
+          label: dayNamesShort[new Date(ds + "T12:00:00").getDay()].charAt(0),
+          kcal: t ? Math.round(t.kcal) : 0,
+          hasData: !!t,
+          hasCheat: t ? t.hasCheat || false : false,
+        };
+      });
+      if (active) {
+        setDatesWithData(new Set(totals.map(t => t.date)));
+        setWeekBarData(bars);
+      }
     };
     loadWeekData();
     return () => { active = false; };
-  }, [selectedDate, foodEntries]);
+  }, [viewWeekMonday, foodEntries]);
 
   const getWeekDays = () => {
-    const monday = getMonday(selectedDate);
     const days = [];
     for (let i = 0; i < 7; i++) {
-      const d = new Date(monday + "T12:00:00");
+      const d = new Date(viewWeekMonday + "T12:00:00");
       d.setDate(d.getDate() + i);
       const ds = d.toISOString().split("T")[0];
       days.push({
@@ -1415,40 +1468,6 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     onDataChange?.();
   };
 
-  const handleCopyDay = async (sourceDate) => {
-    haptic(15);
-    const entries = await getFoodEntriesByDate(sourceDate);
-    if (entries.length === 0) {
-      showToast("Nessun cibo in quel giorno");
-      return;
-    }
-    const copies = entries.map((e) => ({
-      date: selectedDate,
-      mealType: e.mealType,
-      foodName: e.foodName,
-      brand: e.brand || "",
-      grams: e.grams,
-      kcal: e.kcal,
-      protein: e.protein,
-      carbs: e.carbs,
-      fat: e.fat,
-      kcalPer100: e.kcalPer100 || 0,
-      proteinPer100: e.proteinPer100 || 0,
-      carbsPer100: e.carbsPer100 || 0,
-      fatPer100: e.fatPer100 || 0,
-      fiberPer100: e.fiberPer100 || 0,
-      category: e.category || "Altro",
-      source: e.source || "local",
-      isCheat: e.isCheat || false,
-    }));
-    await addFoodEntries(copies);
-    const updated = await getFoodEntriesByDate(selectedDate);
-    setFoodEntries(updated);
-    setShowCopyDay(false);
-    showToast(`${copies.length} cibi copiati`);
-    onDataChange?.();
-  };
-
   // ─── RENDER FUNCTIONS ──────────────────────────────────
 
   const renderScanner = () => {
@@ -1683,8 +1702,18 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     );
   };
 
+  // Helper: get the kcal target for a specific date using goal history
+  const getKcalTargetForDate = (date) => {
+    if (goalHistory.length > 0) {
+      const goal = getGoalForDate(goalHistory, date);
+      if (goal) return goal.kcalTarget;
+    }
+    return nutritionGoals.kcalTarget;
+  };
+
   const renderDashboard = () => {
     const totals = getDayTotals();
+    const todayHasCheat = foodEntries.some(e => e.isCheat);
     const remaining = nutritionGoals.kcalTarget - totals.kcal;
     const isOver = remaining < 0;
     const pct = Math.min(100, Math.round((totals.kcal / nutritionGoals.kcalTarget) * 100));
@@ -1700,6 +1729,10 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
       { label: "Grassi", value: Math.round(totals.fat), target: fTarget, color: "#E85D4E" },
     ];
 
+    // Weekly bars: compute max for scaling, color each bar by goal
+    const maxBarKcal = Math.max(nutritionGoals.kcalTarget, ...weekBarData.map(d => d.kcal), 1);
+    const barMaxH = 50;
+
     return (
       <div style={{ padding: "0 0 100px" }}>
         {/* ─── Date Navigator ─── */}
@@ -1708,7 +1741,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             <button onClick={() => changeWeek(-1)} aria-label="Settimana precedente" style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
               <ChevronLeft size={18} />
             </button>
-            <div style={{ textAlign: "center", cursor: "pointer" }} onClick={() => setSelectedDate(todayStr)}>
+            <div style={{ textAlign: "center", cursor: "pointer" }} onClick={() => { setSelectedDate(todayStr); setViewWeekMonday(getMonday(todayStr)); }}>
               <div style={{ fontSize: 17, fontWeight: 800, color: T.text }}>{formatDateLabel(selectedDate)}</div>
               <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>{formatDateSub(selectedDate)}</div>
             </div>
@@ -1753,6 +1786,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                     <circle cx={65} cy={65} r={52} fill="none" stroke={T.coral} strokeWidth={10} strokeDasharray={circumference} strokeDashoffset={circumference - (overPct / 100) * circumference * 0.15} strokeLinecap="round" opacity={0.3} style={{ transform: "rotate(-90deg)", transformOrigin: "50% 50%", transition: "all 0.8s cubic-bezier(0.4, 0, 0.2, 1)" }} />
                   )}
                 </svg>
+                {todayHasCheat && (
+                  <div style={{ position: "absolute", top: 2, right: 2, width: 28, height: 28, borderRadius: "50%", background: "#FFF", boxShadow: "0 1px 4px rgba(0,0,0,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, lineHeight: 1 }}>🍕</div>
+                )}
                 <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
                   <div style={{ fontSize: 28, fontWeight: 900, color: isOver ? T.coral : T.text, lineHeight: 1 }}>{totals.kcal}</div>
                   <div style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 2 }}>kcal</div>
@@ -1793,6 +1829,69 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                 <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginTop: 3 }}>{stat.value}</div>
               </div>
             ))}
+          </div>
+
+          {/* ─── Weekly Trend Bars (Style D) ─── */}
+          <div style={{ padding: "14px 16px 16px", borderTop: `1px solid ${T.border}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Settimana</div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 6 }}>
+              {weekBarData.map((day) => {
+                const todayStr2 = today();
+                const isFuture = day.date > todayStr2;
+                const isToday = day.date === todayStr2;
+                const dayTarget = getKcalTargetForDate(day.date);
+                const isOverTarget = day.kcal > dayTarget;
+                const barH = day.kcal > 0 ? Math.max(4, (day.kcal / maxBarKcal) * barMaxH) : 0;
+                let barColor = T.teal;
+                if (isFuture || !day.hasData) barColor = "#E5E7EB";
+                else if (isToday) barColor = T.mint;
+                if (isOverTarget && day.hasData && !isFuture) barColor = T.coral;
+
+                return (
+                  <div key={day.date} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: (isFuture || !day.hasData) ? "#D1D5DB" : isOverTarget ? T.coral : T.text, lineHeight: 1 }}>
+                      {day.hasData && !isFuture ? day.kcal : ""}
+                    </div>
+                    <div style={{ width: "100%", height: barMaxH, position: "relative" }}>
+                      <div style={{
+                        position: "absolute", bottom: 0, left: "15%", width: "70%",
+                        height: barH, borderRadius: 4,
+                        background: isToday && !isOverTarget ? `linear-gradient(180deg, ${T.mint}, ${T.teal})` : barColor,
+                        transition: "height 0.4s ease",
+                        boxShadow: isToday ? `0 2px 8px ${T.mint}44` : "none",
+                      }} />
+                      {/* cheat badge on top-right of bar */}
+                      {day.hasCheat && day.hasData && !isFuture && barH > 0 && (
+                        <div style={{
+                          position: "absolute",
+                          bottom: barH - 6,
+                          right: "5%",
+                          width: 16, height: 16, borderRadius: "50%",
+                          background: "#FFF", boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 9, lineHeight: 1, zIndex: 2,
+                        }}>🍕</div>
+                      )}
+                      {/* target line */}
+                      {day.hasData && !isFuture && (
+                        <div style={{
+                          position: "absolute", bottom: Math.max(0, (dayTarget / maxBarKcal) * barMaxH),
+                          left: "5%", width: "90%", height: 1, background: `${T.coral}55`, borderRadius: 1,
+                        }} />
+                      )}
+                    </div>
+                    <div style={{
+                      fontSize: 10, fontWeight: isToday ? 800 : 600,
+                      color: isToday ? T.teal : T.textMuted, lineHeight: 1,
+                      width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                      background: isToday ? T.tealLight : "transparent",
+                    }}>
+                      {day.label}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -1892,14 +1991,6 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Report</span>
             <ChevronRight size={14} color={T.textMuted} />
           </button>
-          <button onClick={() => setShowCopyDay(true)} aria-label="Copia giorno" style={{
-            flex: 1, padding: 14, borderRadius: 14, border: `1.5px solid ${T.border}`,
-            background: T.card, cursor: "pointer", fontFamily: "inherit", boxShadow: T.shadow,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          }}>
-            <Copy size={16} color={T.purple} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Copia Giorno</span>
-          </button>
         </div>
 
         {/* Edit gram modal */}
@@ -1960,10 +2051,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             onClose={() => setShowLoadPopup(null)} T={T} />
         )}
 
-        {/* Copy day sheet */}
-        {showCopyDay && (
-          <CopyDaySheet selectedDate={selectedDate} onCopy={handleCopyDay} onClose={() => setShowCopyDay(false)} T={T} />
-        )}
+
 
         {/* Add food sheet */}
         {showAddSheet && (
@@ -2030,17 +2118,6 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
 
     // Identify today's day-of-week index (Mon=0) for highlight
     const todayDow = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
-
-    const pieData = [];
-    const dayTotals = getDayTotals();
-    if (dayTotals.protein > 0) pieData.push({ name: "Proteine", value: Math.round(dayTotals.protein * 4), color: MC.protein });
-    if (dayTotals.carbs > 0) pieData.push({ name: "Carbs", value: Math.round(dayTotals.carbs * 4), color: MC.carbs });
-    if (dayTotals.fat > 0) pieData.push({ name: "Grassi", value: Math.round(dayTotals.fat * 9), color: MC.fat });
-
-    const kcalValues = chartData.map(d => d.kcal).filter(v => v > 0);
-    const avgKcal = kcalValues.length > 0 ? Math.round(kcalValues.reduce((s, v) => s + v, 0) / kcalValues.length) : 0;
-    const maxKcal = kcalValues.length > 0 ? Math.max(...kcalValues) : 0;
-    const minKcal = kcalValues.length > 0 ? Math.min(...kcalValues) : 0;
 
     return (
       <div style={{ padding: "0 0 100px", background: T.bg }}>
@@ -2120,55 +2197,235 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             </div>
           </div>
 
-          {/* Macro pie chart */}
-          {pieData.length > 0 && (
-            <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>
-                Ripartizione Macros (oggi)
-              </div>
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <ResponsiveContainer width="50%" height={140}>
-                  <PieChart>
-                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} dataKey="value" startAngle={90} endAngle={-270}>
-                      {pieData.map((d, i) => (
-                        <Cell key={i} fill={d.color} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div style={{ flex: 1 }}>
-                  {pieData.map((d) => (
-                    <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: 3, background: d.color }} />
-                      <span style={{ fontSize: 12, color: T.textSec }}>{d.name}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: T.text, marginLeft: "auto" }}>{d.value} kcal</span>
+          {/* ─── 1. Week vs Week Comparison ─── */}
+          {(() => {
+            const thisWeek = weeks[safeIdx];
+            const lastWeek = weeks[safeIdx + 1];
+            if (!thisWeek || !lastWeek) return null;
+            const metrics = [
+              { label: "Kcal/giorno", key: "kcal", color: T.teal },
+              { label: "Proteine", key: "p", color: MC.protein },
+              { label: "Carbo", key: "c", color: MC.carbs },
+              { label: "Grassi", key: "g", color: MC.fat },
+            ];
+            return (
+              <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>
+                  <TrendingUp size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.teal} />
+                  Confronto Settimanale
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {metrics.map((m) => {
+                    const curr = thisWeek.avg[m.key];
+                    const prev = lastWeek.avg[m.key];
+                    const diff = curr - prev;
+                    const pctChange = prev > 0 ? Math.round((diff / prev) * 100) : 0;
+                    const isUp = diff > 0;
+                    return (
+                      <div key={m.key} style={{ flex: 1, background: `${m.color}0A`, borderRadius: 12, padding: "10px 6px", textAlign: "center" }}>
+                        <div style={{ fontSize: 9, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>{m.label}</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: m.color }}>{curr}</div>
+                        <div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>vs {prev}</div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, marginTop: 4 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: m.key === "kcal" ? (isUp ? T.coral : T.mint) : (isUp ? T.mint : T.coral) }}>
+                            {isUp ? "↑" : diff < 0 ? "↓" : "="}{Math.abs(pctChange)}%
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Cheat days row */}
+                {(thisWeek.cheatCount > 0 || lastWeek.cheatCount > 0) && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, padding: "8px 10px", background: `${T.coral}08`, borderRadius: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 14 }}>🍕</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted }}>Sgarri</span>
                     </div>
-                  ))}
-                </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: T.coral }}>{thisWeek.cheatCount}x</span>
+                      <span style={{ fontSize: 10, color: T.textMuted }}>vs</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.textMuted }}>{lastWeek.cheatCount}x</span>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
-          {/* Stats grid with units */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {[
-              { label: "Media", value: avgKcal, unit: "kcal", icon: <Flame size={16} color={T.coral} /> },
-              { label: "Obiettivo", value: nutritionGoals.kcalTarget, unit: "kcal", icon: <Target size={16} color={T.teal} /> },
-              { label: "Giorno max", value: maxKcal, unit: "kcal", icon: <TrendingUp size={16} color={T.gold} /> },
-              { label: "Giorno min", value: minKcal, unit: "kcal", icon: <Activity size={16} color={MC.protein} /> },
-            ].map((stat) => (
-              <div key={stat.label} style={{ background: T.card, borderRadius: 14, padding: 14, boxShadow: T.shadow }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                  {stat.icon}
-                  <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 600 }}>{stat.label}</span>
+          {/* ─── 2. Month vs Month Comparison ─── */}
+          {(() => {
+            const monthsData = compData.months || [];
+            const thisMonth = monthsData[0];
+            const lastMonth = monthsData[1];
+            if (!thisMonth || !lastMonth) return null;
+            const metrics = [
+              { label: "Kcal/giorno", key: "kcal", color: T.teal },
+              { label: "Proteine", key: "p", color: MC.protein },
+              { label: "Carbo", key: "c", color: MC.carbs },
+              { label: "Grassi", key: "g", color: MC.fat },
+            ];
+            return (
+              <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 6 }}>
+                  <Calendar size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.purple} />
+                  Confronto Mensile
                 </div>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                  <span style={{ fontSize: 20, fontWeight: 800, color: T.text }}>{stat.value}</span>
-                  <span style={{ fontSize: 11, fontWeight: 500, color: T.textMuted }}>{stat.unit}</span>
+                <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 12 }}>
+                  {thisMonth.periodLabel} vs {lastMonth.periodLabel}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {metrics.map((m) => {
+                    const curr = thisMonth.avg[m.key];
+                    const prev = lastMonth.avg[m.key];
+                    const diff = curr - prev;
+                    const pctChange = prev > 0 ? Math.round((diff / prev) * 100) : 0;
+                    const isUp = diff > 0;
+                    return (
+                      <div key={m.key} style={{ flex: 1, background: `${m.color}0A`, borderRadius: 12, padding: "10px 6px", textAlign: "center" }}>
+                        <div style={{ fontSize: 9, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>{m.label}</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: m.color }}>{curr}</div>
+                        <div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>vs {prev}</div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, marginTop: 4 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: m.key === "kcal" ? (isUp ? T.coral : T.mint) : (isUp ? T.mint : T.coral) }}>
+                            {isUp ? "↑" : diff < 0 ? "↓" : "="}{Math.abs(pctChange)}%
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Cheat days row */}
+                {(thisMonth.cheatCount > 0 || lastMonth.cheatCount > 0) && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, padding: "8px 10px", background: `${T.coral}08`, borderRadius: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 14 }}>🍕</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted }}>Sgarri</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: T.coral }}>{thisMonth.cheatCount}x</span>
+                      <span style={{ fontSize: 10, color: T.textMuted }}>vs</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.textMuted }}>{lastMonth.cheatCount}x</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ─── 3. Streak & Consistency ─── */}
+          {(() => {
+            // Calculate streak: consecutive days under kcal target ending today (or most recent tracked day)
+            const allDays = [];
+            weeks.forEach(w => w.days.forEach(d => { if (d.hasData) allDays.push(d); }));
+            allDays.sort((a, b) => b.date.localeCompare(a.date)); // newest first
+
+            let streak = 0;
+            for (const d of allDays) {
+              const dayTarget = getKcalTargetForDate(d.date);
+              if (d.kcal <= dayTarget) streak++;
+              else break;
+            }
+
+            // Days in target this week
+            const thisWeekDays = currentWeek ? currentWeek.days.filter(d => d.hasData) : [];
+            const daysInTarget = thisWeekDays.filter(d => {
+              const dayTarget = getKcalTargetForDate(d.date);
+              return d.kcal <= dayTarget;
+            }).length;
+            const totalTracked = thisWeekDays.length;
+            const consistencyPct = totalTracked > 0 ? Math.round((daysInTarget / totalTracked) * 100) : 0;
+
+            // Total days tracked across all weeks
+            const totalDaysTracked = allDays.length;
+
+            return (
+              <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>
+                  <Flame size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.gold} />
+                  Streak & Costanza
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {/* Streak */}
+                  <div style={{ flex: 1, background: `${T.gold}0A`, borderRadius: 14, padding: 14, textAlign: "center" }}>
+                    <div style={{ fontSize: 30, fontWeight: 900, color: T.gold, lineHeight: 1 }}>{streak}</div>
+                    <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, marginTop: 4 }}>giorni consecutivi</div>
+                    <div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>sotto obiettivo</div>
+                  </div>
+                  {/* Consistency ring */}
+                  <div style={{ flex: 1, background: `${T.mint}0A`, borderRadius: 14, padding: 14, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ position: "relative", width: 56, height: 56 }}>
+                      <svg width={56} height={56} viewBox="0 0 56 56">
+                        <circle cx={28} cy={28} r={22} fill="none" stroke={T.border} strokeWidth={5} />
+                        <circle cx={28} cy={28} r={22} fill="none" stroke={T.mint} strokeWidth={5}
+                          strokeDasharray={2 * Math.PI * 22}
+                          strokeDashoffset={2 * Math.PI * 22 - (consistencyPct / 100) * 2 * Math.PI * 22}
+                          strokeLinecap="round"
+                          style={{ transform: "rotate(-90deg)", transformOrigin: "50% 50%" }} />
+                      </svg>
+                      <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", fontSize: 14, fontWeight: 800, color: T.mint }}>{consistencyPct}%</div>
+                    </div>
+                    <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, marginTop: 6 }}>{daysInTarget}/{totalTracked} giorni</div>
+                    <div style={{ fontSize: 9, color: T.textMuted }}>in obiettivo</div>
+                  </div>
+                  {/* Total tracked */}
+                  <div style={{ flex: 1, background: `${T.teal}0A`, borderRadius: 14, padding: 14, textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <div style={{ fontSize: 30, fontWeight: 900, color: T.teal, lineHeight: 1 }}>{totalDaysTracked}</div>
+                    <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 600, marginTop: 4 }}>giorni tracciati</div>
+                    <div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>totale</div>
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })()}
+
+          {/* ─── 4. Meal Distribution ─── */}
+          {(() => {
+            const mealKcal = currentWeek ? currentWeek.mealKcal : null;
+            if (!mealKcal) return null;
+            const totalMealKcal = Object.values(mealKcal).reduce((s, v) => s + v, 0);
+            if (totalMealKcal === 0) return null;
+            const mealItems = [
+              { key: "breakfast", label: "Colazione", icon: "\u2615", color: "#F0B429" },
+              { key: "lunch", label: "Pranzo", icon: "\u2600\uFE0F", color: "#028090" },
+              { key: "dinner", label: "Cena", icon: "\uD83C\uDF19", color: "#7C5CFC" },
+              { key: "snack", label: "Snack", icon: "\uD83C\uDF4E", color: "#E85D4E" },
+            ];
+            const maxMeal = Math.max(...Object.values(mealKcal));
+            return (
+              <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>
+                  <Activity size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={MC.protein} />
+                  Distribuzione Pasti
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {mealItems.map((m) => {
+                    const val = Math.round(mealKcal[m.key]);
+                    const pct = totalMealKcal > 0 ? Math.round((val / totalMealKcal) * 100) : 0;
+                    const barW = maxMeal > 0 ? Math.max(2, (val / maxMeal) * 100) : 0;
+                    return (
+                      <div key={m.key}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ fontSize: 14 }}>{m.icon}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{m.label}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: m.color }}>{val}</span>
+                            <span style={{ fontSize: 10, color: T.textMuted }}>kcal</span>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, marginLeft: 4 }}>{pct}%</span>
+                          </div>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 3, background: "#F0F2F5", overflow: "hidden" }}>
+                          <div style={{ height: "100%", borderRadius: 3, background: m.color, width: `${barW}%`, transition: "width 0.4s ease" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     );
