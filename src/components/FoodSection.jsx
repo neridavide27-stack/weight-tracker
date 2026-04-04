@@ -137,6 +137,9 @@ const SwipeableItem = ({ entry, onDelete, onTap, T }) => {
   );
 };
 
+// ─── HAPTIC FEEDBACK HELPER ───────────────────────────────
+const haptic = (ms = 10) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
+
 // ─── GRAM EDITOR MODAL (REPLACED renderGramPopup) ───────
 const GramEditorModal = ({ entry, onSave, onClose, onMoveMeal, currentMealType, T }) => {
   const modalRef = useRef(null);
@@ -746,9 +749,6 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
     </div>
   );
 };
-
-// ─── HAPTIC FEEDBACK HELPER ───────────────────────────────
-const haptic = (ms = 10) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
 
 // ─── COMPONENT ────────────────────────────────────────────
 const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoals: nutritionGoalsProp, goalHistory = [], onDataChange }, ref) => {
