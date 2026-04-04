@@ -439,10 +439,10 @@ export const fullSyncToSheets = async (url, nutritionGoals) => {
   }
   const database = Array.from(dbMap.values());
 
-  // Send to Google Sheets
+  // Send to Google Sheets (no Content-Type header to avoid CORS preflight)
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    redirect: "follow",
     body: JSON.stringify({
       action: "sync",
       fullSync: true,
