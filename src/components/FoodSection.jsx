@@ -24,6 +24,7 @@ import {
   getCachedFoodByBarcode, searchCachedFoods,
   getRecentFoodsByMeal, getAllCachedFoods, getLastEntryByFoodName,
   getDailyTotalsForRange,
+  getSavedMeals, addSavedMeal, deleteSavedMeal,
 } from "../lib/food-db";
 
 // ─── CONSTANTS ────────────────────────────────────────────
@@ -62,6 +63,9 @@ const dayNames = ["Domenica","Lunedì","Martedì","Mercoledì","Giovedì","Vener
 const dayNamesShort = ["Dom","Lun","Mar","Mer","Gio","Ven","Sab"];
 const monthNames = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
 
+// ─── MACRO COLORS ──────────────────────────────────────
+const MC = { fat: "#E85D4E", carbs: "#F0B429", protein: "#3B82F6" };
+
 // ─── VALUES ROW (ALIGNED COLUMNS) ────────────────────────
 const W = { gr: 34, g: 28, c: 28, p: 28, kcal: 38 };
 
@@ -98,7 +102,7 @@ const SwipeableItem = ({ entry, onDelete, onTap, T }) => {
 
   return (
     <div style={{ position: "relative", overflow: "hidden", borderBottom: `1px solid ${T.border}` }}>
-      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 75, background: T.coral, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1 }} onClick={() => onDelete(entry.id)}>
+      <div role="button" aria-label="Elimina alimento" style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 75, background: T.coral, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1 }} onClick={() => onDelete(entry.id)}>
         <Trash2 size={18} color="#fff" />
       </div>
       <div
@@ -237,7 +241,7 @@ const CustomFoodForm = ({ onSave, onBack, T, initialBarcode }) => {
   return (
     <div style={{ padding: "20px 22px 24px", maxHeight: "85vh", overflowY: "auto" }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><ArrowLeft size={20} /></button>
+        <button onClick={onBack} aria-label="Torna indietro" style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><ArrowLeft size={20} /></button>
         <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginLeft: 12 }}>Aggiungi Alimento</div>
       </div>
 
@@ -318,7 +322,7 @@ const CheatFoodForm = ({ onSave, onBack, T }) => {
   return (
     <div style={{ padding: "20px 22px 24px", maxHeight: "85vh", overflowY: "auto" }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><ArrowLeft size={20} /></button>
+        <button onClick={onBack} aria-label="Torna indietro" style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: T.text }}><ArrowLeft size={20} /></button>
         <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginLeft: 12 }}>🍕 Aggiungi Sgarro</div>
       </div>
 
@@ -518,8 +522,8 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>Aggiungi Cibo</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={() => setView("cheat")} style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${T.coral}`, background: "rgba(232,93,78,0.08)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, flexShrink: 0 }}>🍕</button>
-              <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F0F2F5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textSec }}><X size={16} /></button>
+              <button onClick={() => setView("cheat")} aria-label="Aggiungi sgarro" style={{ width: 36, height: 36, borderRadius: 10, border: `1.5px solid ${T.coral}`, background: "rgba(232,93,78,0.08)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, flexShrink: 0 }}>🍕</button>
+              <button onClick={onClose} aria-label="Chiudi" style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "#F0F2F5", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textSec }}><X size={16} /></button>
             </div>
           </div>
 
@@ -539,7 +543,7 @@ const AddFoodSheet = ({ mealType, recents, onAdd, onClose, onScannerOpen, T, ini
           <div style={{ display: "flex", alignItems: "center", background: "#F5F7FA", borderRadius: 14, padding: "10px 14px", gap: 10, marginBottom: 12 }}>
             <Search size={18} color="#bbb" />
             <input type="text" value={search} onChange={(e) => handleSearch(e.target.value)} placeholder="Cerca alimento..." style={{ flex: 1, border: "none", background: "none", fontSize: 14, fontFamily: "inherit", outline: "none", color: T.text }} />
-            <button onClick={onScannerOpen} style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: T.gradient, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Camera size={16} /></button>
+            <button onClick={onScannerOpen} aria-label="Scansiona codice a barre" style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: T.gradient, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Camera size={16} /></button>
           </div>
         </div>
 
@@ -696,6 +700,11 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     });
     return () => { active = false; };
   }, [selectedDate]);
+
+  // ── DEXIE: Load saved meals on mount ───────────────────
+  useEffect(() => {
+    getSavedMeals().then((meals) => setSavedMeals(meals));
+  }, []);
 
   // Load recents when bottom sheet meal changes
   useEffect(() => {
@@ -1261,19 +1270,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
 
   const handleSaveMeal = async (mealType) => {
     if (!saveMealName.trim()) {
-      alert("Inserisci un nome per il pasto");
+      showToast("Inserisci un nome per il pasto");
       return;
     }
     const items = getMealEntries(mealType);
     const totalKcal = items.reduce((s, i) => s + i.kcal, 0);
-    const newMeal = {
-      id: `meal_${Date.now()}`,
-      name: saveMealName,
-      mealType,
-      items,
-      totalKcal,
-    };
-    setSavedMeals((prev) => [...prev, newMeal]);
+    const newMeal = { name: saveMealName, mealType, items, totalKcal };
+    const id = await addSavedMeal(newMeal);
+    setSavedMeals((prev) => [...prev, { ...newMeal, id }]);
     setShowSavePopup(null);
     setSaveMealName("");
     showToast("Pasto salvato");
@@ -1518,7 +1522,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
 
         {/* Navigation arrows */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <button onClick={() => canPrev && setIdx(safeIdx + 1)} style={{
+          <button onClick={() => canPrev && setIdx(safeIdx + 1)} aria-label="Periodo precedente" style={{
             width: 30, height: 30, borderRadius: 8, border: "none", cursor: canPrev ? "pointer" : "default",
             background: canPrev ? "#F0F2F5" : "transparent", color: canPrev ? T.text : "#ddd",
             display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
@@ -1527,7 +1531,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{currentPeriod.periodLabel || currentPeriod.dateLabel}</div>
             {safeIdx === 0 && <div style={{ fontSize: 9, color: T.mint, fontWeight: 600 }}>Corrente</div>}
           </div>
-          <button onClick={() => canNext && setIdx(safeIdx - 1)} style={{
+          <button onClick={() => canNext && setIdx(safeIdx - 1)} aria-label="Periodo successivo" style={{
             width: 30, height: 30, borderRadius: 8, border: "none", cursor: canNext ? "pointer" : "default",
             background: canNext ? "#F0F2F5" : "transparent", color: canNext ? T.text : "#ddd",
             display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
@@ -1615,14 +1619,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         {/* ─── Date Navigator ─── */}
         <div style={{ background: T.card, paddingBottom: 6, borderBottom: `1px solid ${T.border}` }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 8px" }}>
-            <button onClick={() => changeDate(-1)} style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
+            <button onClick={() => changeDate(-1)} aria-label="Giorno precedente" style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
               <ChevronLeft size={18} />
             </button>
             <div style={{ textAlign: "center", cursor: "pointer" }} onClick={() => setSelectedDate(todayStr)}>
               <div style={{ fontSize: 17, fontWeight: 800, color: T.text }}>{formatDateLabel(selectedDate)}</div>
               <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>{formatDateSub(selectedDate)}</div>
             </div>
-            <button onClick={() => changeDate(1)} style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
+            <button onClick={() => changeDate(1)} aria-label="Giorno successivo" style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
               <ChevronRight size={18} />
             </button>
           </div>
@@ -1706,19 +1710,13 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           </div>
         </div>
 
-        {/* ─── Confronti + Dettaglio Cards ─── */}
-        <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
-          {renderConfrontiCard()}
-          {renderDettaglioCard()}
-        </div>
-
         {/* ─── Meal Cards ─── */}
         <div style={{ padding: "12px 16px 20px" }}>
           {/* Single column header for all meals */}
-          <div style={{ display: "flex", alignItems: "center", padding: "4px 14px 8px", marginBottom: 4 }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: "uppercase" }}>Alimento</div>
+          <div style={{ display: "flex", alignItems: "center", padding: "6px 14px 8px", marginBottom: 6, borderBottom: `1.5px solid ${T.border}`, background: `${T.teal}06`, borderRadius: "10px 10px 0 0" }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Alimento</div>
             <ValuesRow gr="gr" g="G" c="C" p="P" kcal="kcal"
-              grColor={T.mint} gColor="#E85D4E" cColor="#F0B429" pColor="#3B82F6" kcalColor={T.text} fontSize={9} fontWeight={700} />
+              grColor={T.mint} gColor={MC.fat} cColor={MC.carbs} pColor={MC.protein} kcalColor={T.text} fontSize={9} fontWeight={700} />
             <div style={{ width: 22, flexShrink: 0 }} />
           </div>
           {MEAL_TYPES.map((mt) => {
@@ -1755,9 +1753,10 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                     )}
 
                     {mealEntries.length === 0 && (
-                      <div style={{ borderTop: `1px solid ${T.border}`, padding: "20px 16px", textAlign: "center" }}>
-                        <div style={{ fontSize: 24, marginBottom: 6 }}>{cfg.icon}</div>
-                        <div style={{ fontSize: 12, color: T.textMuted }}>Nessun cibo registrato</div>
+                      <div style={{ borderTop: `1px solid ${T.border}`, padding: "24px 16px", textAlign: "center", background: `${cfg.bgColor}40` }}>
+                        <div style={{ fontSize: 28, marginBottom: 6, opacity: 0.7 }}>{cfg.icon}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: T.textMuted }}>Nessun cibo registrato</div>
+                        <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4, opacity: 0.7 }}>Tocca "Aggiungi cibo" per iniziare</div>
                       </div>
                     )}
 
@@ -1779,6 +1778,24 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
               </div>
             );
           })}
+        </div>
+
+        {/* ─── Dettaglio Card ─── */}
+        <div style={{ padding: "0 16px 12px" }}>
+          {renderDettaglioCard()}
+        </div>
+
+        {/* ─── Report Button ─── */}
+        <div style={{ padding: "0 16px 16px" }}>
+          <button onClick={() => setFoodScreen("reports")} aria-label="Vedi report calorie" style={{
+            width: "100%", padding: 14, borderRadius: 14, border: `1.5px solid ${T.border}`,
+            background: T.card, cursor: "pointer", fontFamily: "inherit", boxShadow: T.shadow,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}>
+            <BarChart3 size={16} color={T.teal} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Report Calorie</span>
+            <ChevronRight size={14} color={T.textMuted} />
+          </button>
         </div>
 
         {/* Edit gram modal */}
@@ -1835,7 +1852,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         {/* Load meal sheet */}
         {showLoadPopup && (
           <LoadMealSheet mealType={showLoadPopup} savedMeals={savedMeals} onLoad={handleLoadMeal}
-            onDelete={(id) => { setSavedMeals((p) => p.filter((m) => m.id !== id)); showToast("Eliminato"); }}
+            onDelete={async (id) => { await deleteSavedMeal(id); setSavedMeals((p) => p.filter((m) => m.id !== id)); showToast("Eliminato"); }}
             onClose={() => setShowLoadPopup(null)} T={T} />
         )}
 
@@ -1880,12 +1897,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         )}
 
         {/* Toast */}
-        {toast && (
-          <div style={{ position: "fixed", bottom: 90, left: "50%", transform: "translateX(-50%)", background: T.text, color: "#fff", padding: "10px 20px", borderRadius: 12, fontSize: 13, fontWeight: 600, boxShadow: "0 8px 30px rgba(0,0,0,0.15)", zIndex: 2000, animation: "fadeInUp 0.3s ease", whiteSpace: "nowrap" }}>
-            <style>{`@keyframes fadeInUp { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
-            <Check size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />{toast}
-          </div>
-        )}
+        <div role="status" aria-live="polite" style={{ position: "fixed", bottom: 90, left: "50%", transform: "translateX(-50%)", zIndex: 2000, pointerEvents: "none" }}>
+          {toast && (
+            <div style={{ background: T.text, color: "#fff", padding: "10px 20px", borderRadius: 12, fontSize: 13, fontWeight: 600, boxShadow: "0 8px 30px rgba(0,0,0,0.15)", animation: "fadeInUp 0.3s ease", whiteSpace: "nowrap" }}>
+              <style>{`@keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+              <Check size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />{toast}
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -1987,87 +2006,97 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   };
 
   const renderReports = () => {
-    const chartData = [];
-    for (let i = -6; i <= 0; i++) {
-      const d = new Date(selectedDate + "T12:00:00");
-      d.setDate(d.getDate() + i);
-      const ds = d.toISOString().split("T")[0];
-      const dayData = getFoodEntriesByDate(ds);
-      const kcal = dayData.reduce((s, e) => s + (e.kcal || 0), 0);
-      chartData.push({ name: dayNamesShort[d.getDay()], kcal });
-    }
-    chartData.reverse();
+    // Use real data from compData (loaded via useEffect from Dexie)
+    const currentWeek = compData.weeks && compData.weeks[0];
+    const chartData = currentWeek ? currentWeek.days : dayNamesShort.slice(1).concat(dayNamesShort[0]).map(n => ({ label: n, kcal: 0 }));
 
     const pieData = [];
     const dayTotals = getDayTotals();
-    if (dayTotals.protein > 0) pieData.push({ name: "Proteine", value: Math.round(dayTotals.protein * 4), color: "#3B82F6" });
-    if (dayTotals.carbs > 0) pieData.push({ name: "Carbs", value: Math.round(dayTotals.carbs * 4), color: "#F0B429" });
-    if (dayTotals.fat > 0) pieData.push({ name: "Grassi", value: Math.round(dayTotals.fat * 9), color: "#E85D4E" });
+    if (dayTotals.protein > 0) pieData.push({ name: "Proteine", value: Math.round(dayTotals.protein * 4), color: MC.protein });
+    if (dayTotals.carbs > 0) pieData.push({ name: "Carbs", value: Math.round(dayTotals.carbs * 4), color: MC.carbs });
+    if (dayTotals.fat > 0) pieData.push({ name: "Grassi", value: Math.round(dayTotals.fat * 9), color: MC.fat });
+
+    const kcalValues = chartData.map(d => d.kcal).filter(v => v > 0);
+    const avgKcal = kcalValues.length > 0 ? Math.round(kcalValues.reduce((s, v) => s + v, 0) / kcalValues.length) : 0;
+    const maxKcal = kcalValues.length > 0 ? Math.max(...kcalValues) : 0;
+    const minKcal = kcalValues.length > 0 ? Math.min(...kcalValues) : 0;
 
     return (
-      <div style={{ padding: "20px 16px 100px", background: T.bg }}>
-        <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 20 }}>Report Calorie</div>
-
-        <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>
-            <BarChart3 size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.teal} />
-            Calorie Settimanali
-          </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
-              <XAxis dataKey="name" tick={{ fontSize: 10, fill: T.textMuted }} />
-              <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
-              <Tooltip contentStyle={{ borderRadius: 12, border: "none", boxShadow: T.shadow, fontSize: 12 }} />
-              <ReferenceLine y={nutritionGoals.kcalTarget} stroke={T.coral} strokeDasharray="5 5" />
-              <Bar dataKey="kcal" fill={T.teal} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      <div style={{ padding: "0 0 100px", background: T.bg }}>
+        {/* Header with back button */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 16px 12px" }}>
+          <button onClick={() => setFoodScreen("dashboard")} aria-label="Torna alla dashboard" style={{
+            width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none",
+            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal,
+          }}><ChevronLeft size={18} /></button>
+          <div style={{ fontSize: 20, fontWeight: 800, color: T.text }}>Report Calorie</div>
         </div>
 
-        {pieData.length > 0 && (
+        <div style={{ padding: "0 16px" }}>
+          {/* Weekly bar chart */}
           <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>
-              Ripartizione Macros (oggi)
+              <BarChart3 size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.teal} />
+              Calorie Settimanali
             </div>
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <ResponsiveContainer width="50%" height={140}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} dataKey="value" startAngle={90} endAngle={-270}>
-                    {pieData.map((d, i) => (
-                      <Cell key={i} fill={d.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ flex: 1 }}>
-                {pieData.map((d) => (
-                  <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: 3, background: d.color }} />
-                    <span style={{ fontSize: 12, color: T.textSec }}>{d.name}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: T.text, marginLeft: "auto" }}>{d.value} kcal</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: T.textMuted }} />
+                <YAxis tick={{ fontSize: 10, fill: T.textMuted }} />
+                <Tooltip contentStyle={{ borderRadius: 12, border: "none", boxShadow: T.shadow, fontSize: 12 }} />
+                <ReferenceLine y={nutritionGoals.kcalTarget} stroke={T.coral} strokeDasharray="5 5" label={{ value: "Obiettivo", fontSize: 9, fill: T.coral }} />
+                <Bar dataKey="kcal" fill={T.teal} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-        )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {[
-            { label: "Media kcal", value: `${Math.round(chartData.reduce((s, d) => s + d.kcal, 0) / 7)}`, icon: <Flame size={16} color={T.coral} /> },
-            { label: "Obiettivo", value: `${nutritionGoals.kcalTarget}`, icon: <Target size={16} color={T.teal} /> },
-            { label: "Giorno max", value: `${Math.max(...chartData.map((d) => d.kcal))}`, icon: <TrendingUp size={16} color={T.gold} /> },
-            { label: "Giorno min", value: `${Math.min(...chartData.map((d) => d.kcal))}`, icon: <Activity size={16} color="#3B82F6" /> },
-          ].map((stat) => (
-            <div key={stat.label} style={{ background: T.card, borderRadius: 14, padding: 14, boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                {stat.icon}
-                <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 600 }}>{stat.label}</span>
+          {/* Macro pie chart */}
+          {pieData.length > 0 && (
+            <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 12 }}>
+                Ripartizione Macros (oggi)
               </div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: T.text }}>{stat.value}</div>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <ResponsiveContainer width="50%" height={140}>
+                  <PieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} dataKey="value" startAngle={90} endAngle={-270}>
+                      {pieData.map((d, i) => (
+                        <Cell key={i} fill={d.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{ flex: 1 }}>
+                  {pieData.map((d) => (
+                    <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: 3, background: d.color }} />
+                      <span style={{ fontSize: 12, color: T.textSec }}>{d.name}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: T.text, marginLeft: "auto" }}>{d.value} kcal</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-          ))}
+          )}
+
+          {/* Stats grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {[
+              { label: "Media kcal", value: `${avgKcal}`, icon: <Flame size={16} color={T.coral} /> },
+              { label: "Obiettivo", value: `${nutritionGoals.kcalTarget}`, icon: <Target size={16} color={T.teal} /> },
+              { label: "Giorno max", value: `${maxKcal}`, icon: <TrendingUp size={16} color={T.gold} /> },
+              { label: "Giorno min", value: `${minKcal}`, icon: <Activity size={16} color={MC.protein} /> },
+            ].map((stat) => (
+              <div key={stat.label} style={{ background: T.card, borderRadius: 14, padding: 14, boxShadow: T.shadow }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                  {stat.icon}
+                  <span style={{ fontSize: 10, color: T.textMuted, fontWeight: 600 }}>{stat.label}</span>
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: T.text }}>{stat.value}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
