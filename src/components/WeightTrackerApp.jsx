@@ -501,6 +501,288 @@ const CircularProgress = ({ percentage, size = 64, strokeWidth = 5, color = T.te
 };
 
 /* ═══════════════════════════════════════════
+   NUTRITION GOALS PANEL (two cards)
+   ═══════════════════════════════════════════ */
+
+const roundTo50 = (n) => Math.floor(n / 50) * 50;
+const computeBMR = ({ sex, weight, height, age }) => {
+  const w = Number(weight) || 0, h = Number(height) || 0, a = Number(age) || 0;
+  return sex === "F" ? (10 * w + 6.25 * h - 5 * a - 161) : (10 * w + 6.25 * h - 5 * a + 5);
+};
+const ACT_MULT = { sedentario: 1.2, leggero: 1.375, moderato: 1.55 };
+const GOAL_ADJ = { cut: -500, maintain: 0, bulk: 300 };
+
+const Stepper = ({ value, onChange, step = 1, min = 0, max = 9999, decimals = 0, suffix = "", width = 78 }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <button onClick={() => onChange(Math.max(min, +(value - step).toFixed(decimals)))} style={{
+      width: 28, height: 28, borderRadius: 8, border: "1.5px solid #E5E7EB", background: "#fff",
+      fontSize: 16, fontWeight: 700, color: "#555", cursor: "pointer", fontFamily: "inherit",
+    }}>−</button>
+    <div style={{
+      minWidth: width, textAlign: "center", padding: "6px 8px", borderRadius: 8,
+      background: "#F9FAFB", border: "1.5px solid #E5E7EB", fontSize: 14, fontWeight: 700, color: "#1A1A1A",
+    }}>{decimals > 0 ? value.toFixed(decimals) : value}{suffix}</div>
+    <button onClick={() => onChange(Math.min(max, +(value + step).toFixed(decimals)))} style={{
+      width: 28, height: 28, borderRadius: 8, border: "1.5px solid #E5E7EB", background: "#fff",
+      fontSize: 16, fontWeight: 700, color: "#555", cursor: "pointer", fontFamily: "inherit",
+    }}>+</button>
+  </div>
+);
+
+const Segmented = ({ options, value, onChange }) => (
+  <div style={{ display: "flex", gap: 6, background: "#F3F4F6", padding: 4, borderRadius: 10 }}>
+    {options.map((o) => (
+      <button key={o.value} onClick={() => onChange(o.value)} style={{
+        flex: 1, padding: "8px 6px", borderRadius: 8, border: "none",
+        background: value === o.value ? "#fff" : "transparent",
+        boxShadow: value === o.value ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+        fontSize: 12, fontWeight: 700, color: value === o.value ? "#1A1A1A" : "#6B7280",
+        cursor: "pointer", fontFamily: "inherit",
+      }}>{o.label}</button>
+    ))}
+  </div>
+);
+
+const NutritionGoalsPanel = ({ nutritionGoals, onSave, goalEffectiveDate, setGoalEffectiveDate }) => {
+  // Profile (stored inside nutritionGoals for persistence)
+  const [age, setAge] = useState(nutritionGoals.age || 30);
+  const [sex, setSex] = useState(nutritionGoals.sex || "M");
+  const [height, setHeight] = useState(nutritionGoals.height || 175);
+  const [weight, setWeight] = useState(nutritionGoals.weight || 80);
+  const [activity, setActivity] = useState(nutritionGoals.activityLevel || "leggero");
+  const [goal, setGoal] = useState(nutritionGoals.goal || "maintain");
+  const [adj, setAdj] = useState(nutritionGoals.adj != null ? nutritionGoals.adj : (GOAL_ADJ[nutritionGoals.goal || "maintain"] || 0));
+  const [showActHelp, setShowActHelp] = useState(false);
+
+  const bmr = Math.round(computeBMR({ sex, weight, height, age }));
+  const tdee = Math.round(bmr * (ACT_MULT[activity] || 1.2));
+  const targetRaw = tdee + adj;
+  const target = roundTo50(targetRaw);
+
+  // Card 2 — macros
+  const [kcalEdit, setKcalEdit] = useState(nutritionGoals.kcalTarget || target);
+  const [pPerKg, setPPerKg] = useState(nutritionGoals.pPerKg || 2.0);
+  const [fPerKg, setFPerKg] = useState(nutritionGoals.fPerKg || 1.0);
+
+  // Sync card 2 kcal when card 1 target changes significantly
+  useEffect(() => { setKcalEdit(target); }, [target]);
+
+  const pGrams = Math.round(pPerKg * weight);
+  const fGrams = Math.round(fPerKg * weight);
+  const pKcal = pGrams * 4;
+  const fKcal = fGrams * 9;
+  const cKcal = Math.max(0, kcalEdit - pKcal - fKcal);
+  const cGrams = Math.round(cKcal / 4);
+  const totalKcal = pKcal + cKcal + fKcal;
+  const pPct = totalKcal > 0 ? Math.round((pKcal / totalKcal) * 100) : 0;
+  const cPct = totalKcal > 0 ? Math.round((cKcal / totalKcal) * 100) : 0;
+  const fPct = totalKcal > 0 ? 100 - pPct - cPct : 0;
+
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+
+  const handleSave = () => {
+    const goals = {
+      // legacy fields
+      kcalTarget: kcalEdit,
+      proteinPct: pPct, carbsPct: cPct, fatPct: fPct,
+      // new fields
+      pGrams, cGrams, fGrams,
+      // profile
+      age, sex, height, weight, activityLevel: activity, goal, adj, pPerKg, fPerKg,
+    };
+    onSave(goals, goalEffectiveDate);
+    setShowSaveModal(false);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2200);
+  };
+
+  const handleGoalChange = (v) => { setGoal(v); setAdj(GOAL_ADJ[v]); };
+
+  const labelStyle = { fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 6 };
+  const cardStyle = { background: T.card, borderRadius: 14, padding: 16, boxShadow: T.shadow, marginBottom: 12 };
+  const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 };
+
+  return (
+    <>
+      {/* ─── Card 1: Fabbisogno calorico ─── */}
+      <div style={cardStyle}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>Fabbisogno calorico</div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+          {[
+            { label: "Età", val: age, set: setAge, im: "numeric", suf: "" },
+            { label: "Altezza", val: height, set: setHeight, im: "numeric", suf: " cm" },
+            { label: "Peso", val: weight, set: setWeight, im: "decimal", suf: " kg" },
+          ].map((f) => (
+            <div key={f.label}>
+              <div style={labelStyle}>{f.label}</div>
+              <input type="text" inputMode={f.im} value={f.val}
+                onChange={(e) => {
+                  const v = e.target.value.replace(",", ".");
+                  if (v === "" || /^\d*\.?\d*$/.test(v)) f.set(v === "" ? 0 : (f.im === "decimal" ? parseFloat(v) || 0 : parseInt(v) || 0));
+                }}
+                style={{
+                  width: "100%", padding: "10px 10px", borderRadius: 10, border: "1.5px solid #E5E7EB",
+                  fontSize: 15, fontWeight: 700, color: T.text, fontFamily: "inherit", background: "#F9FAFB", outline: "none",
+                  textAlign: "center",
+                }}
+              />
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={labelStyle}>Sesso</div>
+          <Segmented options={[{ label: "Maschio", value: "M" }, { label: "Femmina", value: "F" }]} value={sex} onChange={setSex} />
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>Livello di attività</span>
+            <button onClick={() => setShowActHelp(!showActHelp)} style={{
+              width: 16, height: 16, borderRadius: "50%", border: "1.5px solid #6B7280",
+              background: "transparent", color: "#6B7280", fontSize: 10, fontWeight: 700,
+              cursor: "pointer", fontFamily: "inherit", padding: 0, lineHeight: 1,
+            }}>?</button>
+          </div>
+          <Segmented options={[
+            { label: "Sedentario", value: "sedentario" },
+            { label: "Leggero", value: "leggero" },
+            { label: "Moderato", value: "moderato" },
+          ]} value={activity} onChange={setActivity} />
+          {showActHelp && (
+            <div style={{ marginTop: 8, padding: 10, background: "#F3F4F6", borderRadius: 10, fontSize: 11, color: "#4B5563", lineHeight: 1.5 }}>
+              <div style={{ marginBottom: 4 }}><b>Sedentario:</b> lavoro da ufficio/casa, poco o nessun esercizio, spostamenti in auto.</div>
+              <div style={{ marginBottom: 4 }}><b>Leggero:</b> esercizio 1–3 volte/sett (camminate, palestra leggera) oppure lavoro attivo (cameriere, commesso).</div>
+              <div><b>Moderato:</b> esercizio 3–5 volte/sett intenso, o lavoro fisico (operaio, corriere), oppure entrambi.</div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={labelStyle}>Obiettivo</div>
+          <Segmented options={[
+            { label: "Taglio", value: "cut" },
+            { label: "Mantieni", value: "maintain" },
+            { label: "Massa", value: "bulk" },
+          ]} value={goal} onChange={handleGoalChange} />
+        </div>
+
+        <div style={{ ...rowStyle, marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#6B7280" }}>Aggiustamento kcal</div>
+          <Stepper value={adj} onChange={setAdj} step={50} min={-1500} max={1500} suffix=" kcal" width={70} />
+        </div>
+
+        <div style={{
+          background: T.gradient, borderRadius: 12, padding: 14, color: "#fff",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <div style={{ fontSize: 10, opacity: 0.85, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>Obiettivo calorico</div>
+            <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.1 }}>{target}<span style={{ fontSize: 14, opacity: 0.85, marginLeft: 4 }}>kcal</span></div>
+          </div>
+          <div style={{ textAlign: "right", fontSize: 10, opacity: 0.85 }}>
+            <div>BMR {bmr}</div>
+            <div>TDEE {tdee}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Card 2: Macronutrienti ─── */}
+      <div style={cardStyle}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>Macronutrienti</div>
+
+        <div style={rowStyle}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#6B7280" }}>Target calorico</div>
+          <Stepper value={kcalEdit} onChange={setKcalEdit} step={50} min={500} max={6000} suffix=" kcal" width={84} />
+        </div>
+
+        <div style={rowStyle}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#6B7280" }}>Proteine / kg</div>
+          <Stepper value={pPerKg} onChange={setPPerKg} step={0.1} min={0.5} max={4} decimals={1} suffix=" g/kg" width={84} />
+        </div>
+
+        <div style={{ ...rowStyle, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#6B7280" }}>Grassi / kg</div>
+          <Stepper value={fPerKg} onChange={setFPerKg} step={0.1} min={0.3} max={2.5} decimals={1} suffix=" g/kg" width={84} />
+        </div>
+
+        {/* Macro rows */}
+        {[
+          { label: "Proteine", g: pGrams, kcal: pKcal, pct: pPct, color: "#3B82F6" },
+          { label: "Carboidrati", g: cGrams, kcal: cKcal, pct: cPct, color: "#F0B429" },
+          { label: "Grassi", g: fGrams, kcal: fKcal, pct: fPct, color: "#E85D4E" },
+        ].map((m) => (
+          <div key={m.label} style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: m.color }}>{m.label}</div>
+              <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 600 }}>
+                <span style={{ color: T.text, fontWeight: 800, fontSize: 13 }}>{m.g}g</span> · {m.kcal} kcal · {m.pct}%
+              </div>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: `${m.color}20`, overflow: "hidden" }}>
+              <div style={{ width: `${m.pct}%`, height: "100%", background: m.color, borderRadius: 3 }} />
+            </div>
+          </div>
+        ))}
+
+        <button onClick={() => setShowSaveModal(true)} style={{
+          marginTop: 14, width: "100%", padding: 14, borderRadius: 12, border: "none",
+          background: T.gradient, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+        }}>Salva obiettivi</button>
+      </div>
+
+      {/* Save modal */}
+      {showSaveModal && (
+        <div onClick={() => setShowSaveModal(false)} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: "#fff", borderRadius: 16, padding: 20, width: "100%", maxWidth: 340,
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text, marginBottom: 6 }}>Salva obiettivi</div>
+            <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 14 }}>Da quale data vuoi applicare questi obiettivi?</div>
+            <input type="date" value={goalEffectiveDate}
+              onChange={(e) => setGoalEffectiveDate(e.target.value)}
+              style={{
+                width: "100%", padding: "12px", borderRadius: 10, border: "1.5px solid #E5E7EB",
+                fontSize: 14, fontWeight: 600, color: T.text, fontFamily: "inherit", background: "#F9FAFB", outline: "none",
+                marginBottom: 14,
+              }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setShowSaveModal(false)} style={{
+                flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E5E7EB", background: "#fff",
+                fontSize: 13, fontWeight: 700, color: "#6B7280", cursor: "pointer", fontFamily: "inherit",
+              }}>Annulla</button>
+              <button onClick={handleSave} style={{
+                flex: 1, padding: 12, borderRadius: 10, border: "none", background: T.gradient,
+                color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+              }}>Conferma</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {showToast && (
+        <div style={{
+          position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+          background: "#1A1A1A", color: "#fff", padding: "12px 18px", borderRadius: 12,
+          fontSize: 13, fontWeight: 600, boxShadow: "0 8px 24px rgba(0,0,0,0.2)", zIndex: 110,
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <CheckCircle2 size={16} color="#10B981" />
+          Obiettivi salvati — attivi dal {new Date(goalEffectiveDate).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })}
+        </div>
+      )}
+    </>
+  );
+};
+
+/* ═══════════════════════════════════════════
    MAIN APP
    ═══════════════════════════════════════════ */
 
@@ -1176,96 +1458,13 @@ export default function WeightTrackerApp() {
           <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 20 }}>
             Obiettivi Nutrizionali
           </div>
-          {(() => {
-            const editing = pendingGoals || nutritionGoals;
-            const hasPendingChanges = pendingGoals && (
-              pendingGoals.kcalTarget !== nutritionGoals.kcalTarget ||
-              pendingGoals.proteinPct !== nutritionGoals.proteinPct ||
-              pendingGoals.carbsPct !== nutritionGoals.carbsPct ||
-              pendingGoals.fatPct !== nutritionGoals.fatPct
-            );
-            return (
-              <div style={{ background: T.card, borderRadius: 14, padding: 16, boxShadow: T.shadow, marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: `${T.coral}10`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <Flame size={16} color={T.coral} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600 }}>kcal giornaliere</div>
-                    <input type="tel" inputMode="numeric" pattern="[0-9]*"
-                      value={editing.kcalTarget}
-                      onChange={e => {
-                        const v = parseInt(e.target.value.replace(/\D/g, "")) || 0;
-                        setPendingGoals({ ...editing, kcalTarget: v });
-                      }}
-                      style={{ border: `1.5px solid ${T.border}`, outline: "none", fontSize: 16, fontWeight: 700, color: T.text, fontFamily: "'Inter', sans-serif", background: T.bg, width: "100%", borderRadius: 8, padding: "6px 8px" }}
-                    />
-                  </div>
-                  <span style={{ fontSize: 13, color: T.textMuted, fontWeight: 500 }}>kcal</span>
-                </div>
-
-                <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, marginBottom: 10 }}>Distribuzione Macro</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {[
-                    { label: "Proteine", key: "proteinPct", color: "#3B82F6" },
-                    { label: "Carbo", key: "carbsPct", color: "#F0B429" },
-                    { label: "Grassi", key: "fatPct", color: "#E85D4E" },
-                  ].map(({ label, key, color }) => (
-                    <div key={key} style={{ flex: 1, background: `${color}10`, borderRadius: 10, padding: "8px 10px", textAlign: "center" }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color, marginBottom: 4 }}>{label}</div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
-                        <input type="tel" inputMode="numeric" pattern="[0-9]*"
-                          value={editing[key]}
-                          onChange={e => {
-                            const v = Math.min(100, parseInt(e.target.value.replace(/\D/g, "")) || 0);
-                            setPendingGoals({ ...editing, [key]: v });
-                          }}
-                          style={{ width: 40, border: `1.5px solid ${color}40`, outline: "none", fontSize: 16, fontWeight: 800, color, fontFamily: "'Inter', sans-serif", background: `${color}08`, textAlign: "center", borderRadius: 6, padding: "4px 2px" }}
-                        />
-                        <span style={{ fontSize: 12, fontWeight: 600, color }}>%</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {(() => {
-                  const total = editing.proteinPct + editing.carbsPct + editing.fatPct;
-                  return total !== 100 ? (
-                    <div style={{ marginTop: 8, fontSize: 10, fontWeight: 600, color: T.coral, textAlign: "center" }}>
-                      Totale: {total}% — deve essere 100%
-                    </div>
-                  ) : null;
-                })()}
-
-                {/* Date picker + Save button — shown when there are pending changes */}
-                {hasPendingChanges && (
-                  <div style={{ marginTop: 14, borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
-                    <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, marginBottom: 8 }}>Decorrenza nuovo obiettivo</div>
-                    <input type="date" value={goalEffectiveDate}
-                      onChange={e => setGoalEffectiveDate(e.target.value)}
-                      style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${T.border}`, fontSize: 14, fontWeight: 600, color: T.text, fontFamily: "'Inter', sans-serif", background: T.bg, marginBottom: 10, outline: "none" }}
-                    />
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => setPendingGoals(null)} style={{
-                        flex: 1, padding: 12, borderRadius: 12, border: "none", background: "#F0F0F0",
-                        fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: T.textSec,
-                      }}>Annulla</button>
-                      <button onClick={() => {
-                        const total = pendingGoals.proteinPct + pendingGoals.carbsPct + pendingGoals.fatPct;
-                        if (total !== 100) return;
-                        handleSaveNutritionGoals(pendingGoals, goalEffectiveDate);
-                        setPendingGoals(null);
-                        setGoalEffectiveDate(today());
-                      }} disabled={editing.proteinPct + editing.carbsPct + editing.fatPct !== 100} style={{
-                        flex: 1, padding: 12, borderRadius: 12, border: "none",
-                        background: editing.proteinPct + editing.carbsPct + editing.fatPct === 100 ? T.gradient : "#ccc",
-                        color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                      }}>Salva Obiettivo</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          <NutritionGoalsPanel
+            key={(nutritionGoals.kcalTarget || 0) + "_" + (goalHistory[0]?.effectiveFrom || "")}
+            nutritionGoals={nutritionGoals}
+            onSave={handleSaveNutritionGoals}
+            goalEffectiveDate={goalEffectiveDate}
+            setGoalEffectiveDate={setGoalEffectiveDate}
+          />
 
           <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 20 }}>
             Riepilogo

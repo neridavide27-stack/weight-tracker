@@ -578,6 +578,7 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
     haptic(15);
     selectedFoods.forEach(food => { onAdd(food, activeMeal, food.selGrams); });
     setSelectedFoods([]);
+    if (onClose) onClose();
   };
 
   // Confirm gram editor → mark food as selected (don't add yet), return to list
@@ -736,7 +737,7 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
           <div style={{ display: "flex", alignItems: "center", background: "#F5F7FA", borderRadius: 14, padding: "10px 14px", gap: 10, marginBottom: 12 }}>
             <Search size={18} color="#bbb" />
             <input type="text" value={search} onChange={(e) => handleSearch(e.target.value)} placeholder="Cerca alimento..." style={{ flex: 1, border: "none", background: "none", fontSize: 14, fontFamily: "inherit", outline: "none", color: T.text }} />
-            <button onClick={onScannerOpen} aria-label="Scansiona codice a barre" style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: T.gradient, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Camera size={16} /></button>
+            <button onClick={onScannerOpen} aria-label="Scansiona codice a barre" style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: T.gradient, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><ScanLine size={16} /></button>
           </div>
         </div>
 
@@ -1041,6 +1042,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         weeks.push({
           label: weekLabels[w] || `${w} settimane fa`,
           dateLabel,
+          startDate: start, endDate: end,
           isCurrent: w === 0,
           avg: { kcal: Math.round(totalKcal / divisor), p: Math.round(totalP / divisor), c: Math.round(totalC / divisor), g: Math.round(totalG / divisor) },
           days: chartDays,
@@ -1103,6 +1105,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         months.push({
           label: monthLabelsRel[m] || `${m} mesi fa`,
           dateLabel,
+          startDate: start, endDate: end,
           isCurrent: m === 0,
           avg: { kcal: Math.round(totalKcal / divisor), p: Math.round(totalP / divisor), c: Math.round(totalC / divisor), g: Math.round(totalG / divisor) },
           weeks: chartWeeks,
@@ -1234,9 +1237,44 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
   };
 
-  const pTarget = Math.round((nutritionGoals.kcalTarget * nutritionGoals.proteinPct) / 100 / 4);
-  const cTarget = Math.round((nutritionGoals.kcalTarget * nutritionGoals.carbsPct) / 100 / 4);
-  const fTarget = Math.round((nutritionGoals.kcalTarget * nutritionGoals.fatPct) / 100 / 9);
+  // Prefer explicit gram targets from new profile, fall back to pct-based calc
+  const pTarget = nutritionGoals.pGrams != null
+    ? Math.round(nutritionGoals.pGrams)
+    : Math.round((nutritionGoals.kcalTarget * (nutritionGoals.proteinPct || 0)) / 100 / 4);
+  const cTarget = nutritionGoals.cGrams != null
+    ? Math.round(nutritionGoals.cGrams)
+    : Math.round((nutritionGoals.kcalTarget * (nutritionGoals.carbsPct || 0)) / 100 / 4);
+  const fTarget = nutritionGoals.fGrams != null
+    ? Math.round(nutritionGoals.fGrams)
+    : Math.round((nutritionGoals.kcalTarget * (nutritionGoals.fatPct || 0)) / 100 / 9);
+
+  // Helper: returns the goal-as-of-date, preferring explicit grams when present
+  const resolveGoalForDate = (iso) => {
+    if (goalHistory && goalHistory.length > 0) {
+      for (const g of goalHistory) {
+        if (iso >= g.effectiveFrom) return g;
+      }
+      return goalHistory[goalHistory.length - 1];
+    }
+    return nutritionGoals;
+  };
+  const kcalTargetForDate = (iso) => {
+    const g = resolveGoalForDate(iso);
+    return g?.kcalTarget || nutritionGoals.kcalTarget || 2000;
+  };
+  // Weighted average target over a period [startISO, endISO] inclusive
+  const weightedTargetForPeriod = (startISO, endISO, field = 'kcalTarget') => {
+    const start = new Date(startISO + 'T00:00:00');
+    const end = new Date(endISO + 'T00:00:00');
+    let sum = 0, count = 0;
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const iso = d.toISOString().slice(0, 10);
+      const g = resolveGoalForDate(iso);
+      const v = g?.[field];
+      if (v != null) { sum += v; count++; }
+    }
+    return count > 0 ? Math.round(sum / count) : (nutritionGoals[field] || 0);
+  };
 
   const calcForPortion = (food, grams) => {
     const m = grams / 100;
@@ -1771,6 +1809,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           kcal: w.avg.kcal, p: w.avg.p, c: w.avg.c, g: w.avg.g,
           cheatCount: w.cheatCount || 0,
           hasData: (w.days || []).some(d => d.hasData),
+          startDate: w.startDate, endDate: w.endDate,
         };
       });
       periodTitle = "Ultime 6 settimane";
@@ -1791,6 +1830,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           kcal: m.avg.kcal, p: m.avg.p, c: m.avg.c, g: m.avg.g,
           cheatCount: m.cheatCount || 0,
           hasData: m.daysTracked > 0,
+          startDate: m.startDate, endDate: m.endDate,
         };
       });
       periodTitle = "Ultimi 6 mesi";
@@ -1847,7 +1887,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end", height: 118, marginBottom: 10, padding: "0 2px" }}>
           {data.map((d, i) => {
             const h = maxVal > 0 ? (d[detailMetric] / maxVal) * 100 : 0;
-            const isAboveTarget = detailMetric === "kcal" && d[detailMetric] > nutritionGoals.kcalTarget;
+            // Per-bar weighted target using goal history
+            const barTarget = d.startDate && d.endDate ? weightedTargetForPeriod(d.startDate, d.endDate, 'kcalTarget') : nutritionGoals.kcalTarget;
+            const isAboveTarget = detailMetric === "kcal" && d[detailMetric] > barTarget;
             return (
               <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                 <div style={{ fontSize: 8, fontWeight: 700, color: metricColor }}>{d[detailMetric] || ""}</div>
@@ -1869,12 +1911,20 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           })}
         </div>
 
-        {detailMetric === "kcal" && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 6 }}>
-            <div style={{ width: 16, height: 1.5, background: T.coral, borderRadius: 1 }} />
-            <span style={{ fontSize: 9, color: T.textMuted }}>Obiettivo: {nutritionGoals.kcalTarget} kcal</span>
-          </div>
-        )}
+        {detailMetric === "kcal" && (() => {
+          // Show the weighted-average target across the whole visible period
+          const firstWithRange = data.find(d => d.startDate && d.endDate);
+          const lastWithRange = [...data].reverse().find(d => d.startDate && d.endDate);
+          const periodTarget = (firstWithRange && lastWithRange)
+            ? weightedTargetForPeriod(firstWithRange.startDate, lastWithRange.endDate, 'kcalTarget')
+            : nutritionGoals.kcalTarget;
+          return (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 6 }}>
+              <div style={{ width: 16, height: 1.5, background: T.coral, borderRadius: 1 }} />
+              <span style={{ fontSize: 9, color: T.textMuted }}>Obiettivo medio: {periodTarget} kcal</span>
+            </div>
+          );
+        })()}
 
         <div style={{ display: "flex", justifyContent: "center", padding: "8px 0 0", borderTop: `1px solid ${T.border}` }}>
           <div style={{ textAlign: "center" }}>
@@ -1923,40 +1973,35 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
       <div style={{ padding: "0 0 100px" }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
         {/* ─── Date Navigator ─── */}
         <div style={{ background: T.card, paddingBottom: 6, borderBottom: `1px solid ${T.border}` }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px 8px" }}>
-            <button onClick={() => changeWeek(-1)} aria-label="Settimana precedente" style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
-              <ChevronLeft size={18} />
+          <div style={{ display: "flex", alignItems: "center", padding: "10px 10px 8px", gap: 4 }}>
+            <button onClick={() => changeWeek(-1)} aria-label="Settimana precedente" style={{ width: 32, height: 36, borderRadius: 10, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal, flexShrink: 0 }}>
+              <ChevronLeft size={16} />
             </button>
-            <div style={{ textAlign: "center", cursor: "pointer" }} onClick={() => { setSelectedDate(todayStr); setViewWeekMonday(getMonday(todayStr)); }}>
-              <div style={{ fontSize: 17, fontWeight: 800, color: T.text }}>{formatDateLabel(selectedDate)}</div>
-              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 1 }}>{formatDateSub(selectedDate)}</div>
+            <div style={{ flex: 1, display: "flex", justifyContent: "space-between", gap: 2 }}>
+              {weekDays.map((day) => (
+                <button
+                  key={day.date}
+                  onClick={() => setSelectedDate(day.date)}
+                  style={{
+                    flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "5px 0 6px",
+                    borderRadius: 11, border: "none", cursor: "pointer",
+                    background: day.isSelected ? T.gradient : day.isToday ? T.tealLight : "transparent",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3, color: day.isSelected ? "rgba(255,255,255,0.8)" : T.textMuted }}>
+                    {day.dayName}
+                  </span>
+                  <span style={{ fontSize: 15, fontWeight: day.isSelected ? 800 : 600, color: day.isSelected ? "#fff" : day.isToday ? T.teal : T.text }}>
+                    {day.dayNum}
+                  </span>
+                  <div style={{ width: 4, height: 4, borderRadius: "50%", background: day.hasFoodData ? (day.isSelected ? "rgba(255,255,255,0.7)" : T.mint) : "transparent" }} />
+                </button>
+              ))}
             </div>
-            <button onClick={() => changeWeek(1)} aria-label="Settimana successiva" style={{ width: 36, height: 36, borderRadius: 12, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
-              <ChevronRight size={18} />
+            <button onClick={() => changeWeek(1)} aria-label="Settimana successiva" style={{ width: 32, height: 36, borderRadius: 10, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal, flexShrink: 0 }}>
+              <ChevronRight size={16} />
             </button>
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 12px 8px", gap: 2 }}>
-            {weekDays.map((day) => (
-              <button
-                key={day.date}
-                onClick={() => setSelectedDate(day.date)}
-                style={{
-                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "6px 0 8px",
-                  borderRadius: 12, border: "none", cursor: "pointer",
-                  background: day.isSelected ? T.gradient : day.isToday ? T.tealLight : "transparent",
-                  transition: "all 0.2s",
-                }}
-              >
-                <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3, color: day.isSelected ? "rgba(255,255,255,0.8)" : T.textMuted }}>
-                  {day.dayName}
-                </span>
-                <span style={{ fontSize: 15, fontWeight: day.isSelected ? 800 : 600, color: day.isSelected ? "#fff" : day.isToday ? T.teal : T.text }}>
-                  {day.dayNum}
-                </span>
-                <div style={{ width: 4, height: 4, borderRadius: "50%", background: day.hasFoodData ? (day.isSelected ? "rgba(255,255,255,0.7)" : T.mint) : "transparent" }} />
-              </button>
-            ))}
           </div>
         </div>
 
