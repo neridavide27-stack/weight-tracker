@@ -18,6 +18,15 @@ foodDb.version(4).stores({
   syncQueue: null, // removed — no longer used
 });
 
+// v5 — aggiunge tabella per le attività fitness (camminata)
+foodDb.version(5).stores({
+  foodEntries:       '++id, date, mealType',
+  cachedFoods:       'id, barcode',
+  savedMeals:        '++id, mealType',
+  appSettings:       'key',
+  fitnessActivities: '++id, date',
+});
+
 // ========== FOOD ENTRIES ==========
 
 export const getFoodEntriesByDate = async (date) => {
@@ -587,6 +596,55 @@ export const restoreFromSheets = async (url) => {
 
   await saveLastSyncTime(Date.now());
   return counts;
+};
+
+// ========== FITNESS ACTIVITIES ==========
+
+/**
+ * Aggiunge una nuova sessione di camminata.
+ * @param {{ date: string, distanceKm: number, durationMin: number, paceMinKm: number }} activity
+ */
+export const addFitnessActivity = async (activity) => {
+  return await foodDb.fitnessActivities.add({
+    ...activity,
+    createdAt: Date.now(),
+  });
+};
+
+/**
+ * Restituisce tutte le attività in un intervallo di date [startDate, endDate] inclusivo.
+ * @param {string} startDate  YYYY-MM-DD
+ * @param {string} endDate    YYYY-MM-DD
+ */
+export const getFitnessActivitiesByDateRange = async (startDate, endDate) => {
+  return await foodDb.fitnessActivities
+    .where('date')
+    .between(startDate, endDate, true, true)
+    .toArray();
+};
+
+/**
+ * Elimina una sessione per id.
+ */
+export const deleteFitnessActivity = async (id) => {
+  return await foodDb.fitnessActivities.delete(id);
+};
+
+// ========== FITNESS SETTINGS ==========
+
+/**
+ * Legge l'obiettivo km settimanale (default: 20).
+ */
+export const getWeeklyGoalKm = async () => {
+  const row = await foodDb.appSettings.get('fitnessWeeklyGoalKm');
+  return row ? row.value : 20;
+};
+
+/**
+ * Salva l'obiettivo km settimanale.
+ */
+export const saveWeeklyGoalKm = async (km) => {
+  return await foodDb.appSettings.put({ key: 'fitnessWeeklyGoalKm', value: km });
 };
 
 export default foodDb;
