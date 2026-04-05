@@ -20,7 +20,7 @@ import {
   ChevronLeft, Plus, Check, X, Settings,
   Timer, Gauge, Footprints, Home, Utensils, Dumbbell, User,
   Flame, Trophy, TrendingUp, TrendingDown, BarChart3, Zap,
-  Heart, Mountain, ChevronDown, ChevronUp, Star,
+  Heart, Mountain,
 } from "lucide-react";
 import {
   addFitnessActivity,
@@ -440,12 +440,11 @@ const GoalModal = ({ current, onSave, onClose }) => {
 const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
   const [date,      setDate]      = useState(initial?.date      ?? todayISO());
   const [km,        setKm]        = useState(initial?.distanceKm ?? 5.0);
-  const [hours,     setHours]     = useState(initial ? Math.floor(initial.durationMin / 60) : 0);
-  const [minutes,   setMinutes]   = useState(initial ? initial.durationMin % 60 : 0);
+  const [hours,     setHours]     = useState(Math.floor((initial?.durationMin ?? 0) / 60));
+  const [minutes,   setMinutes]   = useState((initial?.durationMin ?? 0) % 60);
   const [heartRate, setHeartRate] = useState(initial?.heartRate ?? "");
   const [slope,     setSlope]     = useState(initial?.slope     ?? "");
   const [kcalOver,  setKcalOver]  = useState(null);   // null = auto-calcolato
-  const [showExtra, setShowExtra] = useState(!!(initial?.heartRate || initial?.slope));
   const [saving,    setSaving]    = useState(false);
 
   const totalMin = hours * 60 + minutes;
@@ -589,45 +588,43 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
             <div style={{ fontSize:10,color:T.textMuted,fontWeight:600,marginTop:4 }}>{formulaHint}</div>
           </div>
 
-          {/* CAMPI OPZIONALI: toggle */}
-          <button onClick={() => setShowExtra(v => !v)} style={{ width:"100%",background:`${T.purple}08`,border:`1px solid ${T.purple}20`,borderRadius:12,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"between",cursor:"pointer",gap:8 }}>
-            <div style={{ display:"flex",alignItems:"center",gap:8,flex:1 }}>
-              <Star size={14} color={T.purple}/>
-              <span style={{ fontSize:12,fontWeight:700,color:T.purple }}>Dati aggiuntivi (facoltativo)</span>
+          {/* DATI AGGIUNTIVI — sempre visibili, griglia 2 colonne */}
+          <div style={{ borderTop:`1px solid ${T.border}`,paddingTop:16,marginTop:4 }}>
+            <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:12,textTransform:"uppercase",letterSpacing:".04em" }}>
+              Dati aggiuntivi (facoltativo)
             </div>
-            {showExtra ? <ChevronUp size={16} color={T.purple}/> : <ChevronDown size={16} color={T.purple}/>}
-          </button>
-
-          {showExtra && (
-            <div style={{ marginTop:12,display:"flex",gap:12 }}>
+            <div style={{ display:"flex",gap:12 }}>
               {/* Battiti */}
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:6,display:"flex",alignItems:"center",gap:4 }}>
-                  <Heart size={11} color={T.coral}/> Battiti medi
+              <div style={{ flex:1,background:"#FFF5F5",borderRadius:14,padding:"12px 14px" }}>
+                <div style={{ fontSize:11,fontWeight:700,color:T.coral,marginBottom:8,display:"flex",alignItems:"center",gap:5 }}>
+                  <Heart size={12} color={T.coral}/> Battiti medi
                 </div>
                 <div style={{ display:"flex",alignItems:"center",gap:6 }}>
                   <input type="number" inputMode="numeric" value={heartRate}
                     onChange={e => setHeartRate(e.target.value)}
                     placeholder="—" min={40} max={220}
-                    style={{ flex:1,fontSize:18,fontWeight:800,color:T.text,textAlign:"center",border:"1.5px solid #E5E7EB",borderRadius:10,padding:"8px",background:"#F9FAFB",outline:"none",fontFamily:"inherit" }}/>
+                    style={{ flex:1,fontSize:22,fontWeight:900,color:T.text,textAlign:"center",border:"none",background:"transparent",outline:"none",fontFamily:"inherit" }}/>
                   <span style={{ fontSize:12,fontWeight:700,color:T.textMuted }}>bpm</span>
                 </div>
               </div>
               {/* Pendenza */}
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:6,display:"flex",alignItems:"center",gap:4 }}>
-                  <Mountain size={11} color={T.purple}/> Pendenza media
+              <div style={{ flex:1,background:"#F5F3FF",borderRadius:14,padding:"12px 14px" }}>
+                <div style={{ fontSize:11,fontWeight:700,color:T.purple,marginBottom:8,display:"flex",alignItems:"center",gap:5 }}>
+                  <Mountain size={12} color={T.purple}/> Pendenza media
                 </div>
                 <div style={{ display:"flex",alignItems:"center",gap:6 }}>
                   <input type="number" inputMode="decimal" value={slope}
                     onChange={e => setSlope(e.target.value)}
                     placeholder="0" min={-30} max={60}
-                    style={{ flex:1,fontSize:18,fontWeight:800,color:T.text,textAlign:"center",border:"1.5px solid #E5E7EB",borderRadius:10,padding:"8px",background:"#F9FAFB",outline:"none",fontFamily:"inherit" }}/>
+                    style={{ flex:1,fontSize:22,fontWeight:900,color:T.text,textAlign:"center",border:"none",background:"transparent",outline:"none",fontFamily:"inherit" }}/>
                   <span style={{ fontSize:12,fontWeight:700,color:T.textMuted }}>%</span>
                 </div>
               </div>
             </div>
-          )}
+            <div style={{ fontSize:10,color:T.textMuted,marginTop:8,textAlign:"center" }}>
+              {heartRate ? "✓ Formula HR-based (Keytel 2005)" : slope > 0 ? "✓ MET + correzione pendenza" : "Formula MET standard — aggiungi i dati per maggiore precisione"}
+            </div>
+          </div>
         </div>
 
         {/* BOTTONE SALVA */}
@@ -655,9 +652,7 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
    SCREEN: MAIN
    ═══════════════════════════════════════════ */
 const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoal, onNavigate, onReport }) => {
-  const [showAll,   setShowAll]   = useState(false);
-  const [calYear,   setCalYear]   = useState(new Date().getFullYear());
-  const [calMonth,  setCalMonth]  = useState(new Date().getMonth());
+  const [showAll, setShowAll] = useState(false);
 
   const weekDays = useMemo(() => getWeekDays(getMondayISO()), []);
   const chart    = useMemo(() => weekDays.map((iso, i) => ({
@@ -676,13 +671,7 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
   const prevTotal   = useMemo(() => prevWkDays.reduce((s, iso) => s + activities.filter(a => a.date === iso).reduce((ss, a) => ss + a.distanceKm, 0), 0), [activities, prevWkDays]);
   const trendDiff   = weekTotal - prevTotal;
 
-  const streak = useMemo(() => calcStreak(activities), [activities]);
-  const pr     = useMemo(() => calcPR(activities),     [activities]);
-
   const displayed = showAll ? activities : activities.slice(0, 5);
-
-  const prevMonth = () => { if (calMonth === 0) { setCalYear(y => y-1); setCalMonth(11); } else setCalMonth(m => m-1); };
-  const nextMonth = () => { if (calMonth === 11) { setCalYear(y => y+1); setCalMonth(0); } else setCalMonth(m => m+1); };
 
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:110 }}>
@@ -703,92 +692,55 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
 
       <div style={{ padding:"0 20px" }}>
 
-        {/* ── CARD UNIFICATA: OBIETTIVO + GRAFICO ── */}
-        <div style={{ background:GG,borderRadius:24,padding:"20px 18px 16px",marginBottom:14,boxShadow:"0 8px 32px rgba(22,163,74,0.22)",color:"#fff" }}>
-          {/* Riga superiore: numeri + anello */}
-          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
+        {/* ── CARD UNIFICATA: OBIETTIVO + GRAFICO (design A) ── */}
+        <div style={{ background:T.card,borderRadius:24,padding:"20px 18px 14px",marginBottom:14,boxShadow:T.shadowLg }}>
+          {/* Riga superiore: numeri + anello teal */}
+          <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12 }}>
             <div style={{ flex:1,minWidth:0 }}>
-              <div style={{ fontSize:11,fontWeight:600,opacity:.85,marginBottom:4 }}>Questa settimana</div>
-              <div style={{ fontSize:40,fontWeight:900,lineHeight:1,letterSpacing:-1.5 }}>
+              <div style={{ fontSize:11,fontWeight:600,color:T.textSec,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4 }}>Questa settimana</div>
+              <div style={{ fontSize:34,fontWeight:900,lineHeight:1,letterSpacing:-1,color:T.text }}>
                 {weekTotal.toFixed(1)}
-                <span style={{ fontSize:16,fontWeight:700,opacity:.75,marginLeft:4 }}>/ {weeklyGoal} km</span>
+                <span style={{ fontSize:14,fontWeight:600,color:T.textSec,marginLeft:5 }}>/ {weeklyGoal} km</span>
               </div>
               {/* Trend */}
-              <div style={{ display:"flex",alignItems:"center",gap:5,marginTop:8 }}>
+              <div style={{ display:"flex",alignItems:"center",gap:5,marginTop:7 }}>
                 {trendDiff >= 0
-                  ? <TrendingUp  size={13} color="rgba(255,255,255,0.9)"/>
-                  : <TrendingDown size={13} color="rgba(255,255,255,0.9)"/>}
-                <span style={{ fontSize:11,fontWeight:700,opacity:.9 }}>
-                  {trendDiff >= 0 ? "+" : ""}{trendDiff.toFixed(1)} km vs settimana scorsa
+                  ? <TrendingUp  size={12} color={GREEN}/>
+                  : <TrendingDown size={12} color={T.coral}/>}
+                <span style={{ fontSize:11,fontWeight:700,color:trendDiff>=0?GREEN:T.coral }}>
+                  {trendDiff >= 0 ? "+" : ""}{trendDiff.toFixed(1)} km vs scorsa
                 </span>
               </div>
-              <div style={{ fontSize:12,fontWeight:600,opacity:.88,marginTop:6 }}>
+              <div style={{ fontSize:12,color:T.textSec,marginTop:5 }}>
                 {pct >= 100 ? "🎉 Obiettivo raggiunto!" : `Mancano ${(weeklyGoal - weekTotal).toFixed(1)} km`}
               </div>
             </div>
-            <div style={{ position:"relative",flexShrink:0,marginLeft:10 }}>
-              <CircularRing pct={pct} size={104} stroke={11} color="#fff"/>
+            {/* Ring teal */}
+            <div style={{ position:"relative",flexShrink:0,marginLeft:12 }}>
+              <CircularRing pct={pct} size={90} stroke={9} color={T.teal}/>
               <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                <span style={{ fontSize:21,fontWeight:900 }}>{Math.round(pct)}%</span>
+                <span style={{ fontSize:18,fontWeight:900,color:T.teal }}>{Math.round(pct)}%</span>
               </div>
             </div>
           </div>
 
-          {/* Grafico integrato */}
-          <div style={{ background:"rgba(255,255,255,0.13)",borderRadius:14,padding:"10px 6px 4px" }}>
-            <ResponsiveContainer width="100%" height={80}>
-              <BarChart data={chart} barSize={18} margin={{ top:0,right:0,left:-28,bottom:0 }}>
-                <XAxis dataKey="day" tick={{ fontSize:10,fill:"rgba(255,255,255,.8)",fontWeight:700 }} axisLine={false} tickLine={false}/>
-                <YAxis tick={{ fontSize:9,fill:"rgba(255,255,255,.45)" }} axisLine={false} tickLine={false}/>
-                <Tooltip contentStyle={{ background:"rgba(0,0,0,.7)",border:"none",borderRadius:8,fontSize:11,color:"#fff" }} cursor={{ fill:"rgba(255,255,255,.1)" }} formatter={v => [`${v} km`]}/>
-                <Bar dataKey="km" radius={[5,5,0,0]}>
-                  {chart.map((d,i) => (
-                    <Cell key={i} fill={d.iso===oggi?"#fff":d.km>0?"rgba(255,255,255,.65)":"rgba(255,255,255,.18)"}/>
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          {/* Barra progresso */}
+          <div style={{ background:"#F0F0F0",borderRadius:6,height:5,marginBottom:14 }}>
+            <div style={{ width:`${Math.min(pct,100)}%`,height:"100%",borderRadius:6,background:T.gradient,transition:"width .5s" }}/>
           </div>
-        </div>
 
-        {/* ── STREAK + PR ── */}
-        <div style={{ display:"flex",gap:10,marginBottom:14 }}>
-          <div style={{ flex:1,background:T.card,borderRadius:18,padding:"14px 16px",boxShadow:T.shadow,display:"flex",alignItems:"center",gap:10 }}>
-            <div style={{ width:42,height:42,borderRadius:13,background:streak>0?"#FEF3C7":"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-              <Flame size={22} color={streak>0?T.gold:"#D1D5DB"}/>
-            </div>
-            <div>
-              <div style={{ fontSize:24,fontWeight:900,color:T.text,lineHeight:1 }}>{streak}</div>
-              <div style={{ fontSize:10,fontWeight:700,color:T.textMuted,marginTop:2 }}>
-                {streak===0?"inizia oggi!":streak===1?"giorno di fila":"giorni di fila"}
-              </div>
-            </div>
-          </div>
-          <div style={{ flex:1,background:T.card,borderRadius:18,padding:"14px 16px",boxShadow:T.shadow,display:"flex",alignItems:"center",gap:10 }}>
-            <div style={{ width:42,height:42,borderRadius:13,background:"#EDE9FE",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-              <Trophy size={22} color={T.purple}/>
-            </div>
-            <div>
-              <div style={{ fontSize:24,fontWeight:900,color:T.text,lineHeight:1 }}>
-                {pr.maxDist > 0 ? pr.maxDist.toFixed(1) : "—"}
-              </div>
-              <div style={{ fontSize:10,fontWeight:700,color:T.textMuted,marginTop:2 }}>km record</div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── CALENDARIO MENSILE ── */}
-        <div style={{ background:T.card,borderRadius:18,padding:"16px 16px 14px",boxShadow:T.shadow,marginBottom:14 }}>
-          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
-            <div style={{ fontSize:13,fontWeight:700,color:T.text }}>
-              {MONTH_LABELS[calMonth]} {calYear}
-            </div>
-            <div style={{ display:"flex",gap:4 }}>
-              <button onClick={prevMonth} style={{ background:"none",border:"none",cursor:"pointer",padding:"2px 8px",fontSize:18,color:T.textMuted }}>‹</button>
-              <button onClick={nextMonth} style={{ background:"none",border:"none",cursor:"pointer",padding:"2px 8px",fontSize:18,color:T.textMuted }}>›</button>
-            </div>
-          </div>
-          <MonthCalendar activities={activities} year={calYear} month={calMonth}/>
+          {/* Grafico a barre */}
+          <ResponsiveContainer width="100%" height={80}>
+            <BarChart data={chart} barSize={22} margin={{ top:0,right:0,left:-28,bottom:0 }}>
+              <XAxis dataKey="day" tick={{ fontSize:10,fill:T.textMuted,fontWeight:600 }} axisLine={false} tickLine={false}/>
+              <Tooltip contentStyle={{ background:"rgba(0,0,0,.75)",border:"none",borderRadius:8,fontSize:11,color:"#fff" }} cursor={{ fill:`${T.teal}10` }} formatter={v=>[`${v} km`]}/>
+              <Bar dataKey="km" radius={[5,5,0,0]}>
+                {chart.map((d,i) => (
+                  <Cell key={i} fill={d.iso===oggi?T.mint:d.km>0?T.teal:"#F0F0F0"}/>
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
 
         {/* ── SESSIONI RECENTI ── */}
@@ -815,16 +767,17 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
         )}
       </div>
 
-      {/* Report button (floating, sopra nav) */}
+      {/* Report button — floating pill, stile sezione cibo */}
       <button onClick={onReport} style={{
-        position:"fixed",bottom:88,right:20,
-        background:T.card,border:`1.5px solid ${T.tealLight}`,
-        borderRadius:14,padding:"9px 16px",
-        display:"flex",alignItems:"center",gap:7,
-        boxShadow:T.shadowLg,cursor:"pointer",zIndex:15,
+        position:"fixed",bottom:86,right:20,
+        background:T.gradient,border:"none",
+        borderRadius:50,padding:"11px 20px",
+        display:"flex",alignItems:"center",gap:8,
+        boxShadow:"0 6px 24px rgba(2,128,144,0.35)",
+        cursor:"pointer",zIndex:15,
       }}>
-        <BarChart3 size={16} color={T.teal}/>
-        <span style={{ fontSize:12,fontWeight:700,color:T.teal }}>Report</span>
+        <BarChart3 size={16} color="#fff"/>
+        <span style={{ fontSize:13,fontWeight:700,color:"#fff" }}>Report</span>
       </button>
 
       <FitnessBottomNav onAdd={onAdd} onNavigate={onNavigate}/>
@@ -836,44 +789,70 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
    SCREEN: REPORT
    ═══════════════════════════════════════════ */
 const ReportScreen = ({ activities, onBack, onNavigate }) => {
-  const [period, setPeriod] = useState("week");
+  const [period,      setPeriod]      = useState("week");   // "week" | "month"
+  const [chartMetric, setChartMetric] = useState("km");     // "km" | "kcal"
 
+  // ── Dati grafico (8 settimane o 8 mesi) con km + kcal ──
   const chart = useMemo(() => {
     if (period === "week") {
       return Array.from({ length: 8 }, (_, i) => {
-        const d = new Date(getMondayISO()); d.setDate(d.getDate() - i*7);
+        const d = new Date(getMondayISO()); d.setDate(d.getDate() - i * 7);
         const days = getWeekDays(toISO(d));
-        const km   = days.reduce((s, iso) => s + activities.filter(a => a.date === iso).reduce((ss, a) => ss + a.distanceKm, 0), 0);
-        return { label: i === 0 ? "Questa" : `-${i}w`, km: parseFloat(km.toFixed(1)) };
+        const acts = days.flatMap(iso => activities.filter(a => a.date === iso));
+        const km   = parseFloat(acts.reduce((s, a) => s + a.distanceKm, 0).toFixed(1));
+        const kcal = Math.round(acts.reduce((s, a) => s + (a.kcal || 0), 0));
+        return { label: i === 0 ? "Questa" : `-${i}w`, km, kcal };
       }).reverse();
     }
-    return Array.from({ length: 6 }, (_, i) => {
+    return Array.from({ length: 8 }, (_, i) => {
       const d = new Date(); d.setMonth(d.getMonth() - i);
       const y = d.getFullYear(), m = d.getMonth();
-      const km = activities
-        .filter(a => { const dd = new Date(a.date); return dd.getFullYear()===y && dd.getMonth()===m; })
-        .reduce((s, a) => s + a.distanceKm, 0);
-      return { label: MONTH_LABELS[m].slice(0,3), km: parseFloat(km.toFixed(1)) };
+      const acts = activities.filter(a => { const dd = new Date(a.date); return dd.getFullYear()===y && dd.getMonth()===m; });
+      const km   = parseFloat(acts.reduce((s, a) => s + a.distanceKm, 0).toFixed(1));
+      const kcal = Math.round(acts.reduce((s, a) => s + (a.kcal || 0), 0));
+      return { label: MONTH_LABELS[m], km, kcal };
     }).reverse();
   }, [activities, period]);
 
-  const pr          = useMemo(() => calcPR(activities), [activities]);
-  const totalKm     = pr.totalKm.toFixed(1);
-  const totalKcal   = activities.reduce((s, a) => s + (a.kcal || 0), 0);
-  const avgDist     = activities.length ? (pr.totalKm / activities.length).toFixed(1) : 0;
-  const streak      = useMemo(() => calcStreak(activities), [activities]);
+  const pr        = useMemo(() => calcPR(activities), [activities]);
+  const totalKm   = pr.totalKm.toFixed(1);
+  const totalKcal = activities.reduce((s, a) => s + (a.kcal || 0), 0);
+  const avgDist   = activities.length ? (pr.totalKm / activities.length).toFixed(1) : 0;
+  const streak    = useMemo(() => calcStreak(activities), [activities]);
 
-  // Confronto periodo corrente vs precedente
-  const mondayISO   = getMondayISO();
-  const prevMon     = (() => { const d = new Date(mondayISO); d.setDate(d.getDate()-7); return toISO(d); })();
-  const thisWkDays  = getWeekDays(mondayISO);
-  const prevWkDays  = getWeekDays(prevMon);
-  const thisWkKm    = thisWkDays.reduce((s, iso) => s + activities.filter(a => a.date === iso).reduce((ss,a) => ss+a.distanceKm, 0), 0);
-  const prevWkKm    = prevWkDays.reduce((s, iso) => s + activities.filter(a => a.date === iso).reduce((ss,a) => ss+a.distanceKm, 0), 0);
-  const diff        = thisWkKm - prevWkKm;
+  // ── Confronto periodo corrente vs precedente ──
+  const mondayISO  = getMondayISO();
+  const prevMonISO = (() => { const d = new Date(mondayISO); d.setDate(d.getDate()-7); return toISO(d); })();
+  const thisWkDays = getWeekDays(mondayISO);
+  const prevWkDays = getWeekDays(prevMonISO);
+  const thisWkKm   = thisWkDays.reduce((s,iso) => s + activities.filter(a=>a.date===iso).reduce((ss,a)=>ss+a.distanceKm,0), 0);
+  const prevWkKm   = prevWkDays.reduce((s,iso) => s + activities.filter(a=>a.date===iso).reduce((ss,a)=>ss+a.distanceKm,0), 0);
+  const thisWkKcal = thisWkDays.reduce((s,iso) => s + activities.filter(a=>a.date===iso).reduce((ss,a)=>ss+(a.kcal||0),0), 0);
+  const prevWkKcal = prevWkDays.reduce((s,iso) => s + activities.filter(a=>a.date===iso).reduce((ss,a)=>ss+(a.kcal||0),0), 0);
+
+  // Mese corrente vs precedente
+  const now     = new Date();
+  const thisY   = now.getFullYear(), thisM = now.getMonth();
+  const prevMd  = new Date(now); prevMd.setMonth(thisM - 1);
+  const prevY   = prevMd.getFullYear(), prevM = prevMd.getMonth();
+  const thisMoActs = activities.filter(a => { const d=new Date(a.date); return d.getFullYear()===thisY && d.getMonth()===thisM; });
+  const prevMoActs = activities.filter(a => { const d=new Date(a.date); return d.getFullYear()===prevY && d.getMonth()===prevM; });
+  const thisMoKm   = thisMoActs.reduce((s,a)=>s+a.distanceKm,0);
+  const prevMoKm   = prevMoActs.reduce((s,a)=>s+a.distanceKm,0);
+  const thisMoKcal = thisMoActs.reduce((s,a)=>s+(a.kcal||0),0);
+  const prevMoKcal = prevMoActs.reduce((s,a)=>s+(a.kcal||0),0);
+
+  const thisVal  = period==="week" ? thisWkKm   : thisMoKm;
+  const prevVal  = period==="week" ? prevWkKm   : prevMoKm;
+  const diff     = thisVal - prevVal;
+  const prevLabel = period==="week" ? "scorsa" : MONTH_LABELS[prevM];
+
+  const metricKey  = chartMetric; // "km" | "kcal"
+  const metricUnit = chartMetric === "km" ? "km" : "kcal";
 
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
+      {/* Header */}
       <div style={{ padding:"20px 20px 10px",background:T.bg,position:"sticky",top:0,zIndex:10 }}>
         <div style={{ display:"flex",alignItems:"center",gap:8 }}>
           <button onClick={onBack} style={{ background:T.card,border:"none",cursor:"pointer",padding:8,borderRadius:10,display:"flex",alignItems:"center",boxShadow:T.shadow }}>
@@ -887,7 +866,8 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
       </div>
 
       <div style={{ padding:"0 20px" }}>
-        {/* Toggle */}
+
+        {/* Toggle settimana/mese */}
         <div style={{ display:"flex",background:"#F3F4F6",borderRadius:12,padding:4,marginBottom:14 }}>
           {[["week","Settimanale"],["month","Mensile"]].map(([v,l]) => (
             <button key={v} onClick={() => setPeriod(v)} style={{ flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",background:period===v?T.card:"transparent",fontWeight:700,fontSize:13,color:period===v?T.text:T.textMuted,boxShadow:period===v?T.shadow:"none",transition:".2s" }}>{l}</button>
@@ -895,76 +875,95 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
         </div>
 
         {/* Card confronto */}
-        <div style={{ background:GG,borderRadius:20,padding:"18px 20px",marginBottom:14,color:"#fff" }}>
-          <div style={{ fontSize:11,fontWeight:600,opacity:.85,marginBottom:8 }}>
-            {period==="week" ? "Questa settimana vs scorsa" : "Questo mese vs scorso"}
+        <div style={{ background:T.gradient,borderRadius:20,padding:"18px 20px",marginBottom:14,color:"#fff" }}>
+          <div style={{ fontSize:11,fontWeight:600,opacity:.85,marginBottom:6 }}>
+            {period==="week" ? "Questa settimana vs scorsa" : `${MONTH_LABELS[thisM]} vs ${prevLabel}`}
           </div>
           <div style={{ fontSize:36,fontWeight:900,letterSpacing:-1 }}>
-            {thisWkKm.toFixed(1)} <span style={{ fontSize:14,opacity:.7 }}>km</span>
+            {thisVal.toFixed(1)} <span style={{ fontSize:14,opacity:.7 }}>km</span>
           </div>
           <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:6 }}>
             {diff >= 0 ? <TrendingUp size={14}/> : <TrendingDown size={14}/>}
             <span style={{ fontSize:12,fontWeight:700 }}>
-              {diff >= 0 ? "+" : ""}{diff.toFixed(1)} km ({prevWkKm.toFixed(1)} km prec.)
+              {diff >= 0 ? "+" : ""}{diff.toFixed(1)} km rispetto a {prevLabel} ({prevVal.toFixed(1)} km)
             </span>
           </div>
         </div>
 
-        {/* Grafico storico */}
+        {/* Grafico storico con toggle km/kcal */}
         <div style={{ background:T.card,borderRadius:18,padding:"16px 14px 10px",boxShadow:T.shadow,marginBottom:14 }}>
-          <div style={{ fontSize:13,fontWeight:700,color:T.text,marginBottom:12 }}>
-            {period==="week" ? "Ultime 8 settimane" : "Ultimi 6 mesi"}
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
+            <div style={{ fontSize:13,fontWeight:700,color:T.text }}>
+              {period==="week" ? "Ultime 8 settimane" : "Ultimi 8 mesi"}
+            </div>
+            {/* Toggle km / kcal */}
+            <div style={{ display:"flex",background:"#F3F4F6",borderRadius:20,padding:3,gap:2 }}>
+              {[["km","Km"],["kcal","Kcal"]].map(([v,l]) => (
+                <button key={v} onClick={() => setChartMetric(v)} style={{
+                  padding:"4px 12px",borderRadius:16,border:"none",cursor:"pointer",
+                  background:chartMetric===v?T.teal:"transparent",
+                  color:chartMetric===v?"#fff":T.textMuted,
+                  fontWeight:700,fontSize:11,transition:".15s",
+                }}>{l}</button>
+              ))}
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={130}>
-            <BarChart data={chart} barSize={22} margin={{ top:0,right:0,left:-22,bottom:0 }}>
+            <BarChart data={chart} barSize={period==="week"?20:16} margin={{ top:0,right:0,left:-22,bottom:0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={T.border}/>
               <XAxis dataKey="label" tick={{ fontSize:10,fill:T.textMuted,fontWeight:600 }} axisLine={false} tickLine={false}/>
               <YAxis tick={{ fontSize:9,fill:T.textMuted }} axisLine={false} tickLine={false}/>
-              <Tooltip content={<ChartTooltip/>} cursor={{ fill:`${T.teal}10` }}/>
-              <Bar dataKey="km" radius={[6,6,0,0]}>
-                {chart.map((d,i) => <Cell key={i} fill={i===chart.length-1?T.teal:GREEN}/>)}
+              <Tooltip
+                contentStyle={{ background:"rgba(0,0,0,.75)",border:"none",borderRadius:8,fontSize:11,color:"#fff" }}
+                cursor={{ fill:`${T.teal}10` }}
+                formatter={v=>[`${v} ${metricUnit}`]}
+              />
+              <Bar dataKey={metricKey} radius={[6,6,0,0]}>
+                {chart.map((d,i) => <Cell key={i} fill={i===chart.length-1?T.teal:T.mint}/>)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Stats */}
-        <div style={{ fontSize:13,fontWeight:700,color:T.text,marginBottom:10 }}>📈 Statistiche totali</div>
+        {/* Card dati storici (stile food report) */}
+        <div style={{ fontSize:13,fontWeight:700,color:T.text,marginBottom:10 }}>📊 Dati storici</div>
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14 }}>
           {[
-            { Icon:Footprints, color:GREEN,   label:"Km totali",     val:`${totalKm} km`          },
-            { Icon:Zap,        color:T.gold,  label:"Sessioni",      val:activities.length         },
-            { Icon:BarChart3,  color:T.teal,  label:"Media/sessione",val:`${avgDist} km`           },
-            { Icon:Flame,      color:ORANGE,  label:"Kcal bruciate", val:totalKcal.toLocaleString("it-IT") },
-            { Icon:Flame,      color:T.gold,  label:"Streak attuale",val:`${streak} gg`            },
-            { Icon:Trophy,     color:T.purple,label:"Record km",     val:`${pr.maxDist.toFixed(1)} km` },
-          ].map(({ Icon, color, label, val }) => (
+            { label:"Km totali",      val:`${totalKm}`,     unit:"km",   color:T.teal,   Icon:Footprints },
+            { label:"Kcal bruciate",  val:totalKcal.toLocaleString("it-IT"), unit:"kcal", color:ORANGE, Icon:Flame },
+            { label:"Sessioni totali",val:`${activities.length}`, unit:"",  color:T.purple, Icon:Zap },
+            { label:"Media/sessione", val:`${avgDist}`,     unit:"km",   color:GREEN,    Icon:BarChart3 },
+            { label:"Streak attuale", val:`${streak}`,      unit:"gg",   color:T.gold,   Icon:Flame },
+            { label:"Ritmo migliore", val:pr.bestPace < Infinity ? formatPace(pr.bestPace) : "—", unit:"/km", color:T.purple, Icon:Gauge },
+          ].map(({ label, val, unit, color, Icon }) => (
             <div key={label} style={{ background:T.card,borderRadius:16,padding:"14px 16px",boxShadow:T.shadow }}>
-              <div style={{ width:34,height:34,borderRadius:10,background:`${color}15`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:8 }}>
-                <Icon size={17} color={color}/>
+              <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:8 }}>
+                <div style={{ width:30,height:30,borderRadius:9,background:`${color}15`,display:"flex",alignItems:"center",justifyContent:"center" }}>
+                  <Icon size={15} color={color}/>
+                </div>
+                <div style={{ fontSize:11,color:T.textMuted,fontWeight:600 }}>{label}</div>
               </div>
-              <div style={{ fontSize:20,fontWeight:900,color:T.text,letterSpacing:-.5 }}>{val}</div>
-              <div style={{ fontSize:11,color:T.textMuted,fontWeight:600,marginTop:2 }}>{label}</div>
+              <div style={{ fontSize:22,fontWeight:900,color:T.text,letterSpacing:-.5,lineHeight:1 }}>
+                {val}<span style={{ fontSize:12,fontWeight:600,color:T.textSec,marginLeft:3 }}>{unit}</span>
+              </div>
             </div>
           ))}
         </div>
 
         {/* Record personali */}
         <div style={{ fontSize:13,fontWeight:700,color:T.text,marginBottom:10 }}>🏆 Record personali</div>
-        <div style={{ background:T.card,borderRadius:18,padding:"4px 0",boxShadow:T.shadow }}>
+        <div style={{ background:T.card,borderRadius:18,padding:"4px 0",boxShadow:T.shadow,marginBottom:20 }}>
           {[
-            { Icon:Trophy, color:T.gold,   label:"Distanza massima", val:`${pr.maxDist.toFixed(1)} km` },
-            { Icon:Gauge,  color:T.purple, label:"Ritmo migliore",   val:pr.bestPace < Infinity ? `${formatPace(pr.bestPace)}/km` : "—" },
-            { Icon:Flame,  color:ORANGE,   label:"Kcal max/sessione",val:`${pr.maxKcal} kcal` },
-            { Icon:Footprints,color:GREEN, label:"Km totali percorsi",val:`${parseFloat(totalKm).toFixed(0)} km` },
+            { Icon:Trophy,    color:T.gold,   label:"Distanza massima",   val:`${pr.maxDist.toFixed(1)} km` },
+            { Icon:Gauge,     color:T.purple, label:"Ritmo migliore",     val:pr.bestPace < Infinity ? `${formatPace(pr.bestPace)}/km` : "—" },
+            { Icon:Flame,     color:ORANGE,   label:"Kcal max/sessione",  val:`${pr.maxKcal} kcal` },
+            { Icon:Footprints,color:GREEN,    label:"Km totali percorsi", val:`${parseFloat(totalKm).toFixed(0)} km` },
           ].map(({ Icon, color, label, val }, i, arr) => (
             <div key={label} style={{ display:"flex",alignItems:"center",gap:12,padding:"13px 16px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none" }}>
               <div style={{ width:36,height:36,borderRadius:11,background:`${color}15`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                 <Icon size={17} color={color}/>
               </div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:12,color:T.textMuted,fontWeight:600 }}>{label}</div>
-              </div>
+              <div style={{ flex:1,fontSize:12,color:T.textMuted,fontWeight:600 }}>{label}</div>
               <div style={{ fontSize:15,fontWeight:800,color:T.text }}>{val}</div>
             </div>
           ))}
