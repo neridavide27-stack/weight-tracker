@@ -580,10 +580,20 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
     setSelectedFoods([]);
   };
 
-  // Confirm gram editor → add food immediately
+  // Confirm gram editor → mark food as selected (don't add yet), return to list
   const handleGramConfirm = () => {
     haptic(15);
-    onAdd(gramFood, activeMeal, gramVal);
+    const key = gramFood.foodName || gramFood.name;
+    setSelectedFoods(prev => {
+      const existingIdx = prev.findIndex(f => (f.foodName || f.name) === key);
+      if (existingIdx >= 0) {
+        // Update grams for already-selected food
+        const next = [...prev];
+        next[existingIdx] = { ...next[existingIdx], selGrams: gramVal };
+        return next;
+      }
+      return [...prev, { ...gramFood, selGrams: gramVal }];
+    });
     setGramFood(null);
   };
 
@@ -684,7 +694,17 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
     );
   }
 
-  const list = search.length >= 2 ? results : localRecents;
+  const rawList = search.length >= 2 ? results : localRecents;
+  // Keep selected foods pinned on top, preserving order of selection
+  const list = (() => {
+    const selKeys = selectedFoods.map(f => f.foodName || f.name);
+    const selSet = new Set(selKeys);
+    const selectedInList = selectedFoods
+      .map(sf => rawList.find(r => (r.foodName || r.name) === (sf.foodName || sf.name)))
+      .filter(Boolean);
+    const rest = rawList.filter(f => !selSet.has(f.foodName || f.name));
+    return [...selectedInList, ...rest];
+  })();
 
   return (
     <div ref={sheetRef} role="dialog" aria-modal="true" aria-label="Aggiungi cibo" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.45)", zIndex: 900, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
@@ -739,9 +759,11 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
           {list.map((food, idx) => {
             const key = food.foodName || food.name;
             const k100 = food.kcalPer100 ?? food.kcal ?? 0;
-            const portion = food.defaultPortion || food.lastGrams || 100;
+            const selRec = selectedFoods.find(f => (f.foodName || f.name) === key);
+            const isSelected = !!selRec;
+            // If selected, use the user-chosen grams; otherwise the default portion
+            const portion = isSelected ? selRec.selGrams : (food.defaultPortion || food.lastGrams || 100);
             const pm = portion / 100;
-            const isSelected = selectedFoods.some(f => (f.foodName || f.name) === key);
 
             return (
               <div key={`${key}-${idx}`}
@@ -847,6 +869,14 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   const [detailMetric, setDetailMetric] = useState("kcal");
   const [compData, setCompData] = useState({ weeks: [], months: [] });
   const [detailData, setDetailData] = useState({ weeks: [], months: [] });
+  const [comparisonMode, setComparisonMode] = useState("week"); // "week" | "month" — for merged comparison card
+
+  // Scroll to top whenever reports screen opens
+  useEffect(() => {
+    if (foodScreen === "reports") {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }, [foodScreen]);
 
   // Refs
   const searchTimeoutRef = useRef(null);
@@ -1728,17 +1758,26 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
     let data, periodTitle, canPrev, canNext, safeIdx, setIdx;
 
     if (detailPeriod === "week") {
-      // Week mode: navigate between weeks, show days as bars
-      const allData = detailData.weeks;
-      if (!allData || allData.length === 0) return null;
-      const maxIdx = allData.length - 1;
-      safeIdx = Math.min(detailWeekIdx, maxIdx);
-      setIdx = setDetailWeekIdx;
-      const currentPeriod = allData[safeIdx];
-      data = currentPeriod.days;
-      periodTitle = currentPeriod.periodLabel || currentPeriod.dateLabel;
-      canPrev = safeIdx < maxIdx;
-      canNext = safeIdx > 0;
+      // Week mode: show last 6 weeks as bars (each bar = a different week), oldest on left
+      const allWeeks = detailData.weeks;
+      if (!allWeeks || allWeeks.length === 0) return null;
+      const visible = allWeeks.slice(0, 6).reverse();
+      data = visible.map((w, idx) => {
+        // w.dateLabel is like "5 Apr – 11 Apr"; use short label "S-5", "S-4" ... "S0" (current)
+        const distance = visible.length - 1 - idx; // 0 = most recent at the end
+        const shortLabel = distance === 0 ? "ora" : `-${distance}`;
+        return {
+          label: shortLabel,
+          kcal: w.avg.kcal, p: w.avg.p, c: w.avg.c, g: w.avg.g,
+          cheatCount: w.cheatCount || 0,
+          hasData: (w.days || []).some(d => d.hasData),
+        };
+      });
+      periodTitle = "Ultime 6 settimane";
+      canPrev = false;
+      canNext = false;
+      safeIdx = 0;
+      setIdx = () => {};
     } else {
       // Month mode: show last 6 months as bars (each bar = a month), reversed so oldest is left
       const allMonths = detailData.months;
@@ -1750,6 +1789,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         return {
           label: shortMonth,
           kcal: m.avg.kcal, p: m.avg.p, c: m.avg.c, g: m.avg.g,
+          cheatCount: m.cheatCount || 0,
           hasData: m.daysTracked > 0,
         };
       });
@@ -1780,26 +1820,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           </div>
         </div>
 
-        {/* Navigation arrows (only for week mode) */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          {detailPeriod === "week" ? (
-            <button onClick={() => canPrev && setIdx(safeIdx + 1)} aria-label="Periodo precedente" style={{
-              width: 30, height: 30, borderRadius: 8, border: "none", cursor: canPrev ? "pointer" : "default",
-              background: canPrev ? "#F0F2F5" : "transparent", color: canPrev ? T.text : "#ddd",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
-            }}>‹</button>
-          ) : <div style={{ width: 30 }} />}
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{periodTitle}</div>
-            {detailPeriod === "week" && safeIdx === 0 && <div style={{ fontSize: 9, color: T.mint, fontWeight: 600 }}>Corrente</div>}
-          </div>
-          {detailPeriod === "week" ? (
-            <button onClick={() => canNext && setIdx(safeIdx - 1)} aria-label="Periodo successivo" style={{
-              width: 30, height: 30, borderRadius: 8, border: "none", cursor: canNext ? "pointer" : "default",
-              background: canNext ? "#F0F2F5" : "transparent", color: canNext ? T.text : "#ddd",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
-            }}>›</button>
-          ) : <div style={{ width: 30 }} />}
+        {/* Period title */}
+        <div style={{ textAlign: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{periodTitle}</div>
         </div>
 
         {/* Metric selector */}
@@ -1821,7 +1844,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
         </div>
 
         {/* Bar chart */}
-        <div style={{ display: "flex", gap: detailPeriod === "week" ? 4 : 8, alignItems: "flex-end", height: 100, marginBottom: 10, padding: "0 2px" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end", height: 118, marginBottom: 10, padding: "0 2px" }}>
           {data.map((d, i) => {
             const h = maxVal > 0 ? (d[detailMetric] / maxVal) * 100 : 0;
             const isAboveTarget = detailMetric === "kcal" && d[detailMetric] > nutritionGoals.kcalTarget;
@@ -1837,6 +1860,10 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                   }} />
                 </div>
                 <div style={{ fontSize: 8, color: T.textMuted, fontWeight: 600 }}>{d.label}</div>
+                {/* Sgarri badge — always reserve slot so bars align even when zero */}
+                <div style={{ fontSize: 8, fontWeight: 700, color: d.cheatCount > 0 ? T.coral : "transparent", lineHeight: 1, minHeight: 10 }}>
+                  {d.cheatCount > 0 ? `🍕${d.cheatCount}` : "·"}
+                </div>
               </div>
             );
           })}
@@ -2167,24 +2194,41 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                 const totC = items.reduce((s, i) => s + (i.carbs || 0), 0);
                 const totG = items.reduce((s, i) => s + (i.fat || 0), 0);
                 return (
-                  <div style={{ background: "#F8F9FB", borderRadius: 12, padding: 10, marginBottom: 16, textAlign: "left", maxHeight: 180, overflowY: "auto" }}>
+                  <div style={{ background: "#F8F9FB", borderRadius: 12, marginBottom: 16, textAlign: "left", maxHeight: 220, overflowY: "auto", overflowX: "hidden" }}>
+                    {/* Column header with P C G kcal — matches meal list */}
+                    <div style={{ display: "flex", alignItems: "center", padding: "6px 10px", borderBottom: `1px solid ${T.border}`, background: `${T.teal}08` }}>
+                      <span style={{ width: 32, marginRight: 8 }} />
+                      <span style={{ flex: 1, fontSize: 9, fontWeight: 600, color: T.textMuted, textTransform: "uppercase" }}>Alimento</span>
+                      <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
+                        <span style={{ width: 22, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#3B82F6" }}>P</span>
+                        <span style={{ width: 22, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#F0B429" }}>C</span>
+                        <span style={{ width: 22, textAlign: "right", fontSize: 9, fontWeight: 700, color: "#E85D4E" }}>G</span>
+                        <span style={{ width: 32, textAlign: "right", fontSize: 9, fontWeight: 700, color: T.textMuted }}>kcal</span>
+                      </div>
+                    </div>
                     {items.map((item, i) => (
-                      <div key={i} style={{ display: "flex", gap: 6, padding: "5px 0", alignItems: "baseline", borderBottom: i < items.length - 1 ? `1px solid ${T.border}` : "none" }}>
-                        <span style={{ fontSize: 11, color: T.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.isCheat && "🍕 "}{item.foodName}</span>
-                        <span style={{ fontSize: 9, fontWeight: 600, color: T.mint, flexShrink: 0 }}>{item.grams ? `${item.grams}g` : "—"}</span>
-                        <span style={{ fontSize: 9, color: "#E85D4E", flexShrink: 0 }}>{Math.round(item.fat || 0)}G</span>
-                        <span style={{ fontSize: 9, color: "#F0B429", flexShrink: 0 }}>{Math.round(item.carbs || 0)}C</span>
-                        <span style={{ fontSize: 9, color: "#3B82F6", flexShrink: 0 }}>{Math.round(item.protein || 0)}P</span>
-                        <span style={{ fontSize: 9, fontWeight: 600, color: T.text, flexShrink: 0 }}>{item.kcal}</span>
+                      <div key={i} style={{ display: "flex", alignItems: "center", padding: "7px 10px", borderBottom: i < items.length - 1 ? `1px solid ${T.border}` : "none" }}>
+                        {item.isCheat && <span style={{ fontSize: 12, marginRight: 2, flexShrink: 0 }}>🍕</span>}
+                        <span style={{ fontSize: 11, fontWeight: 700, color: T.mint, width: 32, textAlign: "right", flexShrink: 0, marginRight: 8 }}>{item.grams ? `${item.grams}g` : "—"}</span>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.foodName}</span>
+                        <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
+                          <span style={{ width: 22, textAlign: "right", fontSize: 10, fontWeight: 700, color: "#3B82F6" }}>{Math.round(item.protein || 0)}</span>
+                          <span style={{ width: 22, textAlign: "right", fontSize: 10, fontWeight: 700, color: "#F0B429" }}>{Math.round(item.carbs || 0)}</span>
+                          <span style={{ width: 22, textAlign: "right", fontSize: 10, fontWeight: 700, color: "#E85D4E" }}>{Math.round(item.fat || 0)}</span>
+                          <span style={{ width: 32, textAlign: "right", fontSize: 11, fontWeight: 800, color: T.text }}>{item.kcal}</span>
+                        </div>
                       </div>
                     ))}
                     {/* Totals row */}
-                    <div style={{ display: "flex", gap: 6, padding: "8px 0 2px", alignItems: "baseline", borderTop: `2px solid ${T.border}`, marginTop: 4 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: T.text, flex: 1 }}>Totale</span>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: "#E85D4E", flexShrink: 0 }}>{Math.round(totG)}G</span>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: "#F0B429", flexShrink: 0 }}>{Math.round(totC)}C</span>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: "#3B82F6", flexShrink: 0 }}>{Math.round(totP)}P</span>
-                      <span style={{ fontSize: 10, fontWeight: 800, color: T.text, flexShrink: 0 }}>{Math.round(totK)} kcal</span>
+                    <div style={{ display: "flex", alignItems: "center", padding: "8px 10px", borderTop: `2px solid ${T.border}`, background: `${T.teal}06` }}>
+                      <span style={{ width: 32, marginRight: 8 }} />
+                      <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: T.text }}>Totale</span>
+                      <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
+                        <span style={{ width: 22, textAlign: "right", fontSize: 10, fontWeight: 800, color: "#3B82F6" }}>{Math.round(totP)}</span>
+                        <span style={{ width: 22, textAlign: "right", fontSize: 10, fontWeight: 800, color: "#F0B429" }}>{Math.round(totC)}</span>
+                        <span style={{ width: 22, textAlign: "right", fontSize: 10, fontWeight: 800, color: "#E85D4E" }}>{Math.round(totG)}</span>
+                        <span style={{ width: 32, textAlign: "right", fontSize: 11, fontWeight: 900, color: T.text }}>{Math.round(totK)}</span>
+                      </div>
                     </div>
                   </div>
                 );
@@ -2307,11 +2351,13 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             {renderDettaglioCard()}
           </div>
 
-          {/* ─── 1. Week vs Week Comparison ─── */}
+          {/* ─── Confronto (Settimanale / Mensile) unified card ─── */}
           {(() => {
-            const thisWeek = weeks[safeIdx];
-            const lastWeek = weeks[safeIdx + 1];
-            if (!thisWeek || !lastWeek) return null;
+            const isWeek = comparisonMode === "week";
+            const sourceList = isWeek ? weeks : (compData.months || []);
+            const curr = isWeek ? sourceList[safeIdx] : sourceList[0];
+            const prev = isWeek ? sourceList[safeIdx + 1] : sourceList[1];
+            if (!curr || !prev) return null;
             const metrics = [
               { label: "Kcal/giorno", key: "kcal", color: T.teal },
               { label: "Proteine", key: "p", color: MC.protein },
@@ -2320,82 +2366,38 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
             ];
             return (
               <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>
-                  <TrendingUp size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.teal} />
-                  Confronto Settimanale
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {metrics.map((m) => {
-                    const curr = thisWeek.avg[m.key];
-                    const prev = lastWeek.avg[m.key];
-                    const diff = curr - prev;
-                    const pctChange = prev > 0 ? Math.round((diff / prev) * 100) : 0;
-                    const isUp = diff > 0;
-                    return (
-                      <div key={m.key} style={{ flex: 1, background: `${m.color}0A`, borderRadius: 12, padding: "10px 6px", textAlign: "center" }}>
-                        <div style={{ fontSize: 9, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>{m.label}</div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: m.color }}>{curr}</div>
-                        <div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>vs {prev}</div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, marginTop: 4 }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: m.key === "kcal" ? (isUp ? T.coral : T.mint) : (isUp ? T.mint : T.coral) }}>
-                            {isUp ? "↑" : diff < 0 ? "↓" : "="}{Math.abs(pctChange)}%
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* Cheat days row */}
-                {(thisWeek.cheatCount > 0 || lastWeek.cheatCount > 0) && (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, padding: "8px 10px", background: `${T.coral}08`, borderRadius: 10 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 14 }}>🍕</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted }}>Sgarri</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: T.coral }}>{thisWeek.cheatCount}x</span>
-                      <span style={{ fontSize: 10, color: T.textMuted }}>vs</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: T.textMuted }}>{lastWeek.cheatCount}x</span>
-                    </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>
+                    {isWeek ? (
+                      <><TrendingUp size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.teal} />Confronto</>
+                    ) : (
+                      <><Calendar size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.purple} />Confronto</>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* ─── 2. Month vs Month Comparison ─── */}
-          {(() => {
-            const monthsData = compData.months || [];
-            const thisMonth = monthsData[0];
-            const lastMonth = monthsData[1];
-            if (!thisMonth || !lastMonth) return null;
-            const metrics = [
-              { label: "Kcal/giorno", key: "kcal", color: T.teal },
-              { label: "Proteine", key: "p", color: MC.protein },
-              { label: "Carbo", key: "c", color: MC.carbs },
-              { label: "Grassi", key: "g", color: MC.fat },
-            ];
-            return (
-              <div style={{ background: T.card, borderRadius: 16, padding: 16, boxShadow: T.shadow, marginBottom: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 6 }}>
-                  <Calendar size={16} style={{ verticalAlign: "middle", marginRight: 6 }} color={T.purple} />
-                  Confronto Mensile
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {[["week", "Sett."], ["month", "Mese"]].map(([key, label]) => (
+                      <button key={key} onClick={() => setComparisonMode(key)} style={{
+                        padding: "4px 10px", borderRadius: 8, border: "none", fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                        background: comparisonMode === key ? T.teal : "#F0F2F5", color: comparisonMode === key ? "#fff" : T.textSec,
+                      }}>{label}</button>
+                    ))}
+                  </div>
                 </div>
                 <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 12 }}>
-                  {thisMonth.periodLabel} vs {lastMonth.periodLabel}
+                  {curr.periodLabel} vs {prev.periodLabel}
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
                   {metrics.map((m) => {
-                    const curr = thisMonth.avg[m.key];
-                    const prev = lastMonth.avg[m.key];
-                    const diff = curr - prev;
-                    const pctChange = prev > 0 ? Math.round((diff / prev) * 100) : 0;
+                    const cVal = curr.avg[m.key];
+                    const pVal = prev.avg[m.key];
+                    const diff = cVal - pVal;
+                    const pctChange = pVal > 0 ? Math.round((diff / pVal) * 100) : 0;
                     const isUp = diff > 0;
                     return (
                       <div key={m.key} style={{ flex: 1, background: `${m.color}0A`, borderRadius: 12, padding: "10px 6px", textAlign: "center" }}>
                         <div style={{ fontSize: 9, fontWeight: 600, color: T.textMuted, marginBottom: 4 }}>{m.label}</div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: m.color }}>{curr}</div>
-                        <div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>vs {prev}</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: m.color }}>{cVal}</div>
+                        <div style={{ fontSize: 9, color: T.textMuted, marginTop: 2 }}>vs {pVal}</div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, marginTop: 4 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, color: m.key === "kcal" ? (isUp ? T.coral : T.mint) : (isUp ? T.mint : T.coral) }}>
                             {isUp ? "↑" : diff < 0 ? "↓" : "="}{Math.abs(pctChange)}%
@@ -2406,16 +2408,16 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                   })}
                 </div>
                 {/* Cheat days row */}
-                {(thisMonth.cheatCount > 0 || lastMonth.cheatCount > 0) && (
+                {(curr.cheatCount > 0 || prev.cheatCount > 0) && (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, padding: "8px 10px", background: `${T.coral}08`, borderRadius: 10 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 14 }}>🍕</span>
                       <span style={{ fontSize: 11, fontWeight: 600, color: T.textMuted }}>Sgarri</span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: T.coral }}>{thisMonth.cheatCount}x</span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: T.coral }}>{curr.cheatCount}x</span>
                       <span style={{ fontSize: 10, color: T.textMuted }}>vs</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: T.textMuted }}>{lastMonth.cheatCount}x</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: T.textMuted }}>{prev.cheatCount}x</span>
                     </div>
                   </div>
                 )}
