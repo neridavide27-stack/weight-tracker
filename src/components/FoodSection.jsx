@@ -496,11 +496,15 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
   const [showNumpad, setShowNumpad] = useState(false);
   const [numpadBuf, setNumpadBuf] = useState("");
 
+  // Multi-select state
+  const [selectedFoods, setSelectedFoods] = useState([]);
+
   useFocusTrap(sheetRef, view === "main" && !gramFood);
 
   // Reload recents when meal type tab changes
   useEffect(() => {
     getRecentFoodsByMeal(activeMeal).then(setLocalRecents);
+    setSelectedFoods([]);
   }, [activeMeal]);
 
   const handleSearch = useCallback((query) => {
@@ -556,6 +560,24 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
     setGramFood(food);
     setGramVal(food.defaultPortion || food.lastGrams || 100);
     setShowNumpad(false);
+  };
+
+  // Multi-select: toggle circle checkbox
+  const toggleFoodSelection = (food, e) => {
+    e.stopPropagation();
+    haptic(10);
+    const key = food.foodName || food.name;
+    setSelectedFoods(prev => {
+      const exists = prev.find(f => (f.foodName || f.name) === key);
+      if (exists) return prev.filter(f => (f.foodName || f.name) !== key);
+      return [...prev, { ...food, selGrams: food.defaultPortion || food.lastGrams || 100 }];
+    });
+  };
+
+  const handleMultiAdd = () => {
+    haptic(15);
+    selectedFoods.forEach(food => { onAdd(food, activeMeal, food.selGrams); });
+    setSelectedFoods([]);
   };
 
   // Confirm gram editor → add food immediately
@@ -719,9 +741,15 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
             const k100 = food.kcalPer100 ?? food.kcal ?? 0;
             const portion = food.defaultPortion || food.lastGrams || 100;
             const pm = portion / 100;
+            const isSelected = selectedFoods.some(f => (f.foodName || f.name) === key);
 
             return (
-              <div key={`${key}-${idx}`} onClick={() => handleFoodClick(food)} style={{ borderBottom: `1px solid ${T.border}`, cursor: "pointer", padding: "10px 0", display: "flex", alignItems: "center", gap: 0 }}>
+              <div key={`${key}-${idx}`}
+                onClick={() => handleFoodClick(food)}
+                style={{ borderBottom: `1px solid ${T.border}`, cursor: "pointer", padding: "10px 0", display: "flex", alignItems: "center", gap: 0, background: isSelected ? `${T.teal}12` : "transparent", borderRadius: isSelected ? 10 : 0, transition: "background 0.15s" }}>
+                <div onClick={(e) => toggleFoodSelection(food, e)} style={{ width: 22, height: 22, borderRadius: 12, border: isSelected ? "none" : `2px solid #ccc`, background: isSelected ? T.teal : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginRight: 8, cursor: "pointer", transition: "all 0.15s" }}>
+                  {isSelected && <Check size={13} color="#fff" strokeWidth={3} />}
+                </div>
                 <span style={{ fontSize: 12, fontWeight: 700, color: T.mint, width: 36, textAlign: "right", flexShrink: 0, marginRight: 10 }}>{portion}g</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -741,7 +769,17 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
           })}
         </div>
 
-        <div style={{ padding: "10px 20px 14px", borderTop: `1px solid ${T.border}` }}>
+        {/* Multi-select bottom bar when items selected */}
+        {selectedFoods.length > 0 && (
+          <div style={{ padding: "10px 20px 6px", borderTop: `1px solid ${T.border}` }}>
+            <button onClick={handleMultiAdd} style={{ width: "100%", padding: 12, borderRadius: 14, border: "none", background: T.gradient, color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <Plus size={14} /> Aggiungi {selectedFoods.length} {selectedFoods.length === 1 ? "cibo" : "cibi"}
+            </button>
+          </div>
+        )}
+
+        {/* Normal bottom bar */}
+        <div style={{ padding: selectedFoods.length > 0 ? "6px 20px 14px" : "10px 20px 14px", borderTop: selectedFoods.length > 0 ? "none" : `1px solid ${T.border}` }}>
           <button onClick={() => setView("customFood")} style={{ width: "100%", padding: 12, borderRadius: 14, border: `1.5px dashed ${T.border}`, background: "transparent", color: T.textSec, fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
             <Plus size={14} /> Crea alimento personalizzato
           </button>
@@ -1015,7 +1053,8 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           const wp = weekEntries.reduce((s, d) => s + d.protein, 0);
           const wc = weekEntries.reduce((s, d) => s + d.carbs, 0);
           const wg = weekEntries.reduce((s, d) => s + d.fat, 0);
-          chartWeeks.push({ label: `S${wNum}`, kcal: Math.round(wk / wDays), p: Math.round(wp / wDays), c: Math.round(wc / wDays), g: Math.round(wg / wDays), hasData: weekEntries.length > 0 });
+          const rangeLabel = `${weekStart.getDate()}-${weekEnd.getDate()}`;
+          chartWeeks.push({ label: rangeLabel, kcal: Math.round(wk / wDays), p: Math.round(wp / wDays), c: Math.round(wc / wDays), g: Math.round(wg / wDays), hasData: weekEntries.length > 0 });
           weekStart = new Date(weekEnd);
           weekStart.setDate(weekStart.getDate() + 1);
           wNum++;
@@ -1686,22 +1725,46 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
 
   // ── DETTAGLIO BAR CHART CARD ───────────────────────────
   const renderDettaglioCard = () => {
-    const idx = detailPeriod === "week" ? detailWeekIdx : detailMonthIdx;
-    const setIdx = detailPeriod === "week" ? setDetailWeekIdx : setDetailMonthIdx;
-    const allData = detailPeriod === "week" ? detailData.weeks : detailData.months;
-    if (!allData || allData.length === 0) return null;
-    const maxIdx = allData.length - 1;
-    const safeIdx = Math.min(idx, maxIdx);
+    let data, periodTitle, canPrev, canNext, safeIdx, setIdx;
 
-    const currentPeriod = allData[safeIdx];
-    const data = detailPeriod === "week" ? currentPeriod.days : currentPeriod.weeks;
+    if (detailPeriod === "week") {
+      // Week mode: navigate between weeks, show days as bars
+      const allData = detailData.weeks;
+      if (!allData || allData.length === 0) return null;
+      const maxIdx = allData.length - 1;
+      safeIdx = Math.min(detailWeekIdx, maxIdx);
+      setIdx = setDetailWeekIdx;
+      const currentPeriod = allData[safeIdx];
+      data = currentPeriod.days;
+      periodTitle = currentPeriod.periodLabel || currentPeriod.dateLabel;
+      canPrev = safeIdx < maxIdx;
+      canNext = safeIdx > 0;
+    } else {
+      // Month mode: show last 6 months as bars (each bar = a month), reversed so oldest is left
+      const allMonths = detailData.months;
+      if (!allMonths || allMonths.length === 0) return null;
+      const visible = allMonths.slice(0, 6).reverse();
+      data = visible.map(m => {
+        // dateLabel is like "Aprile 2026" — take first 3 chars lowercase as abbreviation
+        const shortMonth = m.dateLabel ? m.dateLabel.split(" ")[0].slice(0, 3).toLowerCase() : m.label.slice(0, 3).toLowerCase();
+        return {
+          label: shortMonth,
+          kcal: m.avg.kcal, p: m.avg.p, c: m.avg.c, g: m.avg.g,
+          hasData: m.daysTracked > 0,
+        };
+      });
+      periodTitle = "Ultimi 6 mesi";
+      canPrev = false;
+      canNext = false;
+      safeIdx = 0;
+      setIdx = () => {};
+    }
+
     if (!data || data.length === 0) return null;
 
     const metricColor = { kcal: T.teal, p: "#3B82F6", c: "#F0B429", g: "#E85D4E" }[detailMetric];
     const maxVal = Math.max(...data.map(d => d[detailMetric]), 1);
     const avgVal = Math.round(data.reduce((s, d) => s + d[detailMetric], 0) / (data.filter(d => d[detailMetric] > 0).length || 1));
-    const canPrev = safeIdx < maxIdx;
-    const canNext = safeIdx > 0;
 
     return (
       <div style={{ background: T.card, borderRadius: 18, padding: 16, boxShadow: T.shadow }}>
@@ -1717,22 +1780,26 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           </div>
         </div>
 
-        {/* Navigation arrows */}
+        {/* Navigation arrows (only for week mode) */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <button onClick={() => canPrev && setIdx(safeIdx + 1)} aria-label="Periodo precedente" style={{
-            width: 30, height: 30, borderRadius: 8, border: "none", cursor: canPrev ? "pointer" : "default",
-            background: canPrev ? "#F0F2F5" : "transparent", color: canPrev ? T.text : "#ddd",
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
-          }}>‹</button>
+          {detailPeriod === "week" ? (
+            <button onClick={() => canPrev && setIdx(safeIdx + 1)} aria-label="Periodo precedente" style={{
+              width: 30, height: 30, borderRadius: 8, border: "none", cursor: canPrev ? "pointer" : "default",
+              background: canPrev ? "#F0F2F5" : "transparent", color: canPrev ? T.text : "#ddd",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
+            }}>‹</button>
+          ) : <div style={{ width: 30 }} />}
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{currentPeriod.periodLabel || currentPeriod.dateLabel}</div>
-            {safeIdx === 0 && <div style={{ fontSize: 9, color: T.mint, fontWeight: 600 }}>Corrente</div>}
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{periodTitle}</div>
+            {detailPeriod === "week" && safeIdx === 0 && <div style={{ fontSize: 9, color: T.mint, fontWeight: 600 }}>Corrente</div>}
           </div>
-          <button onClick={() => canNext && setIdx(safeIdx - 1)} aria-label="Periodo successivo" style={{
-            width: 30, height: 30, borderRadius: 8, border: "none", cursor: canNext ? "pointer" : "default",
-            background: canNext ? "#F0F2F5" : "transparent", color: canNext ? T.text : "#ddd",
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
-          }}>›</button>
+          {detailPeriod === "week" ? (
+            <button onClick={() => canNext && setIdx(safeIdx - 1)} aria-label="Periodo successivo" style={{
+              width: 30, height: 30, borderRadius: 8, border: "none", cursor: canNext ? "pointer" : "default",
+              background: canNext ? "#F0F2F5" : "transparent", color: canNext ? T.text : "#ddd",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontFamily: "inherit",
+            }}>›</button>
+          ) : <div style={{ width: 30 }} />}
         </div>
 
         {/* Metric selector */}
