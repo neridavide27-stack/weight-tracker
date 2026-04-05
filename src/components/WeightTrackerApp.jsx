@@ -1332,7 +1332,26 @@ export default function WeightTrackerApp() {
     return (
       <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
         {autoSyncToastEl}
-        <FoodSection ref={foodSectionRef} settings={settings} weightEntries={sorted} goTo={goTo} T={T} nutritionGoals={nutritionGoals} goalHistory={goalHistory} onDataChange={triggerAutoSync} />
+        <FoodSection
+          ref={foodSectionRef}
+          settings={settings}
+          weightEntries={sorted}
+          goTo={goTo}
+          T={T}
+          nutritionGoals={nutritionGoals}
+          goalHistory={goalHistory}
+          onDataChange={triggerAutoSync}
+          weightTrend={metrics.current}
+          renderNutritionGoalsPanel={() => (
+            <NutritionGoalsPanel
+              key={(nutritionGoals.kcalTarget || 0) + "_" + (goalHistory[0]?.effectiveFrom || "")}
+              nutritionGoals={nutritionGoals}
+              onSave={handleSaveNutritionGoals}
+              goalEffectiveDate={goalEffectiveDate}
+              setGoalEffectiveDate={setGoalEffectiveDate}
+            />
+          )}
+        />
         <BottomNav active="food" onNavigate={goTo} onAdd={() => {
           if (foodSectionRef.current) foodSectionRef.current.openAddFood();
           else goTo("add");
@@ -1454,17 +1473,7 @@ export default function WeightTrackerApp() {
             </div>
           ))}
 
-          {/* ─── Obiettivi Nutrizionali ─── */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 20 }}>
-            Obiettivi Nutrizionali
-          </div>
-          <NutritionGoalsPanel
-            key={(nutritionGoals.kcalTarget || 0) + "_" + (goalHistory[0]?.effectiveFrom || "")}
-            nutritionGoals={nutritionGoals}
-            onSave={handleSaveNutritionGoals}
-            goalEffectiveDate={goalEffectiveDate}
-            setGoalEffectiveDate={setGoalEffectiveDate}
-          />
+          {/* Obiettivi Nutrizionali moved to Food Settings sub-screen */}
 
           <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 20 }}>
             Riepilogo

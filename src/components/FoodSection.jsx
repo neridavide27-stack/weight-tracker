@@ -813,7 +813,7 @@ const AddFoodSheet = ({ mealType: initialMealType, recents: initialRecents, onAd
 };
 
 // ─── COMPONENT ────────────────────────────────────────────
-const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoals: nutritionGoalsProp, goalHistory = [], onDataChange }, ref) => {
+const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoals: nutritionGoalsProp, goalHistory = [], onDataChange, weightTrend = null, renderNutritionGoalsPanel = null }, ref) => {
 
   // ── STATE ───────────────────────────────────────────────
   const [foodScreen, setFoodScreen] = useState("dashboard");
@@ -823,14 +823,7 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   const [foodEntries, setFoodEntries] = useState([]);
   // nutritionGoals comes from parent (persisted in Dexie via profile)
   const nutritionGoals = nutritionGoalsProp || { kcalTarget: 2000, proteinPct: 30, carbsPct: 40, fatPct: 30 };
-  const [expandedMeals, setExpandedMeals] = useState(() => {
-    const h = new Date().getHours();
-    if (h >= 6 && h < 11) return { breakfast: true, lunch: false, dinner: false, snack: false };
-    if (h >= 11 && h < 15) return { breakfast: false, lunch: true, dinner: false, snack: false };
-    if (h >= 15 && h < 17) return { breakfast: false, lunch: false, dinner: false, snack: true };
-    if (h >= 17 && h < 22) return { breakfast: false, lunch: false, dinner: true, snack: false };
-    return { breakfast: false, lunch: false, dinner: false, snack: false };
-  });
+  const [expandedMeals, setExpandedMeals] = useState({ breakfast: false, lunch: false, dinner: false, snack: false });
 
   // Bottom sheet state
   const [showAddSheet, setShowAddSheet] = useState(null); // null or mealType
@@ -854,6 +847,9 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
   const [showLoadPopup, setShowLoadPopup] = useState(null); // null or mealType
 
   const [toast, setToast] = useState("");
+
+  // Food settings sub-screen
+  const [showFoodSettings, setShowFoodSettings] = useState(false);
 
   // Scanner state
   const [scannerActive, setScannerActive] = useState(false);
@@ -1160,6 +1156,16 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
       d.setDate(d.getDate() + delta * 7);
       return d.toISOString().split("T")[0];
     });
+  };
+
+  const changeDate = (delta) => {
+    const d = new Date(selectedDate + "T12:00:00");
+    d.setDate(d.getDate() + delta);
+    const newDate = d.toISOString().split("T")[0];
+    setSelectedDate(newDate);
+    // Keep week view in sync if user moves out of current week
+    const newMonday = getMonday(newDate);
+    if (newMonday !== viewWeekMonday) setViewWeekMonday(newMonday);
   };
 
   // Track which dates have food data + daily totals for week bar chart
@@ -1973,9 +1979,23 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
       <div style={{ padding: "0 0 100px" }} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
         {/* ─── Date Navigator ─── */}
         <div style={{ background: T.card, paddingBottom: 6, borderBottom: `1px solid ${T.border}` }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "10px 10px 8px", gap: 4 }}>
-            <button onClick={() => changeWeek(-1)} aria-label="Settimana precedente" style={{ width: 32, height: 36, borderRadius: 10, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal, flexShrink: 0 }}>
-              <ChevronLeft size={16} />
+          {/* Top row: day label with arrows */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px 4px" }}>
+            <button onClick={() => changeDate(-1)} aria-label="Giorno precedente" style={{ width: 36, height: 36, borderRadius: 10, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
+              <ChevronLeft size={18} />
+            </button>
+            <div style={{ textAlign: "center", flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: T.text, lineHeight: 1.1 }}>{formatDateLabel(selectedDate)}</div>
+              <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 500, marginTop: 2 }}>{formatDateSub(selectedDate)}</div>
+            </div>
+            <button onClick={() => changeDate(1)} aria-label="Giorno successivo" style={{ width: 36, height: 36, borderRadius: 10, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
+              <ChevronRight size={18} />
+            </button>
+          </div>
+          {/* Bottom row: week day buttons */}
+          <div style={{ display: "flex", alignItems: "center", padding: "6px 10px 8px", gap: 4 }}>
+            <button onClick={() => changeWeek(-1)} aria-label="Settimana precedente" style={{ width: 28, height: 32, borderRadius: 8, background: "transparent", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textMuted, flexShrink: 0 }}>
+              <ChevronLeft size={14} />
             </button>
             <div style={{ flex: 1, display: "flex", justifyContent: "space-between", gap: 2 }}>
               {weekDays.map((day) => (
@@ -1999,15 +2019,36 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
                 </button>
               ))}
             </div>
-            <button onClick={() => changeWeek(1)} aria-label="Settimana successiva" style={{ width: 32, height: 36, borderRadius: 10, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal, flexShrink: 0 }}>
-              <ChevronRight size={16} />
+            <button onClick={() => changeWeek(1)} aria-label="Settimana successiva" style={{ width: 28, height: 32, borderRadius: 8, background: "transparent", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textMuted, flexShrink: 0 }}>
+              <ChevronRight size={14} />
             </button>
           </div>
         </div>
 
+        {/* ─── Weight mismatch banner ─── */}
+        {weightTrend != null && nutritionGoals && typeof nutritionGoals.weight === "number" && Math.abs(nutritionGoals.weight - weightTrend) > 5 && (
+          <div style={{ margin: "12px 16px 0", padding: "12px 14px", borderRadius: 14, background: "#FEF3C7", border: "1px solid #F59E0B", display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <div style={{ fontSize: 18, lineHeight: 1 }}>⚠️</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#92400E", marginBottom: 2 }}>Peso obiettivo non aggiornato</div>
+              <div style={{ fontSize: 11, color: "#92400E", lineHeight: 1.35 }}>
+                Il peso impostato negli obiettivi ({nutritionGoals.weight} kg) differisce di {Math.abs(nutritionGoals.weight - weightTrend).toFixed(1)} kg dalla tua tendenza attuale ({weightTrend.toFixed(1)} kg). Aggiornalo nelle impostazioni cibo.
+              </div>
+              <button onClick={() => setShowFoodSettings(true)} style={{ marginTop: 8, padding: "6px 12px", borderRadius: 8, background: "#F59E0B", color: "#fff", border: "none", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Apri impostazioni</button>
+            </div>
+          </div>
+        )}
+
         {/* ─── Calorie Ring Card ─── */}
         <div style={{ background: T.card, borderRadius: 20, boxShadow: T.shadow, margin: "12px 16px", overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "20px 20px 14px", gap: 20 }}>
+          {/* Header toolbar */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px 4px" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: T.text, letterSpacing: 0.2 }}>Riepilogo giornaliero</div>
+            <button onClick={() => setShowFoodSettings(true)} aria-label="Impostazioni cibo" style={{ width: 32, height: 32, borderRadius: 10, background: "#F3F4F6", border: `1.5px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.textSec || T.textMuted }}>
+              <Settings size={15} />
+            </button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", padding: "10px 20px 14px", gap: 20 }}>
             <div style={{ flexShrink: 0 }}>
               <div style={{ position: "relative" }}>
                 <svg width={130} height={130} viewBox="0 0 130 130">
@@ -2640,6 +2681,26 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
       {foodScreen === "reports" && renderReports()}
 
       {renderScanner()}
+
+      {/* ─── Food Settings Sub-screen ─── */}
+      {showFoodSettings && (
+        <div style={{ position: "fixed", inset: 0, background: T.bg, zIndex: 1000, overflowY: "auto", fontFamily: "'Inter', -apple-system, sans-serif" }}>
+          <div style={{ position: "sticky", top: 0, background: T.card, borderBottom: `1px solid ${T.border}`, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, zIndex: 2 }}>
+            <button onClick={() => setShowFoodSettings(false)} aria-label="Indietro" style={{ width: 36, height: 36, borderRadius: 10, background: T.tealLight, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: T.teal }}>
+              <ArrowLeft size={18} />
+            </button>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Impostazioni cibo</div>
+          </div>
+          <div style={{ padding: "16px", paddingBottom: 80 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>
+              Obiettivi Nutrizionali
+            </div>
+            {renderNutritionGoalsPanel ? renderNutritionGoalsPanel() : (
+              <div style={{ padding: 16, background: T.card, borderRadius: 12, color: T.textMuted, fontSize: 13 }}>Pannello non disponibile.</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 });
