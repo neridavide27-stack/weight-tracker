@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import FoodSection from "./FoodSection";
+import FitnessSection from "./FitnessSection";
 import {
   getNutritionGoals, saveNutritionGoals, clearAllFoodData, populateDemoData,
   getSheetsUrl, saveSheetsUrl, pingSheets, fullSyncToSheets, restoreFromSheets,
@@ -1362,25 +1363,10 @@ export default function WeightTrackerApp() {
   }
 
   /* ═══════════════════════════════════════
-     SCREEN: FITNESS (Coming Soon)
+     SCREEN: FITNESS
      ═══════════════════════════════════════ */
   if (screen === "fitness") {
-    return (
-      <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
-        <Header title="Fitness" subtitle="Attività" />
-        <ComingSoonScreen
-          icon={Dumbbell} title="Traccia il tuo Allenamento" color={T.purple}
-          description="Registra camminate, sessioni in palestra e monitora i tuoi progressi fitness."
-          features={[
-            { icon: Activity, title: "Camminata & Corsa", desc: "Passi, distanza e calorie bruciate" },
-            { icon: Dumbbell, title: "Palestra", desc: "Esercizi, serie, ripetizioni e carichi" },
-            { icon: Flame, title: "Calorie Bruciate", desc: "Stima automatica per attività" },
-            { icon: TrendingUp, title: "Progressi Forza", desc: "Traccia i tuoi personal record" },
-          ]}
-        />
-        <BottomNav active="fitness" onNavigate={goTo} onAdd={() => goTo("add")} />
-      </div>
-    );
+    return <FitnessSection onNavigate={goTo} />;
   }
 
   /* ═══════════════════════════════════════
