@@ -192,6 +192,39 @@ export const getGoalForDate = (goalHistory, date) => {
   return goalHistory[goalHistory.length - 1];
 };
 
+// Returns a weighted-average goal across a period [startDate, endDate] inclusive.
+// For each day in the range, looks up the active goal, then averages by days-active.
+// Fallback: if no goalHistory, returns currentGoal.
+// Returns an object with the same numeric fields as a goal (kcalTarget, pGrams, cGrams, fGrams, proteinPct, carbsPct, fatPct).
+export const getWeightedGoalForPeriod = (goalHistory, startDate, endDate, currentGoal) => {
+  const fields = ['kcalTarget', 'pGrams', 'cGrams', 'fGrams', 'proteinPct', 'carbsPct', 'fatPct'];
+  const fallback = currentGoal || {};
+  if (!goalHistory || goalHistory.length === 0) {
+    const out = {};
+    for (const f of fields) out[f] = fallback[f] || 0;
+    return out;
+  }
+  // Iterate days
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  const sums = {}; const count = {};
+  for (const f of fields) { sums[f] = 0; count[f] = 0; }
+  let totalDays = 0;
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const iso = d.toISOString().slice(0, 10);
+    const g = getGoalForDate(goalHistory, iso) || fallback;
+    for (const f of fields) {
+      if (g[f] != null) { sums[f] += g[f]; count[f] += 1; }
+    }
+    totalDays++;
+  }
+  const out = {};
+  for (const f of fields) {
+    out[f] = count[f] > 0 ? Math.round((sums[f] / count[f]) * 10) / 10 : (fallback[f] || 0);
+  }
+  return out;
+};
+
 // ========== RESET / DEMO DATA ==========
 
 export const clearAllFoodData = async (alsoDatabase = true) => {
