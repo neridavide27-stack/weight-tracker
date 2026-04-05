@@ -630,6 +630,21 @@ export const deleteFitnessActivity = async (id) => {
   return await foodDb.fitnessActivities.delete(id);
 };
 
+/**
+ * Modifica una sessione esistente.
+ */
+export const updateFitnessActivity = async (id, changes) => {
+  return await foodDb.fitnessActivities.update(id, changes);
+};
+
+/**
+ * Restituisce l'ultima sessione inserita (per pre-compilare il form).
+ */
+export const getLastFitnessActivity = async () => {
+  const all = await foodDb.fitnessActivities.orderBy('id').reverse().first();
+  return all || null;
+};
+
 // ========== FITNESS SETTINGS ==========
 
 /**
