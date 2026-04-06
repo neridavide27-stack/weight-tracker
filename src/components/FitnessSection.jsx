@@ -1020,13 +1020,14 @@ export default function FitnessSection({ onNavigate }) {
   // Scroll to top su ogni cambio schermata
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [subScreen]);
 
-  // Scroll to top anche quando si clicca su Fitness dalla bottom nav
+  // Navigazione: propaga sempre al parent (che fa scroll-to-top)
+  // Se si clicca "fitness" mentre siamo già qui, torna alla main e scrolla
   const handleNavigate = useCallback((section) => {
     if (section === "fitness") {
+      setSubScreen("main");
       window.scrollTo({ top: 0, behavior: "smooth" });
-    } else {
-      onNavigate(section);
     }
+    onNavigate(section);
   }, [onNavigate]);
 
   const defaultInitial = useMemo(() => ({
