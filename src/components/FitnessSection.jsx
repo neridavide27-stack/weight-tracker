@@ -1,11 +1,6 @@
 "use client";
 // FitnessSection.jsx — Walking tracker module
-// Features:
-//   - Card unificata obiettivo + grafico settimanale + kcal bruciate
-//   - Sessioni recenti: swipe ← elimina, click → modifica
-//   - Form con hero gradient km, slider durata + chips, slider bpm/slope
-//   - Calcolo kcal ibrido: MET + pendenza + aggiustamento HR (Karvonen)
-//   - Report: Dettaglio, Confronto, Streak & Costanza, Storico
+// v3 — Barra gradient (no ring), slider form, report con Metriche Totali
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
@@ -16,7 +11,7 @@ import {
   ChevronLeft, Plus, Check, X, Settings,
   Timer, Gauge, Footprints, Home, Utensils, Dumbbell, User,
   Flame, Trophy, TrendingUp, TrendingDown, BarChart3, Zap,
-  Heart, Mountain,
+  Heart, Mountain, Clock,
 } from "lucide-react";
 import {
   addFitnessActivity,
@@ -89,24 +84,15 @@ const formatDuration = (min) => {
   return m > 0 ? `${h}h ${m}min` : `${h}h`;
 };
 
-const DAY_LABELS    = ["L", "M", "M", "G", "V", "S", "D"];
+const DAY_LABELS = ["L", "M", "M", "G", "V", "S", "D"];
 
 /* ═══════════════════════════════════════════
    CALCOLO KCAL IBRIDO
    MET base (velocità) + pendenza + aggiustamento HR (Karvonen)
    ═══════════════════════════════════════════ */
-/**
- * @param {Object} p
- * @param {number} p.durationMin  - durata in minuti
- * @param {number} p.paceMinKm   - ritmo (min/km)
- * @param {number} p.weight      - peso kg
- * @param {number} [p.heartRate] - battiti medi (opzionale)
- * @param {number} [p.slope]     - pendenza % (opzionale)
- */
 export const calcKcal = ({ durationMin, paceMinKm, weight, heartRate, slope }) => {
   if (!durationMin || !weight) return 0;
 
-  // ── 1. MET base dalla velocità (tabella ACSM) ──
   let met = 3.5;
   if (paceMinKm && paceMinKm > 0) {
     const kmh = 60 / paceMinKm;
@@ -118,18 +104,13 @@ export const calcKcal = ({ durationMin, paceMinKm, weight, heartRate, slope }) =
     else               met = 6.0;
   }
 
-  // ── 2. Correzione pendenza: +0.35 MET per ogni 1% ──
-  if (slope && slope > 0) {
-    met += slope * 0.35;
-  }
+  if (slope && slope > 0) met += slope * 0.35;
 
-  // ── 3. Aggiustamento HR via Karvonen %HRR (±30% max) ──
   if (heartRate && heartRate > 0) {
-    const restHR = 60;
-    const maxHR  = 190;
-    const hrr    = Math.max(0, Math.min(1, (heartRate - restHR) / (maxHR - restHR)));
+    const restHR = 60, maxHR = 190;
+    const hrr = Math.max(0, Math.min(1, (heartRate - restHR) / (maxHR - restHR)));
     const expectedHRR = Math.max(0.1, (met - 1) / 12);
-    const adj    = Math.max(0.7, Math.min(1.3, 1 + 0.3 * ((hrr - expectedHRR) / Math.max(0.1, expectedHRR))));
+    const adj = Math.max(0.7, Math.min(1.3, 1 + 0.3 * ((hrr - expectedHRR) / Math.max(0.1, expectedHRR))));
     met *= adj;
   }
 
@@ -137,7 +118,7 @@ export const calcKcal = ({ durationMin, paceMinKm, weight, heartRate, slope }) =
 };
 
 /* ═══════════════════════════════════════════
-   STREAK
+   STREAK + RECORDS
    ═══════════════════════════════════════════ */
 const calcStreak = (activities) => {
   const dates = new Set(activities.map(a => a.date));
@@ -145,33 +126,39 @@ const calcStreak = (activities) => {
   const d = new Date();
   while (true) {
     const iso = toISO(d);
-    if (dates.has(iso)) {
-      streak++;
-      d.setDate(d.getDate() - 1);
-    } else if (iso === todayISO()) {
-      d.setDate(d.getDate() - 1);
-    } else {
-      break;
-    }
+    if (dates.has(iso)) { streak++; d.setDate(d.getDate() - 1); }
+    else if (iso === todayISO()) { d.setDate(d.getDate() - 1); }
+    else break;
   }
   return streak;
 };
 
-/* ═══════════════════════════════════════════
-   RECORD PERSONALI
-   ═══════════════════════════════════════════ */
+const calcMaxStreak = (activities) => {
+  if (!activities.length) return 0;
+  const sorted = [...new Set(activities.map(a => a.date))].sort();
+  let max = 1, cur = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = new Date(sorted[i - 1]);
+    const curr = new Date(sorted[i]);
+    const diff = (curr - prev) / 86400000;
+    if (diff === 1) { cur++; max = Math.max(max, cur); }
+    else cur = 1;
+  }
+  return Math.max(max, cur);
+};
+
 const calcPR = (activities) => ({
   maxDist:  activities.length ? Math.max(...activities.map(a => a.distanceKm)) : 0,
   bestPace: activities.length ? Math.min(...activities.map(a => a.paceMinKm).filter(Boolean)) : Infinity,
   totalKm:  activities.reduce((s, a) => s + a.distanceKm, 0),
   maxKcal:  activities.length ? Math.max(...activities.map(a => a.kcal || 0)) : 0,
+  totalMin: activities.reduce((s, a) => s + (a.durationMin || 0), 0),
 });
 
 /* ═══════════════════════════════════════════
-   SMALL SHARED COMPONENTS
+   SHARED COMPONENTS
    ═══════════════════════════════════════════ */
-
-const CircularRing = ({ pct, size = 110, stroke = 11, color = "#fff" }) => {
+const CircularRing = ({ pct, size = 56, stroke = 5, color = "#fff" }) => {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const off = c - Math.min(pct / 100, 1) * c;
@@ -181,8 +168,7 @@ const CircularRing = ({ pct, size = 110, stroke = 11, color = "#fff" }) => {
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
         strokeDasharray={c} strokeDashoffset={off} strokeLinecap="round"
         transform={`rotate(-90 ${size/2} ${size/2})`}
-        style={{ transition: "stroke-dashoffset 0.6s ease" }}
-      />
+        style={{ transition: "stroke-dashoffset 0.6s ease" }}/>
     </svg>
   );
 };
@@ -210,9 +196,7 @@ const FitnessBottomNav = ({ onAdd, onNavigate }) => {
             background:T.gradient,color:"#fff",cursor:"pointer",
             display:"flex",alignItems:"center",justifyContent:"center",
             boxShadow:"0 4px 24px rgba(2,128,144,0.35)",transform:"translateY(-14px)",
-          }}>
-            <Plus size={26} strokeWidth={2.5}/>
-          </button>
+          }}><Plus size={26} strokeWidth={2.5}/></button>
         );
         const isActive = tab.id === "fitness";
         return (
@@ -243,35 +227,30 @@ const SwipeCard = ({ activity: a, onDelete, onClick }) => {
   const startDrag = (e) => {
     e.stopPropagation();
     const x = e.touches ? e.touches[0].clientX : e.clientX;
-    startRef.current = x;
-    setDragging(true);
+    startRef.current = x; setDragging(true);
   };
   const moveDrag = (e) => {
     e.stopPropagation();
     if (!dragging || startRef.current === null) return;
     const x = e.touches ? e.touches[0].clientX : e.clientX;
-    const dx = startRef.current - x; // positivo = swipe a sinistra
+    const dx = startRef.current - x;
     if (dx > 0) setSwipeX(Math.min(dx, threshold + 20));
     else setSwipeX(0);
   };
   const endDrag = (e) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
     setDragging(false);
     if (swipeX >= threshold) onDelete(a.id);
     else setSwipeX(0);
     startRef.current = null;
   };
 
-  const pace = a.paceMinKm;
-
   return (
     <div style={{ position:"relative", marginBottom:10, overflow:"hidden", borderRadius:16 }}>
-      {/* Delete layer (destra) */}
       <div style={{
         position:"absolute",top:0,bottom:0,right:0,width:"100%",
-        background:"#FEE2E2",
-        display:"flex",alignItems:"center",justifyContent:"flex-end",
-        paddingRight:22,borderRadius:16,
+        background:"#FEE2E2",display:"flex",alignItems:"center",
+        justifyContent:"flex-end",paddingRight:22,borderRadius:16,
         opacity: Math.min(swipeX / (threshold * 0.6), 1),
       }}>
         <span style={{ fontSize:22 }}>🗑️</span>
@@ -279,8 +258,6 @@ const SwipeCard = ({ activity: a, onDelete, onClick }) => {
           {swipeX >= threshold ? "Rilascia!" : "← Elimina"}
         </span>
       </div>
-
-      {/* Card */}
       <div
         onClick={() => { if (swipeX < 5) onClick(a); }}
         onTouchStart={startDrag}
@@ -289,7 +266,7 @@ const SwipeCard = ({ activity: a, onDelete, onClick }) => {
         onMouseDown={startDrag}
         onMouseMove={(e) => { if (dragging) moveDrag(e); }}
         onMouseUp={endDrag}
-        onMouseLeave={() => { if (dragging) endDrag(new Event("mouseleave")); }}
+        onMouseLeave={() => { if (dragging) endDrag(); }}
         style={{
           background:T.card, borderRadius:16, padding:"14px 16px",
           boxShadow:T.shadow, display:"flex", alignItems:"center", gap:12,
@@ -302,33 +279,33 @@ const SwipeCard = ({ activity: a, onDelete, onClick }) => {
           <Footprints size={21} color={GREEN}/>
         </div>
         <div style={{ flex:1, minWidth:0 }}>
-          {/* Riga 1: km + bpm + slope + data */}
+          {/* Riga 1: km + data */}
           <div style={{ display:"flex",alignItems:"baseline",gap:6,marginBottom:5 }}>
             <span style={{ fontSize:22,fontWeight:900,color:T.text,letterSpacing:-.5 }}>{a.distanceKm.toFixed(1)}</span>
             <span style={{ fontSize:12,fontWeight:700,color:T.textMuted }}>km</span>
-            {a.heartRate > 0 && (
-              <span style={{ fontSize:11,color:T.coral,fontWeight:600,display:"flex",alignItems:"center",gap:2 }}>
-                <Heart size={10} color={T.coral} fill={T.coral}/>{a.heartRate}
-              </span>
-            )}
-            {a.slope > 0 && (
-              <span style={{ fontSize:11,color:T.purple,fontWeight:600,display:"flex",alignItems:"center",gap:2 }}>
-                <Mountain size={10} color={T.purple}/>{a.slope}%
-              </span>
-            )}
             <span style={{ fontSize:11,color:T.textMuted,marginLeft:"auto",whiteSpace:"nowrap" }}>{formatDateLabel(a.date)}</span>
           </div>
-          {/* Riga 2: durata · passo · kcal — allineati orizzontalmente */}
-          <div style={{ display:"flex",alignItems:"center",gap:14 }}>
+          {/* Riga 2: durata · passo · kcal · bpm · slope — tutto allineato */}
+          <div style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"nowrap",overflow:"hidden" }}>
             <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3,whiteSpace:"nowrap" }}>
               <Timer size={11} color={T.textMuted}/>{formatDuration(a.durationMin)}
             </span>
             <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3,whiteSpace:"nowrap" }}>
-              <Gauge size={11} color={T.textMuted}/>{formatPace(pace)}/km
+              <Gauge size={11} color={T.textMuted}/>{formatPace(a.paceMinKm)}/km
             </span>
             {a.kcal > 0 && (
               <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3,whiteSpace:"nowrap" }}>
-                <Flame size={11} color={ORANGE}/>{a.kcal} kcal
+                <Flame size={11} color={ORANGE}/>{a.kcal}
+              </span>
+            )}
+            {a.heartRate > 0 && (
+              <span style={{ fontSize:11,color:T.coral,display:"flex",alignItems:"center",gap:2,whiteSpace:"nowrap",fontWeight:600 }}>
+                <Heart size={10} color={T.coral} fill={T.coral}/>{a.heartRate}
+              </span>
+            )}
+            {a.slope > 0 && (
+              <span style={{ fontSize:11,color:T.purple,display:"flex",alignItems:"center",gap:2,whiteSpace:"nowrap",fontWeight:600 }}>
+                <Mountain size={10} color={T.purple}/>{a.slope}%
               </span>
             )}
           </div>
@@ -346,18 +323,23 @@ const GoalModal = ({ current, onSave, onClose }) => {
   return (
     <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:20 }}>
       <div style={{ background:T.card,borderRadius:24,padding:28,width:"100%",maxWidth:320,boxShadow:T.shadowLg }}>
-        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20 }}>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24 }}>
           <div style={{ fontSize:18,fontWeight:800,color:T.text }}>Obiettivo settimanale</div>
           <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",padding:4 }}><X size={20} color={T.textMuted}/></button>
         </div>
-        <div style={{ fontSize:12,color:T.textMuted,fontWeight:600,textAlign:"center",marginBottom:16 }}>Km da percorrere ogni settimana (Lun → Dom)</div>
-        <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:20,marginBottom:28 }}>
-          <button onClick={() => setVal(v => Math.max(1, v-5))} style={{ width:44,height:44,borderRadius:14,border:"1.5px solid #E5E7EB",background:T.bg,cursor:"pointer",fontSize:22,fontWeight:700,color:T.text }}>−</button>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:16 }}>
+          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+            <button onClick={() => setVal(v => Math.max(1, v-5))} style={{ width:40,height:40,borderRadius:12,border:"1.5px solid #E5E7EB",background:T.bg,cursor:"pointer",fontSize:16,fontWeight:700,color:T.text }}>−5</button>
+            <button onClick={() => setVal(v => Math.max(1, v-1))} style={{ width:40,height:40,borderRadius:12,border:"1.5px solid #E5E7EB",background:T.bg,cursor:"pointer",fontSize:16,fontWeight:700,color:T.text }}>−1</button>
+          </div>
           <div style={{ textAlign:"center",minWidth:90 }}>
             <span style={{ fontSize:48,fontWeight:900,color:T.text,letterSpacing:-2 }}>{val}</span>
             <span style={{ fontSize:16,color:T.textMuted,fontWeight:700 }}> km</span>
           </div>
-          <button onClick={() => setVal(v => Math.min(200, v+5))} style={{ width:44,height:44,borderRadius:14,border:"1.5px solid #E5E7EB",background:T.bg,cursor:"pointer",fontSize:22,fontWeight:700,color:T.text }}>+</button>
+          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+            <button onClick={() => setVal(v => Math.min(200, v+5))} style={{ width:40,height:40,borderRadius:12,border:"1.5px solid #E5E7EB",background:T.bg,cursor:"pointer",fontSize:16,fontWeight:700,color:T.text }}>+5</button>
+            <button onClick={() => setVal(v => Math.min(200, v+1))} style={{ width:40,height:40,borderRadius:12,border:"1.5px solid #E5E7EB",background:T.bg,cursor:"pointer",fontSize:16,fontWeight:700,color:T.text }}>+1</button>
+          </div>
         </div>
         <button onClick={() => { onSave(val); onClose(); }} style={{ width:"100%",padding:15,borderRadius:14,border:"none",background:GG,color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
           <Check size={17}/> Salva obiettivo
@@ -387,51 +369,45 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
   const [kcalOver,  setKcalOver]  = useState(null);
   const [saving,    setSaving]    = useState(false);
 
-  const kmNum    = parseFloat(parseFloat(km).toFixed(1)) || 0;
-  const valid    = kmNum > 0 && duration > 0;
-  const pace     = valid ? duration / kmNum : null;
+  const kmNum = parseFloat(parseFloat(km).toFixed(1)) || 0;
+  const valid = kmNum > 0 && duration > 0;
+  const pace  = valid ? duration / kmNum : null;
 
   const kcalAuto = useMemo(() => calcKcal({
-    durationMin: duration,
-    paceMinKm:   pace,
-    weight:      userProfile?.weight   || 75,
-    heartRate:   heartRate > 0 ? heartRate : null,
-    slope:       slope > 0 ? slope : null,
+    durationMin: duration, paceMinKm: pace,
+    weight: userProfile?.weight || 75,
+    heartRate: heartRate > 0 ? heartRate : null,
+    slope: slope > 0 ? slope : null,
   }), [duration, pace, userProfile, heartRate, slope]);
 
   const kcalDisplay = kcalOver !== null ? kcalOver : kcalAuto;
+  const formulaHint = heartRate > 0 && slope > 0 ? "MET + HR + pendenza"
+    : heartRate > 0 ? "MET corretto con HR"
+    : slope > 0 ? "MET + correzione pendenza"
+    : "Formula MET standard";
 
-  const formulaHint = heartRate > 0 && slope > 0
-    ? "MET + HR + pendenza"
-    : heartRate > 0
-      ? "MET corretto con HR"
-      : slope > 0
-        ? "MET + correzione pendenza"
-        : "Formula MET standard";
-
-  const adjustKm = (delta) => {
-    setKm(prev => Math.max(0.1, parseFloat((parseFloat(prev) + delta).toFixed(1))));
-  };
+  const adjustKm = (delta) => setKm(prev => Math.max(0.1, parseFloat((parseFloat(prev) + delta).toFixed(1))));
 
   const handleSave = async () => {
     if (!valid || saving) return;
     setSaving(true);
-    const activity = {
-      date,
-      distanceKm:  kmNum,
-      durationMin: duration,
-      paceMinKm:   parseFloat((pace || 0).toFixed(2)),
-      kcal:        kcalDisplay,
-      heartRate:   heartRate > 0 ? parseInt(heartRate) : null,
-      slope:       slope > 0 ? parseFloat(slope) : null,
-    };
-    await onSave(activity);
+    await onSave({
+      date, distanceKm: kmNum, durationMin: duration,
+      paceMinKm: parseFloat((pace || 0).toFixed(2)),
+      kcal: kcalDisplay,
+      heartRate: heartRate > 0 ? parseInt(heartRate) : null,
+      slope: slope > 0 ? parseFloat(slope) : null,
+    });
     setSaving(false);
   };
 
+  const sliderStyle = (color, pct) => ({
+    flex:1,WebkitAppearance:"none",appearance:"none",height:6,borderRadius:10,outline:"none",
+    background:`linear-gradient(to right,${color} 0%,${color} ${pct}%,#E2E8F0 ${pct}%,#E2E8F0 100%)`,
+  });
+
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif" }}>
-      {/* HEADER */}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 14px 10px" }}>
         <button onClick={onBack} style={{ background:"none",border:"none",cursor:"pointer",color:T.textSec,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",gap:4,padding:"6px 8px" }}>
           <ChevronLeft size={18} color={T.teal}/>Indietro
@@ -459,7 +435,7 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
         </div>
       </div>
 
-      {/* DURATA — slider + chips */}
+      {/* DURATA */}
       <div style={{ background:T.card,borderRadius:20,padding:16,boxShadow:T.shadow,margin:"0 14px 12px" }}>
         <div style={{ fontSize:10,fontWeight:800,color:T.textMuted,letterSpacing:0.8,marginBottom:10 }}>⏱ DURATA</div>
         <div style={{ display:"flex",alignItems:"center",gap:12,marginBottom:6 }}>
@@ -469,10 +445,7 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
           </div>
           <input type="range" min={5} max={180} step={5} value={duration}
             onChange={e => setDuration(parseInt(e.target.value))}
-            style={{
-              flex:1,WebkitAppearance:"none",appearance:"none",height:6,borderRadius:10,outline:"none",
-              background:`linear-gradient(to right,${T.teal} 0%,${T.teal} ${((duration-5)/175)*100}%,#E2E8F0 ${((duration-5)/175)*100}%,#E2E8F0 100%)`,
-            }}/>
+            style={sliderStyle(T.teal, ((duration-5)/175)*100)}/>
         </div>
         <div style={{ display:"flex",gap:6,marginTop:8 }}>
           {DURATION_CHIPS.map(chip => (
@@ -487,17 +460,15 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
         </div>
       </div>
 
-      {/* RITMO CALCOLATO */}
+      {/* RITMO */}
       {valid && (
         <div style={{ background:`${T.teal}08`,border:`1px solid ${T.tealLight}`,borderRadius:14,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:8,margin:"0 14px 12px" }}>
           <Gauge size={15} color={T.teal}/>
-          <span style={{ fontSize:13,fontWeight:600,color:T.teal }}>
-            Ritmo medio: <strong>{formatPace(pace)}/km</strong>
-          </span>
+          <span style={{ fontSize:13,fontWeight:600,color:T.teal }}>Ritmo medio: <strong>{formatPace(pace)}/km</strong></span>
         </div>
       )}
 
-      {/* SEZIONE OPZIONALE */}
+      {/* OPZIONALE */}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 18px 8px",marginTop:4 }}>
         <div style={{ fontSize:10,fontWeight:800,color:T.textMuted,letterSpacing:0.8 }}>OPZIONALE</div>
         {(heartRate > 0 || slope > 0) && (
@@ -509,15 +480,12 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
       <div style={{ background:T.card,borderRadius:20,padding:16,boxShadow:T.shadow,margin:"0 14px 12px" }}>
         <div style={{ fontSize:10,fontWeight:800,color:"#EF4444",letterSpacing:0.8,marginBottom:10 }}>❤ BATTITI MEDI</div>
         <div style={{ display:"flex",alignItems:"center",gap:12 }}>
-          <div style={{ fontSize:24,fontWeight:900,color: heartRate > 55 ? "#EF4444" : T.textMuted,minWidth:78 }}>
+          <div style={{ fontSize:24,fontWeight:900,color:heartRate>55?"#EF4444":T.textMuted,minWidth:78 }}>
             {heartRate > 55 ? heartRate : "—"} <span style={{ fontSize:13,color:T.textMuted,fontWeight:700 }}>bpm</span>
           </div>
           <input type="range" min={50} max={200} step={1} value={heartRate || 50}
             onChange={e => { const v = parseInt(e.target.value); setHeartRate(v <= 55 ? 0 : v); }}
-            style={{
-              flex:1,WebkitAppearance:"none",appearance:"none",height:6,borderRadius:10,outline:"none",
-              background:`linear-gradient(to right,#EF4444 0%,#EF4444 ${(((heartRate||50)-50)/150)*100}%,#E2E8F0 ${(((heartRate||50)-50)/150)*100}%,#E2E8F0 100%)`,
-            }}/>
+            style={sliderStyle("#EF4444", (((heartRate||50)-50)/150)*100)}/>
         </div>
       </div>
 
@@ -530,14 +498,11 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
           </div>
           <input type="range" min={0} max={20} step={0.5} value={slope}
             onChange={e => setSlope(parseFloat(e.target.value))}
-            style={{
-              flex:1,WebkitAppearance:"none",appearance:"none",height:6,borderRadius:10,outline:"none",
-              background:`linear-gradient(to right,${T.purple} 0%,${T.purple} ${(slope/20)*100}%,#E2E8F0 ${(slope/20)*100}%,#E2E8F0 100%)`,
-            }}/>
+            style={sliderStyle(T.purple, (slope/20)*100)}/>
         </div>
       </div>
 
-      {/* KCAL CARD */}
+      {/* KCAL */}
       <div style={{ background:"linear-gradient(135deg,#FFF7ED,#FEF2F2)",borderRadius:18,padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",margin:"0 14px 14px" }}>
         <div style={{ display:"flex",alignItems:"center",gap:11 }}>
           <div style={{ width:40,height:40,borderRadius:12,background:"rgba(249,115,22,0.15)",display:"flex",alignItems:"center",justifyContent:"center" }}>
@@ -548,133 +513,115 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
             <div style={{ fontSize:10,color:"#94A3B8",fontWeight:600 }}>{formulaHint}</div>
           </div>
         </div>
-        <div>
-          {kcalOver !== null ? (
-            <div style={{ display:"flex",alignItems:"center",gap:6 }}>
-              <input type="number" value={kcalOver} onChange={e => setKcalOver(parseInt(e.target.value)||0)}
-                style={{ fontSize:28,fontWeight:900,color:ORANGE,border:"none",background:"transparent",outline:"none",fontFamily:"inherit",width:70,textAlign:"right" }}/>
-              <button onClick={() => setKcalOver(null)} style={{ fontSize:9,fontWeight:700,color:T.teal,background:"none",border:"none",cursor:"pointer" }}>Auto</button>
-            </div>
-          ) : (
-            <div onClick={() => setKcalOver(kcalAuto)} style={{ cursor:"pointer" }}>
-              <span style={{ fontSize:30,fontWeight:900,color:ORANGE,lineHeight:1 }}>{kcalDisplay}</span>
-              <span style={{ fontSize:11,opacity:0.7,marginLeft:3 }}>kcal</span>
-            </div>
-          )}
-        </div>
+        {kcalOver !== null ? (
+          <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+            <input type="number" value={kcalOver} onChange={e => setKcalOver(parseInt(e.target.value)||0)}
+              style={{ fontSize:28,fontWeight:900,color:ORANGE,border:"none",background:"transparent",outline:"none",fontFamily:"inherit",width:70,textAlign:"right" }}/>
+            <button onClick={() => setKcalOver(null)} style={{ fontSize:9,fontWeight:700,color:T.teal,background:"none",border:"none",cursor:"pointer" }}>Auto</button>
+          </div>
+        ) : (
+          <div onClick={() => setKcalOver(kcalAuto)} style={{ cursor:"pointer" }}>
+            <span style={{ fontSize:30,fontWeight:900,color:ORANGE,lineHeight:1 }}>{kcalDisplay}</span>
+            <span style={{ fontSize:11,opacity:0.7,marginLeft:3 }}>kcal</span>
+          </div>
+        )}
       </div>
 
-      {/* BOTTONE SALVA */}
       <button onClick={handleSave} disabled={!valid || saving} style={{
         width:"calc(100% - 28px)",margin:"8px 14px 24px",padding:16,borderRadius:18,border:"none",
         background: valid ? "linear-gradient(135deg,#028090,#7C5CFC)" : "#E5E7EB",
-        color: valid ? "#fff" : T.textMuted,
-        fontSize:15,fontWeight:800,
+        color: valid ? "#fff" : T.textMuted,fontSize:15,fontWeight:800,
         cursor: valid && !saving ? "pointer" : "not-allowed",
         boxShadow: valid ? "0 8px 24px rgba(2,128,144,0.35)" : "none",
         display:"flex",alignItems:"center",justifyContent:"center",gap:8,
       }}>
-        <Check size={18}/>
-        {saving ? "Salvataggio…" : "Salva camminata"}
+        <Check size={18}/>{saving ? "Salvataggio…" : "Salva camminata"}
       </button>
-
-      <div style={{ height: 80 }}/>
+      <div style={{ height:80 }}/>
       <FitnessBottomNav onAdd={() => {}} onNavigate={() => {}}/>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   SCREEN: MAIN
+   SCREEN: MAIN — Opzione B (barra gradient, no ring)
    ═══════════════════════════════════════════ */
 const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoal, onNavigate, onReport }) => {
   const [showAll, setShowAll] = useState(false);
 
   const weekDays = useMemo(() => getWeekDays(getMondayISO()), []);
-  const chart    = useMemo(() => weekDays.map((iso, i) => ({
+  const chart = useMemo(() => weekDays.map((iso, i) => ({
     day: DAY_LABELS[i],
     km:  parseFloat(activities.filter(a => a.date === iso).reduce((s, a) => s + a.distanceKm, 0).toFixed(2)),
     iso,
   })), [activities, weekDays]);
 
   const weekTotal = useMemo(() => chart.reduce((s, d) => s + d.km, 0), [chart]);
-  const pct       = Math.min((weekTotal / weeklyGoal) * 100, 100);
-  const oggi      = todayISO();
+  const pct = Math.min((weekTotal / weeklyGoal) * 100, 100);
+  const oggi = todayISO();
 
-  // Kcal settimanali
   const weekKcal = useMemo(() =>
     weekDays.reduce((s, iso) => s + activities.filter(a => a.date === iso).reduce((ss, a) => ss + (a.kcal || 0), 0), 0),
     [activities, weekDays]
   );
 
-  // Trend settimana scorsa
-  const prevMonISO  = (() => { const d = new Date(getMondayISO()); d.setDate(d.getDate()-7); return toISO(d); })();
-  const prevWkDays  = useMemo(() => getWeekDays(prevMonISO), [prevMonISO]);
-  const prevTotal   = useMemo(() => prevWkDays.reduce((s, iso) => s + activities.filter(a => a.date === iso).reduce((ss, a) => ss + a.distanceKm, 0), 0), [activities, prevWkDays]);
-  const trendDiff   = weekTotal - prevTotal;
+  const prevMonISO = (() => { const d = new Date(getMondayISO()); d.setDate(d.getDate()-7); return toISO(d); })();
+  const prevWkDays = useMemo(() => getWeekDays(prevMonISO), [prevMonISO]);
+  const prevTotal  = useMemo(() => prevWkDays.reduce((s, iso) => s + activities.filter(a => a.date === iso).reduce((ss, a) => ss + a.distanceKm, 0), 0), [activities, prevWkDays]);
+  const trendDiff  = weekTotal - prevTotal;
 
-  const displayed = showAll ? activities : activities.slice(0, 5);
+  const displayed = showAll ? activities : activities.slice(0, 4);
 
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:110 }}>
-
-      {/* HEADER */}
+      {/* HEADER — "Camminata" allineato con ingranaggio */}
       <div style={{ padding:"20px 20px 10px",background:T.bg,position:"sticky",top:0,zIndex:10 }}>
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between" }}>
           <div>
             <div style={{ fontSize:12,color:T.textMuted,fontWeight:500 }}>Attività</div>
             <h1 style={{ fontSize:24,fontWeight:800,color:T.text,margin:0,letterSpacing:-.5 }}>Camminata</h1>
           </div>
-          <button onClick={onEditGoal} style={{ background:T.card,border:"none",cursor:"pointer",padding:"8px 14px",borderRadius:12,display:"flex",alignItems:"center",gap:6,boxShadow:T.shadow }}>
-            <Settings size={15} color={T.teal}/>
-            <span style={{ fontSize:12,fontWeight:700,color:T.teal }}>Obiettivo: {weeklyGoal} km</span>
+          <button onClick={onEditGoal} style={{ width:40,height:40,borderRadius:12,background:T.card,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:T.shadow }}>
+            <Settings size={18} color={T.teal}/>
           </button>
         </div>
       </div>
 
       <div style={{ padding:"0 20px" }}>
-
-        {/* ── CARD UNIFICATA: OBIETTIVO + GRAFICO + KCAL ── */}
-        <div style={{ background:T.card,borderRadius:24,padding:"20px 18px 14px",marginBottom:14,boxShadow:T.shadowLg }}>
-          <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12 }}>
-            <div style={{ flex:1,minWidth:0 }}>
-              <div style={{ fontSize:11,fontWeight:600,color:T.textSec,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4 }}>Questa settimana</div>
-              <div style={{ fontSize:34,fontWeight:900,lineHeight:1,letterSpacing:-1,color:T.text }}>
-                {weekTotal.toFixed(1)}
-                <span style={{ fontSize:14,fontWeight:600,color:T.textSec,marginLeft:5 }}>/ {weeklyGoal} km</span>
-              </div>
-              <div style={{ display:"flex",alignItems:"center",gap:5,marginTop:7 }}>
-                {trendDiff >= 0
-                  ? <TrendingUp  size={12} color={GREEN}/>
-                  : <TrendingDown size={12} color={T.coral}/>}
-                <span style={{ fontSize:11,fontWeight:700,color:trendDiff>=0?GREEN:T.coral }}>
-                  {trendDiff >= 0 ? "+" : ""}{trendDiff.toFixed(1)} km vs scorsa
-                </span>
-              </div>
-              <div style={{ fontSize:12,color:T.textSec,marginTop:5 }}>
-                {pct >= 100 ? "🎉 Obiettivo raggiunto!" : `Mancano ${(weeklyGoal - weekTotal).toFixed(1)} km`}
-              </div>
-            </div>
-            {/* Ring + kcal sotto */}
-            <div style={{ flexShrink:0,marginLeft:12,display:"flex",flexDirection:"column",alignItems:"center" }}>
-              <div style={{ position:"relative" }}>
-                <CircularRing pct={pct} size={90} stroke={9} color={T.teal}/>
-                <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                  <span style={{ fontSize:18,fontWeight:900,color:T.teal }}>{Math.round(pct)}%</span>
-                </div>
-              </div>
-              {/* Kcal badge */}
-              <div style={{ display:"flex",alignItems:"center",gap:4,marginTop:6,background:`${ORANGE}12`,padding:"4px 10px",borderRadius:10 }}>
-                <Flame size={11} color={ORANGE}/>
-                <span style={{ fontSize:12,fontWeight:800,color:ORANGE }}>{weekKcal.toLocaleString("it-IT")}</span>
-                <span style={{ fontSize:9,fontWeight:600,color:T.textMuted }}>kcal</span>
-              </div>
+        {/* ── CARD SETTIMANALE — Opzione B: barra gradient ── */}
+        <div style={{ background:T.card,borderRadius:24,padding:"20px 18px 16px",marginBottom:14,boxShadow:T.shadowLg }}>
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4 }}>
+            <div style={{ fontSize:10,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:".05em" }}>Questa settimana</div>
+            <div style={{ display:"flex",alignItems:"center",gap:5 }}>
+              {trendDiff >= 0
+                ? <TrendingUp size={12} color={GREEN}/>
+                : <TrendingDown size={12} color={T.coral}/>}
+              <span style={{ fontSize:11,fontWeight:700,color:trendDiff>=0?GREEN:T.coral }}>
+                {trendDiff >= 0 ? "+" : ""}{trendDiff.toFixed(1)} km
+              </span>
             </div>
           </div>
 
-          {/* Barra progresso */}
-          <div style={{ background:"#F0F0F0",borderRadius:6,height:5,marginBottom:14 }}>
-            <div style={{ width:`${Math.min(pct,100)}%`,height:"100%",borderRadius:6,background:T.gradient,transition:"width .5s" }}/>
+          {/* Big numbers + kcal badge */}
+          <div style={{ display:"flex",alignItems:"baseline",gap:6,marginBottom:10 }}>
+            <span style={{ fontSize:42,fontWeight:900,color:T.text,letterSpacing:-2,lineHeight:1 }}>{weekTotal.toFixed(1)}</span>
+            <span style={{ fontSize:15,fontWeight:600,color:T.textSec }}>/ {weeklyGoal} km</span>
+            <div style={{ marginLeft:"auto",display:"flex",alignItems:"center",gap:5,background:`${ORANGE}12`,padding:"5px 12px",borderRadius:12 }}>
+              <Flame size={12} color={ORANGE}/>
+              <span style={{ fontSize:12,fontWeight:800,color:ORANGE }}>{weekKcal.toLocaleString("it-IT")} kcal</span>
+            </div>
+          </div>
+
+          {/* Gradient progress bar */}
+          <div style={{ position:"relative",height:10,background:T.tealLight,borderRadius:10,marginBottom:4,overflow:"hidden" }}>
+            <div style={{ width:`${Math.min(pct,100)}%`,height:"100%",borderRadius:10,background:"linear-gradient(90deg,#028090,#02C39A)",transition:"width .5s" }}/>
+          </div>
+          <div style={{ display:"flex",justifyContent:"space-between",marginBottom:14 }}>
+            <span style={{ fontSize:10,color:T.textMuted }}>0 km</span>
+            <span style={{ fontSize:10,fontWeight:700,color:T.textSec }}>
+              {pct >= 100 ? "🎉 Obiettivo raggiunto!" : `Mancano ${(weeklyGoal - weekTotal).toFixed(1)} km · ${Math.round(pct)}%`}
+            </span>
+            <span style={{ fontSize:10,color:T.textMuted }}>{weeklyGoal} km</span>
           </div>
 
           {/* Grafico a barre */}
@@ -691,10 +638,10 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
           </ResponsiveContainer>
         </div>
 
-        {/* ── SESSIONI RECENTI ── */}
+        {/* ── SESSIONI RECENTI (4 + Vedi tutte) ── */}
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
           <div style={{ fontSize:13,fontWeight:700,color:T.text }}>🚶 Sessioni recenti</div>
-          {activities.length > 5 && (
+          {activities.length > 4 && (
             <button onClick={() => setShowAll(v => !v)} style={{ background:"none",border:"none",cursor:"pointer",fontSize:12,color:T.teal,fontWeight:700 }}>
               {showAll ? "Mostra meno" : `Vedi tutte (${activities.length})`}
             </button>
@@ -720,14 +667,11 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
         )}
       </div>
 
-      {/* Report FAB */}
       <button onClick={onReport} style={{
         position:"fixed",bottom:86,right:20,
-        background:T.gradient,border:"none",
-        borderRadius:50,padding:"11px 20px",
+        background:T.gradient,border:"none",borderRadius:50,padding:"11px 20px",
         display:"flex",alignItems:"center",gap:8,
-        boxShadow:"0 6px 24px rgba(2,128,144,0.35)",
-        cursor:"pointer",zIndex:15,
+        boxShadow:"0 6px 24px rgba(2,128,144,0.35)",cursor:"pointer",zIndex:15,
       }}>
         <BarChart3 size={16} color="#fff"/>
         <span style={{ fontSize:13,fontWeight:700,color:"#fff" }}>Report</span>
@@ -739,13 +683,15 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
 };
 
 /* ═══════════════════════════════════════════
-   SCREEN: REPORT — Dettaglio, Confronto, Streak, Storico
+   SCREEN: REPORT
+   Dettaglio · Confronto · Metriche Totali · Storico
    ═══════════════════════════════════════════ */
 const ReportScreen = ({ activities, onBack, onNavigate }) => {
   const [period,      setPeriod]      = useState("week");
   const [chartMetric, setChartMetric] = useState("km");
+  const [showAllW,    setShowAllW]    = useState(false);
+  const [showAllM,    setShowAllM]    = useState(false);
 
-  // ── Helper: dati raggruppati per settimane / mesi ──
   const weekData = useMemo(() => {
     return Array.from({ length: 8 }, (_, i) => {
       const d = new Date(getMondayISO()); d.setDate(d.getDate() - i * 7);
@@ -772,27 +718,21 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
     }).reverse();
   }, [activities]);
 
-  const data    = period === "week" ? weekData : monthData;
-  const curr    = data[data.length - 1];
-  const prev    = data[data.length - 2];
-  const sliced  = data.slice(-6);
-  const maxVal  = Math.max(...sliced.map(d => d[chartMetric]), 1);
-  const avg     = sliced.filter(d => d[chartMetric] > 0).length
-    ? Math.round(sliced.reduce((s, d) => s + d[chartMetric], 0) / sliced.filter(d => d[chartMetric] > 0).length)
-    : 0;
+  const data   = period === "week" ? weekData : monthData;
+  const curr   = data[data.length - 1];
+  const prev   = data[data.length - 2];
+  const sliced = data.slice(-6);
+  const maxVal = Math.max(...sliced.map(d => d[chartMetric]), 1);
+  const nonZero = sliced.filter(d => d[chartMetric] > 0);
+  const avg    = nonZero.length ? Math.round(nonZero.reduce((s, d) => s + d[chartMetric], 0) / nonZero.length) : 0;
 
-  // Streak & costanza
-  const walkDates  = useMemo(() => new Set(activities.map(a => a.date)), [activities]);
-  const streak     = useMemo(() => calcStreak(activities), [activities]);
-  const goalDays   = 5;
-  const thisSess   = curr?.sess || 0;
-  const consistency = Math.round(Math.min(100, (thisSess / goalDays) * 100));
-  const totalDays  = walkDates.size;
+  const pr = useMemo(() => calcPR(activities), [activities]);
+  const totalKcal = activities.reduce((s, a) => s + (a.kcal || 0), 0);
+  const maxStreakVal = useMemo(() => calcMaxStreak(activities), [activities]);
 
   const metricColor = chartMetric === "km" ? T.teal : ORANGE;
   const metricUnit  = chartMetric === "km" ? "km" : "kcal";
 
-  // Confronto metriche
   const confrontoMetrics = [
     { label:"Km",       key:"km",       color:T.teal },
     { label:"Kcal",     key:"kcal",     color:ORANGE },
@@ -800,13 +740,31 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
     { label:"Passo",    key:"avgPace",  color:GREEN, inv:true },
   ];
 
-  // Storico tabelle (ultime 6)
-  const visW = weekData.slice().reverse().slice(0, 6);
-  const visM = monthData.slice().reverse().slice(0, 6);
+  const visW = weekData.slice().reverse();
+  const visM = monthData.slice().reverse();
+  const showW = showAllW ? visW : visW.slice(0, 4);
+  const showM = showAllM ? visM : visM.slice(0, 4);
+
+  const formatTotalTime = (min) => {
+    if (min < 60) return `${min}min`;
+    const h = Math.floor(min / 60);
+    return `${h}h`;
+  };
+
+  const TableRow = ({ item, i, isCurrent }) => (
+    <tr style={{ background: isCurrent ? `${T.teal}08` : "transparent" }}>
+      <td style={{ padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:isCurrent?700:500,color:isCurrent?T.teal:T.text,fontSize:11 }}>
+        {item.periodLabel}{isCurrent && <span style={{ fontSize:8,color:T.mint,marginLeft:4 }}>attuale</span>}
+      </td>
+      <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text,fontSize:11 }}>{item.km}</td>
+      <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text,fontSize:11 }}>{item.kcal}</td>
+      <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text,fontSize:11 }}>{item.sess}</td>
+      <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text,fontSize:11 }}>{item.avgPace > 0 ? item.avgPace.toFixed(1) : "—"}</td>
+    </tr>
+  );
 
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
-      {/* Header */}
       <div style={{ position:"sticky",top:0,zIndex:10,background:T.bg,display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
         <button onClick={onBack} style={{ width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
           <ChevronLeft size={18} color={T.teal}/>
@@ -815,15 +773,13 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
       </div>
 
       <div style={{ padding:"0 16px" }}>
-
-        {/* Toggle settimana/mese */}
+        {/* Toggle */}
         <div style={{ display:"flex",background:"#F3F4F6",borderRadius:12,padding:4,marginBottom:14 }}>
           {[["week","Settimanale"],["month","Mensile"]].map(([v,l]) => (
             <button key={v} onClick={() => setPeriod(v)} style={{
               flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",
               background:period===v?T.card:"transparent",fontWeight:700,fontSize:13,
-              color:period===v?T.text:T.textMuted,
-              boxShadow:period===v?T.shadow:"none",transition:".2s",
+              color:period===v?T.text:T.textMuted,boxShadow:period===v?T.shadow:"none",transition:".2s",
             }}>{l}</button>
           ))}
         </div>
@@ -837,18 +793,12 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
                 <button key={v} onClick={() => setChartMetric(v)} style={{
                   padding:"4px 12px",borderRadius:16,border:"none",cursor:"pointer",
                   background:chartMetric===v?T.teal:"transparent",
-                  color:chartMetric===v?"#fff":T.textMuted,
-                  fontWeight:700,fontSize:11,transition:".15s",
+                  color:chartMetric===v?"#fff":T.textMuted,fontWeight:700,fontSize:11,transition:".15s",
                 }}>{l}</button>
               ))}
             </div>
           </div>
-          <div style={{ textAlign:"center",marginBottom:12 }}>
-            <div style={{ fontSize:12,fontWeight:700,color:T.text }}>
-              {period==="week" ? "Ultime 6 settimane" : "Ultimi 6 mesi"}
-            </div>
-          </div>
-          {/* Bar chart semplice */}
+          {/* Bar chart */}
           <div style={{ display:"flex",gap:8,alignItems:"flex-end",height:118,marginBottom:10,padding:"0 2px" }}>
             {sliced.map((d, i) => {
               const h = maxVal > 0 ? (d[chartMetric] / maxVal) * 100 : 0;
@@ -859,8 +809,7 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
                     <div style={{
                       position:"absolute",bottom:0,left:"10%",width:"80%",
                       height:`${Math.max(h, d[chartMetric] > 0 ? 2 : 0)}%`,
-                      background:metricColor,borderRadius:4,opacity:0.85,
-                      transition:"height 0.3s",
+                      background:metricColor,borderRadius:4,opacity:0.85,transition:"height 0.3s",
                     }}/>
                   </div>
                   <div style={{ fontSize:8,color:T.textMuted,fontWeight:600 }}>{d.label}</div>
@@ -868,12 +817,10 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
               );
             })}
           </div>
-          {/* Media */}
-          <div style={{ display:"flex",justifyContent:"center",padding:"8px 0 0",borderTop:`1px solid ${T.border}` }}>
+          {/* Media — allineata correttamente */}
+          <div style={{ display:"flex",alignItems:"baseline",justifyContent:"center",gap:4,padding:"8px 0 0",borderTop:`1px solid ${T.border}` }}>
             <span style={{ fontSize:16,fontWeight:800,color:metricColor }}>{avg}</span>
-            <span style={{ fontSize:10,color:T.textMuted,marginLeft:4 }}>
-              {metricUnit}/{period==="week"?"settimana":"mese"} media
-            </span>
+            <span style={{ fontSize:10,color:T.textMuted }}>{metricUnit}/{period==="week"?"settimana":"mese"} media</span>
           </div>
         </div>
 
@@ -884,27 +831,18 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
             <div style={{ fontSize:10,color:T.textMuted,marginBottom:12 }}>{curr.periodLabel} vs {prev.periodLabel}</div>
             <div style={{ display:"flex",gap:6 }}>
               {confrontoMetrics.map(m => {
-                const cV = curr[m.key] || 0;
-                const pV = prev[m.key] || 0;
+                const cV = curr[m.key] || 0, pV = prev[m.key] || 0;
                 const diff = cV - pV;
-                const pctChange = pV > 0 ? Math.round((diff / pV) * 100) : 0;
+                const pctC = pV > 0 ? Math.round((diff / pV) * 100) : 0;
                 const isUp = diff > 0;
                 const arrow = isUp ? "↑" : diff < 0 ? "↓" : "=";
-                const arrowColor = m.inv
-                  ? (isUp ? T.coral : GREEN)
-                  : (isUp ? GREEN : T.coral);
+                const aC = m.inv ? (isUp ? T.coral : GREEN) : (isUp ? GREEN : T.coral);
                 return (
                   <div key={m.key} style={{ flex:1,background:`${m.color}0A`,borderRadius:12,padding:"10px 6px",textAlign:"center" }}>
                     <div style={{ fontSize:9,fontWeight:600,color:T.textMuted,marginBottom:4 }}>{m.label}</div>
-                    <div style={{ fontSize:16,fontWeight:800,color:m.color }}>
-                      {m.key === "avgPace" && cV > 0 ? cV.toFixed(1) : cV}
-                    </div>
-                    <div style={{ fontSize:9,color:T.textMuted,marginTop:2 }}>
-                      vs {m.key === "avgPace" && pV > 0 ? pV.toFixed(1) : pV}
-                    </div>
-                    <div style={{ fontSize:11,fontWeight:700,color: diff === 0 ? T.textMuted : arrowColor,marginTop:4 }}>
-                      {arrow}{Math.abs(pctChange)}%
-                    </div>
+                    <div style={{ fontSize:16,fontWeight:800,color:m.color }}>{m.key==="avgPace"&&cV>0?cV.toFixed(1):cV}</div>
+                    <div style={{ fontSize:9,color:T.textMuted,marginTop:2 }}>vs {m.key==="avgPace"&&pV>0?pV.toFixed(1):pV}</div>
+                    <div style={{ fontSize:11,fontWeight:700,color:diff===0?T.textMuted:aC,marginTop:4 }}>{arrow}{Math.abs(pctC)}%</div>
                   </div>
                 );
               })}
@@ -912,44 +850,58 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
           </div>
         )}
 
-        {/* ── STREAK & COSTANZA ── */}
+        {/* ── METRICHE TOTALI ── */}
         <div style={{ background:T.card,borderRadius:18,padding:16,boxShadow:T.shadow,marginBottom:12 }}>
-          <div style={{ fontSize:14,fontWeight:700,color:T.text,marginBottom:14 }}>🔥 Streak & Costanza</div>
+          <div style={{ fontSize:14,fontWeight:700,color:T.text,marginBottom:14 }}>🏆 Metriche Totali</div>
+          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10 }}>
+            {[
+              { val: pr.totalKm.toFixed(1), unit:"km",   label:"km totali",      color:T.teal,   Icon:Footprints },
+              { val: totalKcal.toLocaleString("it-IT"), unit:"kcal", label:"kcal bruciate", color:ORANGE, Icon:Flame },
+              { val: `${activities.length}`, unit:"",    label:"sessioni",       color:T.purple, Icon:Zap },
+              { val: formatTotalTime(pr.totalMin), unit:"", label:"tempo totale",  color:GREEN,    Icon:Clock },
+            ].map(({ val, unit, label, color, Icon }) => (
+              <div key={label} style={{ background:`${color}08`,borderRadius:14,padding:14,textAlign:"center" }}>
+                <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:4,marginBottom:6 }}>
+                  <Icon size={14} color={color}/>
+                </div>
+                <div style={{ fontSize:28,fontWeight:900,color,lineHeight:1 }}>{val}{unit && <span style={{ fontSize:11,fontWeight:600,marginLeft:2 }}>{unit}</span>}</div>
+                <div style={{ fontSize:10,color:T.textMuted,fontWeight:600,marginTop:4 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          {/* Record */}
           <div style={{ display:"flex",gap:8 }}>
-            {/* Streak */}
-            <div style={{ flex:1,background:`${T.gold}0A`,borderRadius:14,padding:14,textAlign:"center" }}>
-              <div style={{ fontSize:30,fontWeight:900,color:T.gold,lineHeight:1 }}>{streak}</div>
-              <div style={{ fontSize:10,color:T.textMuted,fontWeight:600,marginTop:4 }}>giorni consecutivi</div>
-              <div style={{ fontSize:9,color:T.textMuted,marginTop:2 }}>con camminata</div>
-            </div>
-            {/* Consistency ring */}
-            <div style={{ flex:1,background:`${T.mint}0A`,borderRadius:14,padding:14,textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center" }}>
-              <div style={{ position:"relative",width:56,height:56 }}>
-                <CircularRing pct={consistency} size={56} stroke={5} color={T.mint}/>
-                <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                  <span style={{ fontSize:14,fontWeight:800,color:T.mint }}>{consistency}%</span>
+            {[
+              { emoji:"🏅", val: `${pr.maxDist.toFixed(1)} km`, label:"distanza max" },
+              { emoji:"⚡", val: pr.bestPace < Infinity ? `${formatPace(pr.bestPace)}/km` : "—", label:"ritmo migliore" },
+              { emoji:"🔥", val: `${pr.maxKcal} kcal`, label:"kcal max" },
+            ].map(({ emoji, val, label }) => (
+              <div key={label} style={{ flex:1,background:`${T.gold}08`,borderRadius:12,padding:10,display:"flex",alignItems:"center",gap:8 }}>
+                <span style={{ fontSize:16 }}>{emoji}</span>
+                <div>
+                  <div style={{ fontSize:13,fontWeight:800,color:T.gold }}>{val}</div>
+                  <div style={{ fontSize:9,color:T.textMuted }}>{label}</div>
                 </div>
               </div>
-              <div style={{ fontSize:10,color:T.textMuted,fontWeight:600,marginTop:6 }}>{thisSess}/{goalDays} sessioni</div>
-              <div style={{ fontSize:9,color:T.textMuted }}>obiettivo sett.</div>
-            </div>
-            {/* Total days */}
-            <div style={{ flex:1,background:`${T.teal}0A`,borderRadius:14,padding:14,textAlign:"center",display:"flex",flexDirection:"column",justifyContent:"center" }}>
-              <div style={{ fontSize:30,fontWeight:900,color:T.teal,lineHeight:1 }}>{totalDays}</div>
-              <div style={{ fontSize:10,color:T.textMuted,fontWeight:600,marginTop:4 }}>giorni tracciati</div>
-              <div style={{ fontSize:9,color:T.textMuted,marginTop:2 }}>totale</div>
-            </div>
+            ))}
           </div>
         </div>
 
-        {/* ── STORICO ── */}
+        {/* ── STORICO (4 + Vedi tutte) ── */}
         <div style={{ background:T.card,borderRadius:18,padding:16,boxShadow:T.shadow,marginBottom:20 }}>
           <div style={{ fontSize:14,fontWeight:700,color:T.text,marginBottom:14 }}>🕐 Storico</div>
 
           {/* Settimanale */}
-          <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8 }}>Settimanale</div>
+          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
+            <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:0.5 }}>Settimanale</div>
+            {visW.length > 4 && (
+              <button onClick={() => setShowAllW(v => !v)} style={{ background:"none",border:"none",cursor:"pointer",fontSize:11,color:T.teal,fontWeight:700 }}>
+                {showAllW ? "Mostra meno" : "Vedi tutte"}
+              </button>
+            )}
+          </div>
           <div style={{ overflowX:"auto" }}>
-            <table style={{ width:"100%",borderCollapse:"collapse",fontSize:11 }}>
+            <table style={{ width:"100%",borderCollapse:"collapse" }}>
               <thead>
                 <tr>
                   <th style={{ textAlign:"left",padding:"6px 4px",fontWeight:700,fontSize:10,color:T.textMuted,borderBottom:`2px solid ${T.border}` }}>Settimana</th>
@@ -960,25 +912,22 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
                 </tr>
               </thead>
               <tbody>
-                {visW.map((w, i) => (
-                  <tr key={i} style={{ background: i === 0 ? `${T.teal}08` : "transparent" }}>
-                    <td style={{ padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:i===0?700:500,color:i===0?T.teal:T.text }}>
-                      {w.periodLabel}{i === 0 && <span style={{ fontSize:8,color:T.mint,marginLeft:4 }}>attuale</span>}
-                    </td>
-                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{w.km}</td>
-                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{w.kcal}</td>
-                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{w.sess}</td>
-                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{w.avgPace > 0 ? w.avgPace.toFixed(1) : "—"}</td>
-                  </tr>
-                ))}
+                {showW.map((w, i) => <TableRow key={i} item={w} i={i} isCurrent={i===0}/>)}
               </tbody>
             </table>
           </div>
 
           {/* Mensile */}
-          <div style={{ marginTop:16,fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8 }}>Mensile</div>
+          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,marginBottom:8 }}>
+            <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:0.5 }}>Mensile</div>
+            {visM.length > 4 && (
+              <button onClick={() => setShowAllM(v => !v)} style={{ background:"none",border:"none",cursor:"pointer",fontSize:11,color:T.teal,fontWeight:700 }}>
+                {showAllM ? "Mostra meno" : "Vedi tutte"}
+              </button>
+            )}
+          </div>
           <div style={{ overflowX:"auto" }}>
-            <table style={{ width:"100%",borderCollapse:"collapse",fontSize:11 }}>
+            <table style={{ width:"100%",borderCollapse:"collapse" }}>
               <thead>
                 <tr>
                   <th style={{ textAlign:"left",padding:"6px 4px",fontWeight:700,fontSize:10,color:T.textMuted,borderBottom:`2px solid ${T.border}` }}>Mese</th>
@@ -989,17 +938,7 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
                 </tr>
               </thead>
               <tbody>
-                {visM.map((m, i) => (
-                  <tr key={i} style={{ background: i === 0 ? `${T.teal}08` : "transparent" }}>
-                    <td style={{ padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:i===0?700:500,color:i===0?T.teal:T.text }}>
-                      {m.periodLabel}{i === 0 && <span style={{ fontSize:8,color:T.mint,marginLeft:4 }}>attuale</span>}
-                    </td>
-                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{m.km}</td>
-                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{m.kcal}</td>
-                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{m.sess}</td>
-                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{m.avgPace > 0 ? m.avgPace.toFixed(1) : "—"}</td>
-                  </tr>
-                ))}
+                {showM.map((m, i) => <TableRow key={i} item={m} i={i} isCurrent={i===0}/>)}
               </tbody>
             </table>
           </div>
@@ -1025,9 +964,7 @@ export default function FitnessSection({ onNavigate }) {
 
   const loadData = useCallback(async () => {
     const [goal, profile, last] = await Promise.all([
-      getWeeklyGoalKm(),
-      getNutritionGoals(),
-      getLastFitnessActivity(),
+      getWeeklyGoalKm(), getNutritionGoals(), getLastFitnessActivity(),
     ]);
     if (goal)    setWeeklyGoal(goal);
     if (profile) setUserProfile(profile);
@@ -1080,9 +1017,18 @@ export default function FitnessSection({ onNavigate }) {
     setSubScreen("editWalk");
   }, []);
 
+  // Scroll to top su ogni cambio schermata
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [subScreen]);
 
-  // Default values from last session
+  // Scroll to top anche quando si clicca su Fitness dalla bottom nav
+  const handleNavigate = useCallback((section) => {
+    if (section === "fitness") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      onNavigate(section);
+    }
+  }, [onNavigate]);
+
   const defaultInitial = useMemo(() => ({
     distanceKm:  lastSession?.distanceKm  ?? 5.0,
     durationMin: lastSession?.durationMin  ?? 50,
@@ -1092,50 +1038,29 @@ export default function FitnessSection({ onNavigate }) {
 
   if (subScreen === "addWalk") return (
     <>
-      <WalkForm
-        title="Nuova camminata"
-        initial={defaultInitial}
-        userProfile={userProfile}
-        onSave={handleSaveNew}
-        onBack={() => setSubScreen("main")}
-      />
+      <WalkForm title="Nuova camminata" initial={defaultInitial} userProfile={userProfile}
+        onSave={handleSaveNew} onBack={() => setSubScreen("main")}/>
       {showGoalModal && <GoalModal current={weeklyGoal} onSave={handleSaveGoal} onClose={() => setShowGoalModal(false)}/>}
     </>
   );
 
   if (subScreen === "editWalk") return (
     <>
-      <WalkForm
-        title="Modifica camminata"
-        initial={editTarget}
-        userProfile={userProfile}
-        onSave={handleSaveEdit}
-        onBack={() => { setEditTarget(null); setSubScreen("main"); }}
-      />
+      <WalkForm title="Modifica camminata" initial={editTarget} userProfile={userProfile}
+        onSave={handleSaveEdit} onBack={() => { setEditTarget(null); setSubScreen("main"); }}/>
       {showGoalModal && <GoalModal current={weeklyGoal} onSave={handleSaveGoal} onClose={() => setShowGoalModal(false)}/>}
     </>
   );
 
   if (subScreen === "report") return (
-    <ReportScreen
-      activities={activities}
-      onBack={() => setSubScreen("main")}
-      onNavigate={onNavigate}
-    />
+    <ReportScreen activities={activities} onBack={() => setSubScreen("main")} onNavigate={handleNavigate}/>
   );
 
   return (
     <>
-      <MainScreen
-        activities={activities}
-        weeklyGoal={weeklyGoal}
-        onAdd={() => setSubScreen("addWalk")}
-        onDelete={handleDelete}
-        onEdit={openEdit}
-        onEditGoal={() => setShowGoalModal(true)}
-        onNavigate={onNavigate}
-        onReport={() => setSubScreen("report")}
-      />
+      <MainScreen activities={activities} weeklyGoal={weeklyGoal}
+        onAdd={() => setSubScreen("addWalk")} onDelete={handleDelete} onEdit={openEdit}
+        onEditGoal={() => setShowGoalModal(true)} onNavigate={handleNavigate} onReport={() => setSubScreen("report")}/>
       {showGoalModal && <GoalModal current={weeklyGoal} onSave={handleSaveGoal} onClose={() => setShowGoalModal(false)}/>}
     </>
   );
