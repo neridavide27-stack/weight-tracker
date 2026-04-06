@@ -27,6 +27,19 @@ foodDb.version(5).stores({
   fitnessActivities: '++id, date',
 });
 
+// v6 — aggiunge tabelle per la sezione Gym
+foodDb.version(6).stores({
+  foodEntries:        '++id, date, mealType',
+  cachedFoods:        'id, barcode',
+  savedMeals:         '++id, mealType',
+  appSettings:        'key',
+  fitnessActivities:  '++id, date',
+  gymWorkouts:        '++id, date',
+  gymSets:            '++id, workoutId, exerciseId',
+  gymRoutines:        '++id',
+  gymCustomExercises: '++id',
+});
+
 // ========== FOOD ENTRIES ==========
 
 export const getFoodEntriesByDate = async (date) => {
@@ -660,6 +673,94 @@ export const getWeeklyGoalKm = async () => {
  */
 export const saveWeeklyGoalKm = async (km) => {
   return await foodDb.appSettings.put({ key: 'fitnessWeeklyGoalKm', value: km });
+};
+
+// ========== GYM WORKOUTS ==========
+
+export const addGymWorkout = async (workout) => {
+  return await foodDb.gymWorkouts.add({ ...workout, createdAt: Date.now() });
+};
+
+export const updateGymWorkout = async (id, changes) => {
+  return await foodDb.gymWorkouts.update(id, changes);
+};
+
+export const deleteGymWorkout = async (id) => {
+  await foodDb.gymSets.where('workoutId').equals(id).delete();
+  return await foodDb.gymWorkouts.delete(id);
+};
+
+export const getAllGymWorkouts = async () => {
+  return await foodDb.gymWorkouts.orderBy('id').reverse().toArray();
+};
+
+export const getGymWorkoutsByDateRange = async (startDate, endDate) => {
+  return await foodDb.gymWorkouts.where('date').between(startDate, endDate, true, true).toArray();
+};
+
+// ========== GYM SETS ==========
+
+export const addGymSets = async (sets) => {
+  return await foodDb.gymSets.bulkAdd(sets);
+};
+
+export const getGymSetsByWorkout = async (workoutId) => {
+  return await foodDb.gymSets.where('workoutId').equals(workoutId).toArray();
+};
+
+export const getGymSetsByExercise = async (exerciseId) => {
+  return await foodDb.gymSets.where('exerciseId').equals(exerciseId).toArray();
+};
+
+export const updateGymSet = async (id, changes) => {
+  return await foodDb.gymSets.update(id, changes);
+};
+
+export const deleteGymSet = async (id) => {
+  return await foodDb.gymSets.delete(id);
+};
+
+// ========== GYM ROUTINES ==========
+
+export const getAllGymRoutines = async () => {
+  return await foodDb.gymRoutines.toArray();
+};
+
+export const addGymRoutine = async (routine) => {
+  return await foodDb.gymRoutines.add({ ...routine, createdAt: Date.now() });
+};
+
+export const updateGymRoutine = async (id, changes) => {
+  return await foodDb.gymRoutines.update(id, changes);
+};
+
+export const deleteGymRoutine = async (id) => {
+  return await foodDb.gymRoutines.delete(id);
+};
+
+// ========== GYM CUSTOM EXERCISES ==========
+
+export const getAllGymCustomExercises = async () => {
+  return await foodDb.gymCustomExercises.toArray();
+};
+
+export const addGymCustomExercise = async (exercise) => {
+  return await foodDb.gymCustomExercises.add({ ...exercise, createdAt: Date.now() });
+};
+
+export const deleteGymCustomExercise = async (id) => {
+  return await foodDb.gymCustomExercises.delete(id);
+};
+
+// ========== GYM SETTINGS ==========
+
+export const getGymRestTimer = async () => {
+  const row = await foodDb.appSettings.get('gymRestTimer');
+  return row ? row.value : 90;
+};
+
+export const saveGymRestTimer = async (seconds) => {
+  return await foodDb.appSettings.put({ key: 'gymRestTimer', value: seconds });
 };
 
 export default foodDb;
