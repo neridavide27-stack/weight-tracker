@@ -1,15 +1,11 @@
 "use client";
 // FitnessSection.jsx — Walking tracker module
 // Features:
-//   - Card unificata obiettivo + grafico settimanale
-//   - Streak giornaliero + record personali
-//   - Storico mensile a calendario
-//   - Sessioni recenti (5 + "Vedi tutte"), click → modifica, swipe → elimina
-//   - Form con km pre-compilato dall'ultima sessione (+/- 0.1 km)
-//   - Campi opzionali: pendenza (%) e battiti cardiaci medi
-//   - Calcolo kcal adattivo: HR-based (Keytel 2005) o MET + correzione pendenza
-//   - Report: confronto settimane/mesi, statistiche, record
-//   - Trend settimanale
+//   - Card unificata obiettivo + grafico settimanale + kcal bruciate
+//   - Sessioni recenti: swipe ← elimina, click → modifica
+//   - Form con hero gradient km, slider durata + chips, slider bpm/slope
+//   - Calcolo kcal ibrido: MET + pendenza + aggiustamento HR (Karvonen)
+//   - Report: Dettaglio, Confronto, Streak & Costanza, Storico
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
@@ -94,45 +90,25 @@ const formatDuration = (min) => {
 };
 
 const DAY_LABELS    = ["L", "M", "M", "G", "V", "S", "D"];
-const DAY_LABELS_SM = ["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
 
 /* ═══════════════════════════════════════════
-   CALCOLO KCAL ADATTIVO
+   CALCOLO KCAL IBRIDO
+   MET base (velocità) + pendenza + aggiustamento HR (Karvonen)
    ═══════════════════════════════════════════ */
 /**
- * Calcola le kcal totali bruciate durante una camminata.
- *
- * Gerarchia:
- *  1. Se HR disponibile → formula HR-based Keytel 2005 (più precisa)
- *  2. Altrimenti → MET × peso × ore, con correzione pendenza
- *
  * @param {Object} p
  * @param {number} p.durationMin  - durata in minuti
- * @param {number} p.paceMinKm   - ritmo (min/km), usato per stimare MET dalla velocità
- * @param {number} p.weight      - peso kg (dal profilo)
- * @param {number} p.age         - età (dal profilo)
- * @param {string} p.sex         - "male" | "female" (dal profilo)
+ * @param {number} p.paceMinKm   - ritmo (min/km)
+ * @param {number} p.weight      - peso kg
  * @param {number} [p.heartRate] - battiti medi (opzionale)
- * @param {number} [p.slope]     - pendenza % positiva (opzionale)
+ * @param {number} [p.slope]     - pendenza % (opzionale)
  */
-export const calcKcal = ({ durationMin, paceMinKm, weight, age, sex, heartRate, slope }) => {
+export const calcKcal = ({ durationMin, paceMinKm, weight, heartRate, slope }) => {
   if (!durationMin || !weight) return 0;
 
-  // ── 1. HR-based (Keytel et al., 2005) ──
-  if (heartRate && age && sex) {
-    let kcalPerMin;
-    if (sex === "male") {
-      kcalPerMin = (-55.0969 + 0.6309 * heartRate + 0.1988 * weight + 0.2017 * age) / 4.184;
-    } else {
-      kcalPerMin = (-20.4022 + 0.4472 * heartRate - 0.1263 * weight + 0.074 * age) / 4.184;
-    }
-    return Math.max(0, Math.round(kcalPerMin * durationMin));
-  }
-
-  // ── 2. MET-based con correzione pendenza ──
-  // Stima MET dalla velocità (ritmo → km/h → MET tabella ACSM)
-  let met = 3.5; // camminata normale default
-  if (paceMinKm) {
+  // ── 1. MET base dalla velocità (tabella ACSM) ──
+  let met = 3.5;
+  if (paceMinKm && paceMinKm > 0) {
     const kmh = 60 / paceMinKm;
     if      (kmh < 3)  met = 2.0;
     else if (kmh < 4)  met = 2.8;
@@ -142,9 +118,19 @@ export const calcKcal = ({ durationMin, paceMinKm, weight, age, sex, heartRate, 
     else               met = 6.0;
   }
 
-  // Correzione pendenza (Pandolf semplificato: +0.35 MET per ogni 1% di dislivello positivo)
+  // ── 2. Correzione pendenza: +0.35 MET per ogni 1% ──
   if (slope && slope > 0) {
     met += slope * 0.35;
+  }
+
+  // ── 3. Aggiustamento HR via Karvonen %HRR (±30% max) ──
+  if (heartRate && heartRate > 0) {
+    const restHR = 60;
+    const maxHR  = 190;
+    const hrr    = Math.max(0, Math.min(1, (heartRate - restHR) / (maxHR - restHR)));
+    const expectedHRR = Math.max(0.1, (met - 1) / 12);
+    const adj    = Math.max(0.7, Math.min(1.3, 1 + 0.3 * ((hrr - expectedHRR) / Math.max(0.1, expectedHRR))));
+    met *= adj;
   }
 
   return Math.max(0, Math.round(met * weight * (durationMin / 60)));
@@ -163,7 +149,6 @@ const calcStreak = (activities) => {
       streak++;
       d.setDate(d.getDate() - 1);
     } else if (iso === todayISO()) {
-      // Oggi non ancora registrato: non rompe lo streak
       d.setDate(d.getDate() - 1);
     } else {
       break;
@@ -199,15 +184,6 @@ const CircularRing = ({ pct, size = 110, stroke = 11, color = "#fff" }) => {
         style={{ transition: "stroke-dashoffset 0.6s ease" }}
       />
     </svg>
-  );
-};
-
-const ChartTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div style={{ background:"rgba(0,0,0,.75)", borderRadius:8, padding:"6px 10px", fontSize:11, color:"#fff", fontWeight:700 }}>
-      {label}: {payload[0].value} km
-    </div>
   );
 };
 
@@ -256,7 +232,7 @@ const FitnessBottomNav = ({ onAdd, onNavigate }) => {
 };
 
 /* ═══════════════════════════════════════════
-   SWIPE-TO-DELETE CARD
+   SWIPE-TO-DELETE CARD (← swipe sinistra)
    ═══════════════════════════════════════════ */
 const SwipeCard = ({ activity: a, onDelete, onClick }) => {
   const [swipeX, setSwipeX]   = useState(0);
@@ -264,47 +240,60 @@ const SwipeCard = ({ activity: a, onDelete, onClick }) => {
   const startRef  = useRef(null);
   const threshold = 80;
 
-  const startDrag = (x) => { startRef.current = x; setDragging(true); };
-  const moveDrag  = (x) => {
-    if (!dragging || startRef.current === null) return;
-    const dx = x - startRef.current;
-    if (dx > 0) setSwipeX(Math.min(dx, threshold + 20));
+  const startDrag = (e) => {
+    e.stopPropagation();
+    const x = e.touches ? e.touches[0].clientX : e.clientX;
+    startRef.current = x;
+    setDragging(true);
   };
-  const endDrag = () => {
+  const moveDrag = (e) => {
+    e.stopPropagation();
+    if (!dragging || startRef.current === null) return;
+    const x = e.touches ? e.touches[0].clientX : e.clientX;
+    const dx = startRef.current - x; // positivo = swipe a sinistra
+    if (dx > 0) setSwipeX(Math.min(dx, threshold + 20));
+    else setSwipeX(0);
+  };
+  const endDrag = (e) => {
+    e.stopPropagation();
     setDragging(false);
     if (swipeX >= threshold) onDelete(a.id);
     else setSwipeX(0);
     startRef.current = null;
   };
 
+  const pace = a.paceMinKm;
+
   return (
     <div style={{ position:"relative", marginBottom:10, overflow:"hidden", borderRadius:16 }}>
-      {/* Delete layer */}
+      {/* Delete layer (destra) */}
       <div style={{
-        position:"absolute",inset:0,background:"#FEE2E2",
-        display:"flex",alignItems:"center",paddingLeft:18,borderRadius:16,
-        opacity: Math.min(swipeX / threshold, 1),
+        position:"absolute",top:0,bottom:0,right:0,width:"100%",
+        background:"#FEE2E2",
+        display:"flex",alignItems:"center",justifyContent:"flex-end",
+        paddingRight:22,borderRadius:16,
+        opacity: Math.min(swipeX / (threshold * 0.6), 1),
       }}>
         <span style={{ fontSize:22 }}>🗑️</span>
         <span style={{ marginLeft:8,fontSize:12,fontWeight:700,color:T.coral }}>
-          {swipeX >= threshold ? "Rilascia!" : "Scorri →"}
+          {swipeX >= threshold ? "Rilascia!" : "← Elimina"}
         </span>
       </div>
 
       {/* Card */}
       <div
         onClick={() => { if (swipeX < 5) onClick(a); }}
-        onTouchStart={e => startDrag(e.touches[0].clientX)}
-        onTouchMove={e  => moveDrag(e.touches[0].clientX)}
+        onTouchStart={startDrag}
+        onTouchMove={moveDrag}
         onTouchEnd={endDrag}
-        onMouseDown={e  => startDrag(e.clientX)}
-        onMouseMove={e  => moveDrag(e.clientX)}
+        onMouseDown={startDrag}
+        onMouseMove={(e) => { if (dragging) moveDrag(e); }}
         onMouseUp={endDrag}
-        onMouseLeave={endDrag}
+        onMouseLeave={() => { if (dragging) endDrag(new Event("mouseleave")); }}
         style={{
           background:T.card, borderRadius:16, padding:"14px 16px",
           boxShadow:T.shadow, display:"flex", alignItems:"center", gap:12,
-          transform:`translateX(${swipeX}px)`,
+          transform:`translateX(${-swipeX}px)`,
           transition: dragging ? "none" : "transform 0.25s ease",
           cursor:"pointer", userSelect:"none", position:"relative",
         }}
@@ -313,93 +302,37 @@ const SwipeCard = ({ activity: a, onDelete, onClick }) => {
           <Footprints size={21} color={GREEN}/>
         </div>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ display:"flex",alignItems:"baseline",gap:5,marginBottom:4 }}>
+          {/* Riga 1: km + bpm + slope + data */}
+          <div style={{ display:"flex",alignItems:"baseline",gap:6,marginBottom:5 }}>
             <span style={{ fontSize:22,fontWeight:900,color:T.text,letterSpacing:-.5 }}>{a.distanceKm.toFixed(1)}</span>
             <span style={{ fontSize:12,fontWeight:700,color:T.textMuted }}>km</span>
-            <span style={{ fontSize:11,color:T.textMuted,marginLeft:"auto",whiteSpace:"nowrap" }}>{formatDateLabel(a.date)}</span>
-          </div>
-          <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
-            <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3 }}>
-              <Timer size={11} color={T.textMuted}/>{formatDuration(a.durationMin)}
-            </span>
-            <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3 }}>
-              <Gauge size={11} color={T.textMuted}/>{formatPace(a.paceMinKm)}/km
-            </span>
-            {a.kcal > 0 && (
-              <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3 }}>
-                <Flame size={11} color={T.textMuted}/>{a.kcal} kcal
-              </span>
-            )}
-            {a.heartRate && (
-              <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3 }}>
-                <Heart size={11} color={T.coral}/>{a.heartRate} bpm
+            {a.heartRate > 0 && (
+              <span style={{ fontSize:11,color:T.coral,fontWeight:600,display:"flex",alignItems:"center",gap:2 }}>
+                <Heart size={10} color={T.coral} fill={T.coral}/>{a.heartRate}
               </span>
             )}
             {a.slope > 0 && (
-              <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3 }}>
-                <Mountain size={11} color={T.purple}/>{a.slope}%
+              <span style={{ fontSize:11,color:T.purple,fontWeight:600,display:"flex",alignItems:"center",gap:2 }}>
+                <Mountain size={10} color={T.purple}/>{a.slope}%
+              </span>
+            )}
+            <span style={{ fontSize:11,color:T.textMuted,marginLeft:"auto",whiteSpace:"nowrap" }}>{formatDateLabel(a.date)}</span>
+          </div>
+          {/* Riga 2: durata · passo · kcal — allineati orizzontalmente */}
+          <div style={{ display:"flex",alignItems:"center",gap:14 }}>
+            <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3,whiteSpace:"nowrap" }}>
+              <Timer size={11} color={T.textMuted}/>{formatDuration(a.durationMin)}
+            </span>
+            <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3,whiteSpace:"nowrap" }}>
+              <Gauge size={11} color={T.textMuted}/>{formatPace(pace)}/km
+            </span>
+            {a.kcal > 0 && (
+              <span style={{ fontSize:11,color:T.textSec,display:"flex",alignItems:"center",gap:3,whiteSpace:"nowrap" }}>
+                <Flame size={11} color={ORANGE}/>{a.kcal} kcal
               </span>
             )}
           </div>
         </div>
-        {/* Hint modifica */}
-        <div style={{ fontSize:10,color:T.textMuted,flexShrink:0 }}>✏️</div>
-      </div>
-    </div>
-  );
-};
-
-/* ═══════════════════════════════════════════
-   CALENDARIO MENSILE
-   ═══════════════════════════════════════════ */
-const MonthCalendar = ({ activities, year, month }) => {
-  const firstDow    = (new Date(year, month, 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayDate   = new Date().getDate();
-  const todayYear   = new Date().getFullYear();
-  const todayMonth  = new Date().getMonth();
-
-  const actMap = useMemo(() => {
-    const m = {};
-    activities
-      .filter(a => { const d = new Date(a.date); return d.getFullYear() === year && d.getMonth() === month; })
-      .forEach(a => { m[a.date] = (m[a.date] || 0) + a.distanceKm; });
-    return m;
-  }, [activities, year, month]);
-
-  const cells = [
-    ...Array(firstDow).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-
-  return (
-    <div>
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4 }}>
-        {DAY_LABELS.map((d, i) => (
-          <div key={i} style={{ textAlign:"center",fontSize:9,fontWeight:700,color:T.textMuted,padding:"2px 0" }}>{d}</div>
-        ))}
-      </div>
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3 }}>
-        {cells.map((day, i) => {
-          if (!day) return <div key={i}/>;
-          const iso = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-          const km  = actMap[iso] || 0;
-          const isToday = day === todayDate && year === todayYear && month === todayMonth;
-          const hasAct  = km > 0;
-          return (
-            <div key={i} title={hasAct ? `${km.toFixed(1)} km` : ""} style={{
-              aspectRatio:"1",display:"flex",flexDirection:"column",
-              alignItems:"center",justifyContent:"center",borderRadius:7,
-              background: isToday ? T.teal : hasAct ? GREEN_LIGHT : "transparent",
-              border: isToday ? "none" : hasAct ? "1px solid #BBF7D0" : `1px solid ${T.border}`,
-              cursor: hasAct ? "default" : "default",
-            }}>
-              <span style={{ fontSize:10,fontWeight:700,color:isToday?"#fff":hasAct?GREEN:T.textMuted,lineHeight:1 }}>{day}</span>
-              {hasAct && !isToday && <div style={{ width:4,height:4,borderRadius:2,background:GREEN,marginTop:2 }}/>}
-              {hasAct && isToday  && <div style={{ width:4,height:4,borderRadius:2,background:"rgba(255,255,255,.8)",marginTop:2 }}/>}
-            </div>
-          );
-        })}
       </div>
     </div>
   );
@@ -435,55 +368,50 @@ const GoalModal = ({ current, onSave, onClose }) => {
 };
 
 /* ═══════════════════════════════════════════
-   FORM CAMMINATA (usato sia per Add che Edit)
+   FORM CAMMINATA — Hero gradient + slider
    ═══════════════════════════════════════════ */
+const DURATION_CHIPS = [
+  { label: "30 min", value: 30 },
+  { label: "45 min", value: 45 },
+  { label: "1h",     value: 60 },
+  { label: "1h 15",  value: 75 },
+  { label: "1h 30",  value: 90 },
+];
+
 const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
   const [date,      setDate]      = useState(initial?.date      ?? todayISO());
   const [km,        setKm]        = useState(initial?.distanceKm ?? 5.0);
-  const [hours,     setHours]     = useState(Math.floor((initial?.durationMin ?? 0) / 60));
-  const [minutes,   setMinutes]   = useState((initial?.durationMin ?? 0) % 60);
-  const [heartRate, setHeartRate] = useState(initial?.heartRate ?? "");
-  const [slope,     setSlope]     = useState(initial?.slope     ?? "");
-  const [kcalOver,  setKcalOver]  = useState(null);   // null = auto-calcolato
+  const [duration,  setDuration]  = useState(initial?.durationMin ?? 50);
+  const [heartRate, setHeartRate] = useState(initial?.heartRate  ?? 0);
+  const [slope,     setSlope]     = useState(initial?.slope      ?? 0);
+  const [kcalOver,  setKcalOver]  = useState(null);
   const [saving,    setSaving]    = useState(false);
 
-  const totalMin = hours * 60 + minutes;
   const kmNum    = parseFloat(parseFloat(km).toFixed(1)) || 0;
-  const valid    = kmNum > 0 && totalMin > 0;
-  const pace     = valid ? totalMin / kmNum : null;
+  const valid    = kmNum > 0 && duration > 0;
+  const pace     = valid ? duration / kmNum : null;
 
-  // Kcal auto-calcolate (o override manuale)
   const kcalAuto = useMemo(() => calcKcal({
-    durationMin: totalMin,
+    durationMin: duration,
     paceMinKm:   pace,
     weight:      userProfile?.weight   || 75,
-    age:         userProfile?.age      || 35,
-    sex:         userProfile?.sex      || "male",
-    heartRate:   heartRate ? parseFloat(heartRate) : null,
-    slope:       slope     ? parseFloat(slope)     : null,
-  }), [totalMin, pace, userProfile, heartRate, slope]);
+    heartRate:   heartRate > 0 ? heartRate : null,
+    slope:       slope > 0 ? slope : null,
+  }), [duration, pace, userProfile, heartRate, slope]);
 
   const kcalDisplay = kcalOver !== null ? kcalOver : kcalAuto;
-  const formulaHint = heartRate
-    ? "Basato su battiti cardiaci (Keytel 2005)"
-    : slope > 0
-      ? "MET camminata + correzione pendenza"
-      : "MET standard camminata";
+
+  const formulaHint = heartRate > 0 && slope > 0
+    ? "MET + HR + pendenza"
+    : heartRate > 0
+      ? "MET corretto con HR"
+      : slope > 0
+        ? "MET + correzione pendenza"
+        : "Formula MET standard";
 
   const adjustKm = (delta) => {
     setKm(prev => Math.max(0.1, parseFloat((parseFloat(prev) + delta).toFixed(1))));
   };
-
-  const DurationStepper = ({ value, onChange, max, label }) => (
-    <div style={{ flex:1,textAlign:"center" }}>
-      <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:8 }}>{label}</div>
-      <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:8 }}>
-        <button onClick={() => onChange(Math.max(0, value-1))} style={{ width:34,height:34,borderRadius:10,border:"1.5px solid #E5E7EB",background:T.card,cursor:"pointer",fontSize:20,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"center" }}>−</button>
-        <span style={{ fontSize:28,fontWeight:900,color:T.text,minWidth:40,textAlign:"center" }}>{String(value).padStart(2,"0")}</span>
-        <button onClick={() => onChange(Math.min(max, value+1))} style={{ width:34,height:34,borderRadius:10,border:"1.5px solid #E5E7EB",background:T.card,cursor:"pointer",fontSize:20,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"center" }}>+</button>
-      </div>
-    </div>
-  );
 
   const handleSave = async () => {
     if (!valid || saving) return;
@@ -491,11 +419,11 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
     const activity = {
       date,
       distanceKm:  kmNum,
-      durationMin: totalMin,
+      durationMin: duration,
       paceMinKm:   parseFloat((pace || 0).toFixed(2)),
       kcal:        kcalDisplay,
-      heartRate:   heartRate ? parseInt(heartRate) : null,
-      slope:       slope     ? parseFloat(slope)   : null,
+      heartRate:   heartRate > 0 ? parseInt(heartRate) : null,
+      slope:       slope > 0 ? parseFloat(slope) : null,
     };
     await onSave(activity);
     setSaving(false);
@@ -504,145 +432,153 @@ const WalkForm = ({ initial, userProfile, onSave, onBack, title }) => {
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif" }}>
       {/* HEADER */}
-      <div style={{ padding:"20px 20px 10px",background:T.bg,position:"sticky",top:0,zIndex:10 }}>
-        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-          <button onClick={onBack} style={{ background:T.card,border:"none",cursor:"pointer",padding:8,borderRadius:10,display:"flex",alignItems:"center",boxShadow:T.shadow }}>
-            <ChevronLeft size={20} color={T.teal}/>
-          </button>
-          <div>
-            <div style={{ fontSize:12,color:T.textMuted,fontWeight:500 }}>Fitness</div>
-            <h1 style={{ fontSize:24,fontWeight:800,color:T.text,margin:0,letterSpacing:-.5 }}>{title}</h1>
+      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 14px 10px" }}>
+        <button onClick={onBack} style={{ background:"none",border:"none",cursor:"pointer",color:T.textSec,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",gap:4,padding:"6px 8px" }}>
+          <ChevronLeft size={18} color={T.teal}/>Indietro
+        </button>
+        <div style={{ fontSize:17,fontWeight:800,color:T.text }}>{title}</div>
+        <div style={{ width:60 }}/>
+      </div>
+
+      {/* HERO KM */}
+      <div style={{ background:"linear-gradient(135deg,#028090,#7C5CFC)",borderRadius:26,padding:"18px 20px 22px",margin:"0 14px 14px",boxShadow:"0 10px 28px rgba(2,128,144,0.28)",color:"#fff" }}>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
+          <div style={{ display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.18)",padding:"6px 10px",borderRadius:10 }}>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              style={{ border:"none",background:"transparent",color:"#fff",fontSize:12,fontWeight:700,outline:"none",colorScheme:"dark",width:110,fontFamily:"inherit" }}/>
           </div>
+          <div style={{ fontSize:10,fontWeight:800,letterSpacing:1,opacity:0.85 }}>DISTANZA</div>
+        </div>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:8 }}>
+          <button onClick={() => adjustKm(-0.1)} style={{ width:44,height:44,borderRadius:14,border:"none",background:"rgba(255,255,255,0.22)",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:800 }}>−</button>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:56,fontWeight:900,lineHeight:1 }}>{parseFloat(km).toFixed(1)}</div>
+            <div style={{ fontSize:12,fontWeight:800,opacity:0.9,marginTop:4 }}>KM</div>
+          </div>
+          <button onClick={() => adjustKm(+0.1)} style={{ width:44,height:44,borderRadius:14,border:"none",background:"rgba(255,255,255,0.22)",color:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:800 }}>+</button>
         </div>
       </div>
 
-      <div style={{ padding:"12px 20px 120px" }}>
-        <div style={{ background:T.card,borderRadius:24,padding:"24px 20px",boxShadow:T.shadowLg,marginBottom:16 }}>
-          <div style={{ width:64,height:64,borderRadius:20,background:GREEN_LIGHT,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 22px" }}>
-            <Footprints size={30} color={GREEN}/>
+      {/* DURATA — slider + chips */}
+      <div style={{ background:T.card,borderRadius:20,padding:16,boxShadow:T.shadow,margin:"0 14px 12px" }}>
+        <div style={{ fontSize:10,fontWeight:800,color:T.textMuted,letterSpacing:0.8,marginBottom:10 }}>⏱ DURATA</div>
+        <div style={{ display:"flex",alignItems:"center",gap:12,marginBottom:6 }}>
+          <div style={{ fontSize:30,fontWeight:900,minWidth:90,color:T.text }}>
+            {duration >= 60 ? `${Math.floor(duration/60)}h` : ""}{duration >= 60 && duration % 60 > 0 ? " " : ""}{duration % 60 > 0 || duration < 60 ? `${duration % 60}` : ""}
+            <span style={{ fontSize:13,color:T.textMuted,fontWeight:700,marginLeft:3 }}>{duration < 60 ? "min" : duration % 60 > 0 ? "min" : ""}</span>
           </div>
+          <input type="range" min={5} max={180} step={5} value={duration}
+            onChange={e => setDuration(parseInt(e.target.value))}
+            style={{
+              flex:1,WebkitAppearance:"none",appearance:"none",height:6,borderRadius:10,outline:"none",
+              background:`linear-gradient(to right,${T.teal} 0%,${T.teal} ${((duration-5)/175)*100}%,#E2E8F0 ${((duration-5)/175)*100}%,#E2E8F0 100%)`,
+            }}/>
+        </div>
+        <div style={{ display:"flex",gap:6,marginTop:8 }}>
+          {DURATION_CHIPS.map(chip => (
+            <button key={chip.value} onClick={() => setDuration(chip.value)} style={{
+              flex:1,textAlign:"center",border:`1.5px solid ${duration === chip.value ? T.teal : "#E2E8F0"}`,
+              background: duration === chip.value ? T.teal : "#F8FAFC",
+              padding:"7px 0",borderRadius:999,fontSize:11,fontWeight:700,
+              color: duration === chip.value ? "#fff" : T.textSec,
+              cursor:"pointer",whiteSpace:"nowrap",transition:"all 0.15s",
+            }}>{chip.label}</button>
+          ))}
+        </div>
+      </div>
 
-          {/* DATA */}
-          <div style={{ marginBottom:20,textAlign:"center" }}>
-            <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:6 }}>DATA</div>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              style={{ fontSize:15,fontWeight:700,color:T.text,textAlign:"center",border:"1.5px solid #E5E7EB",borderRadius:10,padding:"8px 16px",background:"#F9FAFB",outline:"none",fontFamily:"inherit" }}/>
+      {/* RITMO CALCOLATO */}
+      {valid && (
+        <div style={{ background:`${T.teal}08`,border:`1px solid ${T.tealLight}`,borderRadius:14,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:8,margin:"0 14px 12px" }}>
+          <Gauge size={15} color={T.teal}/>
+          <span style={{ fontSize:13,fontWeight:600,color:T.teal }}>
+            Ritmo medio: <strong>{formatPace(pace)}/km</strong>
+          </span>
+        </div>
+      )}
+
+      {/* SEZIONE OPZIONALE */}
+      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 18px 8px",marginTop:4 }}>
+        <div style={{ fontSize:10,fontWeight:800,color:T.textMuted,letterSpacing:0.8 }}>OPZIONALE</div>
+        {(heartRate > 0 || slope > 0) && (
+          <div style={{ fontSize:10,fontWeight:700,color:GREEN }}>✓ {heartRate > 0 && slope > 0 ? "massima precisione" : "migliorata"}</div>
+        )}
+      </div>
+
+      {/* BATTITI */}
+      <div style={{ background:T.card,borderRadius:20,padding:16,boxShadow:T.shadow,margin:"0 14px 12px" }}>
+        <div style={{ fontSize:10,fontWeight:800,color:"#EF4444",letterSpacing:0.8,marginBottom:10 }}>❤ BATTITI MEDI</div>
+        <div style={{ display:"flex",alignItems:"center",gap:12 }}>
+          <div style={{ fontSize:24,fontWeight:900,color: heartRate > 55 ? "#EF4444" : T.textMuted,minWidth:78 }}>
+            {heartRate > 55 ? heartRate : "—"} <span style={{ fontSize:13,color:T.textMuted,fontWeight:700 }}>bpm</span>
           </div>
+          <input type="range" min={50} max={200} step={1} value={heartRate || 50}
+            onChange={e => { const v = parseInt(e.target.value); setHeartRate(v <= 55 ? 0 : v); }}
+            style={{
+              flex:1,WebkitAppearance:"none",appearance:"none",height:6,borderRadius:10,outline:"none",
+              background:`linear-gradient(to right,#EF4444 0%,#EF4444 ${(((heartRate||50)-50)/150)*100}%,#E2E8F0 ${(((heartRate||50)-50)/150)*100}%,#E2E8F0 100%)`,
+            }}/>
+        </div>
+      </div>
 
-          {/* KM — stepper con +/- da 0.1 e input diretto */}
-          <div style={{ marginBottom:20 }}>
-            <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:10,textAlign:"center" }}>DISTANZA</div>
-            <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:12 }}>
-              <button onClick={() => adjustKm(-0.1)} style={{ width:40,height:40,borderRadius:13,border:"1.5px solid #E5E7EB",background:T.bg,cursor:"pointer",fontSize:22,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"center" }}>−</button>
-              <div style={{ display:"flex",alignItems:"baseline",gap:4 }}>
-                <input
-                  type="number" inputMode="decimal"
-                  value={km}
-                  onChange={e => setKm(e.target.value)}
-                  style={{ fontSize:46,fontWeight:900,color:T.text,textAlign:"center",border:"none",background:"transparent",outline:"none",width:110,fontFamily:"inherit",letterSpacing:-2 }}
-                />
-                <span style={{ fontSize:17,fontWeight:700,color:T.textMuted }}>km</span>
-              </div>
-              <button onClick={() => adjustKm(+0.1)} style={{ width:40,height:40,borderRadius:13,border:"1.5px solid #E5E7EB",background:T.bg,cursor:"pointer",fontSize:22,fontWeight:700,color:T.text,display:"flex",alignItems:"center",justifyContent:"center" }}>+</button>
+      {/* PENDENZA */}
+      <div style={{ background:T.card,borderRadius:20,padding:16,boxShadow:T.shadow,margin:"0 14px 12px" }}>
+        <div style={{ fontSize:10,fontWeight:800,color:T.purple,letterSpacing:0.8,marginBottom:10 }}>⛰ PENDENZA MEDIA</div>
+        <div style={{ display:"flex",alignItems:"center",gap:12 }}>
+          <div style={{ fontSize:24,fontWeight:900,color:T.purple,minWidth:78 }}>
+            {slope > 0 ? (Number.isInteger(slope) ? slope : slope.toFixed(1)) : "0"}<span style={{ fontSize:13,color:T.textMuted,fontWeight:700 }}>%</span>
+          </div>
+          <input type="range" min={0} max={20} step={0.5} value={slope}
+            onChange={e => setSlope(parseFloat(e.target.value))}
+            style={{
+              flex:1,WebkitAppearance:"none",appearance:"none",height:6,borderRadius:10,outline:"none",
+              background:`linear-gradient(to right,${T.purple} 0%,${T.purple} ${(slope/20)*100}%,#E2E8F0 ${(slope/20)*100}%,#E2E8F0 100%)`,
+            }}/>
+        </div>
+      </div>
+
+      {/* KCAL CARD */}
+      <div style={{ background:"linear-gradient(135deg,#FFF7ED,#FEF2F2)",borderRadius:18,padding:"14px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",margin:"0 14px 14px" }}>
+        <div style={{ display:"flex",alignItems:"center",gap:11 }}>
+          <div style={{ width:40,height:40,borderRadius:12,background:"rgba(249,115,22,0.15)",display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <Flame size={20} color={ORANGE}/>
+          </div>
+          <div>
+            <div style={{ fontSize:11,fontWeight:800,color:T.textMuted }}>CALORIE STIMATE</div>
+            <div style={{ fontSize:10,color:"#94A3B8",fontWeight:600 }}>{formulaHint}</div>
+          </div>
+        </div>
+        <div>
+          {kcalOver !== null ? (
+            <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+              <input type="number" value={kcalOver} onChange={e => setKcalOver(parseInt(e.target.value)||0)}
+                style={{ fontSize:28,fontWeight:900,color:ORANGE,border:"none",background:"transparent",outline:"none",fontFamily:"inherit",width:70,textAlign:"right" }}/>
+              <button onClick={() => setKcalOver(null)} style={{ fontSize:9,fontWeight:700,color:T.teal,background:"none",border:"none",cursor:"pointer" }}>Auto</button>
             </div>
-          </div>
-
-          {/* DURATA */}
-          <div style={{ marginBottom:20 }}>
-            <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:12,textAlign:"center" }}>DURATA</div>
-            <div style={{ display:"flex",alignItems:"center",gap:4 }}>
-              <DurationStepper value={hours}   onChange={setHours}   max={23} label="Ore"/>
-              <span style={{ fontSize:30,fontWeight:800,color:T.textMuted,paddingBottom:8 }}>:</span>
-              <DurationStepper value={minutes} onChange={setMinutes} max={59} label="Minuti"/>
-            </div>
-          </div>
-
-          {/* RITMO CALCOLATO */}
-          {valid && (
-            <div style={{ background:`${T.teal}08`,border:`1px solid ${T.tealLight}`,borderRadius:12,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16 }}>
-              <Gauge size={15} color={T.teal}/>
-              <span style={{ fontSize:13,fontWeight:600,color:T.teal }}>
-                Ritmo medio: <strong>{formatPace(pace)}/km</strong>
-              </span>
+          ) : (
+            <div onClick={() => setKcalOver(kcalAuto)} style={{ cursor:"pointer" }}>
+              <span style={{ fontSize:30,fontWeight:900,color:ORANGE,lineHeight:1 }}>{kcalDisplay}</span>
+              <span style={{ fontSize:11,opacity:0.7,marginLeft:3 }}>kcal</span>
             </div>
           )}
-
-          {/* KCAL */}
-          <div style={{ background:`${T.gold}10`,border:`1px solid ${T.gold}30`,borderRadius:12,padding:"12px 16px",marginBottom:16 }}>
-            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:6 }}>
-                <Flame size={15} color={T.gold}/>
-                <span style={{ fontSize:13,fontWeight:700,color:T.text }}>Calorie bruciate</span>
-              </div>
-              <button onClick={() => setKcalOver(kcalOver !== null ? null : kcalAuto)}
-                style={{ fontSize:10,fontWeight:700,color:T.teal,background:"none",border:"none",cursor:"pointer" }}>
-                {kcalOver !== null ? "← Auto" : "Modifica"}
-              </button>
-            </div>
-            {kcalOver !== null ? (
-              <input type="number" value={kcalOver} onChange={e => setKcalOver(parseInt(e.target.value)||0)}
-                style={{ fontSize:28,fontWeight:900,color:T.text,border:"none",background:"transparent",outline:"none",fontFamily:"inherit",width:"100%" }}/>
-            ) : (
-              <div style={{ fontSize:28,fontWeight:900,color:T.text }}>{kcalDisplay} <span style={{ fontSize:13,color:T.textMuted,fontWeight:600 }}>kcal</span></div>
-            )}
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:600,marginTop:4 }}>{formulaHint}</div>
-          </div>
-
-          {/* DATI AGGIUNTIVI — sempre visibili, griglia 2 colonne */}
-          <div style={{ borderTop:`1px solid ${T.border}`,paddingTop:16,marginTop:4 }}>
-            <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:12,textTransform:"uppercase",letterSpacing:".04em" }}>
-              Dati aggiuntivi (facoltativo)
-            </div>
-            <div style={{ display:"flex",gap:12 }}>
-              {/* Battiti */}
-              <div style={{ flex:1,background:"#FFF5F5",borderRadius:14,padding:"12px 14px" }}>
-                <div style={{ fontSize:11,fontWeight:700,color:T.coral,marginBottom:8,display:"flex",alignItems:"center",gap:5 }}>
-                  <Heart size={12} color={T.coral}/> Battiti medi
-                </div>
-                <div style={{ display:"flex",alignItems:"center",gap:6 }}>
-                  <input type="number" inputMode="numeric" value={heartRate}
-                    onChange={e => setHeartRate(e.target.value)}
-                    placeholder="—" min={40} max={220}
-                    style={{ flex:1,fontSize:22,fontWeight:900,color:T.text,textAlign:"center",border:"none",background:"transparent",outline:"none",fontFamily:"inherit" }}/>
-                  <span style={{ fontSize:12,fontWeight:700,color:T.textMuted }}>bpm</span>
-                </div>
-              </div>
-              {/* Pendenza */}
-              <div style={{ flex:1,background:"#F5F3FF",borderRadius:14,padding:"12px 14px" }}>
-                <div style={{ fontSize:11,fontWeight:700,color:T.purple,marginBottom:8,display:"flex",alignItems:"center",gap:5 }}>
-                  <Mountain size={12} color={T.purple}/> Pendenza media
-                </div>
-                <div style={{ display:"flex",alignItems:"center",gap:6 }}>
-                  <input type="number" inputMode="decimal" value={slope}
-                    onChange={e => setSlope(e.target.value)}
-                    placeholder="0" min={-30} max={60}
-                    style={{ flex:1,fontSize:22,fontWeight:900,color:T.text,textAlign:"center",border:"none",background:"transparent",outline:"none",fontFamily:"inherit" }}/>
-                  <span style={{ fontSize:12,fontWeight:700,color:T.textMuted }}>%</span>
-                </div>
-              </div>
-            </div>
-            <div style={{ fontSize:10,color:T.textMuted,marginTop:8,textAlign:"center" }}>
-              {heartRate ? "✓ Formula HR-based (Keytel 2005)" : slope > 0 ? "✓ MET + correzione pendenza" : "Formula MET standard — aggiungi i dati per maggiore precisione"}
-            </div>
-          </div>
         </div>
-
-        {/* BOTTONE SALVA */}
-        <button onClick={handleSave} disabled={!valid || saving} style={{
-          width:"100%",padding:17,borderRadius:16,border:"none",
-          background: valid ? GG : "#E5E7EB",
-          color: valid ? "#fff" : T.textMuted,
-          fontSize:16,fontWeight:800,
-          cursor: valid && !saving ? "pointer" : "not-allowed",
-          boxShadow: valid ? "0 6px 24px rgba(22,163,74,0.28)" : "none",
-          display:"flex",alignItems:"center",justifyContent:"center",gap:8,
-          transition:"background 0.2s, box-shadow 0.2s",
-        }}>
-          <Check size={20}/>
-          {saving ? "Salvataggio…" : "Salva camminata"}
-        </button>
       </div>
 
+      {/* BOTTONE SALVA */}
+      <button onClick={handleSave} disabled={!valid || saving} style={{
+        width:"calc(100% - 28px)",margin:"8px 14px 24px",padding:16,borderRadius:18,border:"none",
+        background: valid ? "linear-gradient(135deg,#028090,#7C5CFC)" : "#E5E7EB",
+        color: valid ? "#fff" : T.textMuted,
+        fontSize:15,fontWeight:800,
+        cursor: valid && !saving ? "pointer" : "not-allowed",
+        boxShadow: valid ? "0 8px 24px rgba(2,128,144,0.35)" : "none",
+        display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+      }}>
+        <Check size={18}/>
+        {saving ? "Salvataggio…" : "Salva camminata"}
+      </button>
+
+      <div style={{ height: 80 }}/>
       <FitnessBottomNav onAdd={() => {}} onNavigate={() => {}}/>
     </div>
   );
@@ -664,6 +600,12 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
   const weekTotal = useMemo(() => chart.reduce((s, d) => s + d.km, 0), [chart]);
   const pct       = Math.min((weekTotal / weeklyGoal) * 100, 100);
   const oggi      = todayISO();
+
+  // Kcal settimanali
+  const weekKcal = useMemo(() =>
+    weekDays.reduce((s, iso) => s + activities.filter(a => a.date === iso).reduce((ss, a) => ss + (a.kcal || 0), 0), 0),
+    [activities, weekDays]
+  );
 
   // Trend settimana scorsa
   const prevMonISO  = (() => { const d = new Date(getMondayISO()); d.setDate(d.getDate()-7); return toISO(d); })();
@@ -692,9 +634,8 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
 
       <div style={{ padding:"0 20px" }}>
 
-        {/* ── CARD UNIFICATA: OBIETTIVO + GRAFICO (design A) ── */}
+        {/* ── CARD UNIFICATA: OBIETTIVO + GRAFICO + KCAL ── */}
         <div style={{ background:T.card,borderRadius:24,padding:"20px 18px 14px",marginBottom:14,boxShadow:T.shadowLg }}>
-          {/* Riga superiore: numeri + anello teal */}
           <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:12 }}>
             <div style={{ flex:1,minWidth:0 }}>
               <div style={{ fontSize:11,fontWeight:600,color:T.textSec,textTransform:"uppercase",letterSpacing:".05em",marginBottom:4 }}>Questa settimana</div>
@@ -702,7 +643,6 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
                 {weekTotal.toFixed(1)}
                 <span style={{ fontSize:14,fontWeight:600,color:T.textSec,marginLeft:5 }}>/ {weeklyGoal} km</span>
               </div>
-              {/* Trend */}
               <div style={{ display:"flex",alignItems:"center",gap:5,marginTop:7 }}>
                 {trendDiff >= 0
                   ? <TrendingUp  size={12} color={GREEN}/>
@@ -715,11 +655,19 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
                 {pct >= 100 ? "🎉 Obiettivo raggiunto!" : `Mancano ${(weeklyGoal - weekTotal).toFixed(1)} km`}
               </div>
             </div>
-            {/* Ring teal */}
-            <div style={{ position:"relative",flexShrink:0,marginLeft:12 }}>
-              <CircularRing pct={pct} size={90} stroke={9} color={T.teal}/>
-              <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                <span style={{ fontSize:18,fontWeight:900,color:T.teal }}>{Math.round(pct)}%</span>
+            {/* Ring + kcal sotto */}
+            <div style={{ flexShrink:0,marginLeft:12,display:"flex",flexDirection:"column",alignItems:"center" }}>
+              <div style={{ position:"relative" }}>
+                <CircularRing pct={pct} size={90} stroke={9} color={T.teal}/>
+                <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
+                  <span style={{ fontSize:18,fontWeight:900,color:T.teal }}>{Math.round(pct)}%</span>
+                </div>
+              </div>
+              {/* Kcal badge */}
+              <div style={{ display:"flex",alignItems:"center",gap:4,marginTop:6,background:`${ORANGE}12`,padding:"4px 10px",borderRadius:10 }}>
+                <Flame size={11} color={ORANGE}/>
+                <span style={{ fontSize:12,fontWeight:800,color:ORANGE }}>{weekKcal.toLocaleString("it-IT")}</span>
+                <span style={{ fontSize:9,fontWeight:600,color:T.textMuted }}>kcal</span>
               </div>
             </div>
           </div>
@@ -761,13 +709,18 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
             </div>
           </div>
         ) : (
-          displayed.map(a => (
-            <SwipeCard key={a.id} activity={a} onDelete={onDelete} onClick={onEdit}/>
-          ))
+          <>
+            {displayed.map(a => (
+              <SwipeCard key={a.id} activity={a} onDelete={onDelete} onClick={onEdit}/>
+            ))}
+            <div style={{ fontSize:10,color:T.textMuted,textAlign:"center",margin:"4px 0 16px",fontWeight:500 }}>
+              ← Scorri per eliminare · Tocca per modificare
+            </div>
+          </>
         )}
       </div>
 
-      {/* Report button — floating pill, stile sezione cibo */}
+      {/* Report FAB */}
       <button onClick={onReport} style={{
         position:"fixed",bottom:86,right:20,
         background:T.gradient,border:"none",
@@ -786,117 +739,99 @@ const MainScreen = ({ activities, weeklyGoal, onAdd, onDelete, onEdit, onEditGoa
 };
 
 /* ═══════════════════════════════════════════
-   SCREEN: REPORT
+   SCREEN: REPORT — Dettaglio, Confronto, Streak, Storico
    ═══════════════════════════════════════════ */
 const ReportScreen = ({ activities, onBack, onNavigate }) => {
-  const [period,      setPeriod]      = useState("week");   // "week" | "month"
-  const [chartMetric, setChartMetric] = useState("km");     // "km" | "kcal"
+  const [period,      setPeriod]      = useState("week");
+  const [chartMetric, setChartMetric] = useState("km");
 
-  // ── Dati grafico (8 settimane o 8 mesi) con km + kcal ──
-  const chart = useMemo(() => {
-    if (period === "week") {
-      return Array.from({ length: 8 }, (_, i) => {
-        const d = new Date(getMondayISO()); d.setDate(d.getDate() - i * 7);
-        const days = getWeekDays(toISO(d));
-        const acts = days.flatMap(iso => activities.filter(a => a.date === iso));
-        const km   = parseFloat(acts.reduce((s, a) => s + a.distanceKm, 0).toFixed(1));
-        const kcal = Math.round(acts.reduce((s, a) => s + (a.kcal || 0), 0));
-        return { label: i === 0 ? "Questa" : `-${i}w`, km, kcal };
-      }).reverse();
-    }
+  // ── Helper: dati raggruppati per settimane / mesi ──
+  const weekData = useMemo(() => {
+    return Array.from({ length: 8 }, (_, i) => {
+      const d = new Date(getMondayISO()); d.setDate(d.getDate() - i * 7);
+      const days = getWeekDays(toISO(d));
+      const acts = days.flatMap(iso => activities.filter(a => a.date === iso));
+      const km   = parseFloat(acts.reduce((s, a) => s + a.distanceKm, 0).toFixed(1));
+      const kcal = Math.round(acts.reduce((s, a) => s + (a.kcal || 0), 0));
+      const sess = acts.length;
+      const avgPace = acts.length ? parseFloat((acts.reduce((s, a) => s + (a.paceMinKm || 0), 0) / acts.length).toFixed(1)) : 0;
+      return { label: i === 0 ? "Questa" : `-${i}w`, km, kcal, sess, avgPace, periodLabel: toISO(d).slice(5) };
+    }).reverse();
+  }, [activities]);
+
+  const monthData = useMemo(() => {
     return Array.from({ length: 8 }, (_, i) => {
       const d = new Date(); d.setMonth(d.getMonth() - i);
       const y = d.getFullYear(), m = d.getMonth();
       const acts = activities.filter(a => { const dd = new Date(a.date); return dd.getFullYear()===y && dd.getMonth()===m; });
       const km   = parseFloat(acts.reduce((s, a) => s + a.distanceKm, 0).toFixed(1));
       const kcal = Math.round(acts.reduce((s, a) => s + (a.kcal || 0), 0));
-      return { label: MONTH_LABELS[m], km, kcal };
+      const sess = acts.length;
+      const avgPace = acts.length ? parseFloat((acts.reduce((s, a) => s + (a.paceMinKm || 0), 0) / acts.length).toFixed(1)) : 0;
+      return { label: MONTH_LABELS[m], km, kcal, sess, avgPace, periodLabel: `${MONTH_LABELS[m]} ${y}` };
     }).reverse();
-  }, [activities, period]);
+  }, [activities]);
 
-  const pr        = useMemo(() => calcPR(activities), [activities]);
-  const totalKm   = pr.totalKm.toFixed(1);
-  const totalKcal = activities.reduce((s, a) => s + (a.kcal || 0), 0);
-  const avgDist   = activities.length ? (pr.totalKm / activities.length).toFixed(1) : 0;
-  const streak    = useMemo(() => calcStreak(activities), [activities]);
+  const data    = period === "week" ? weekData : monthData;
+  const curr    = data[data.length - 1];
+  const prev    = data[data.length - 2];
+  const sliced  = data.slice(-6);
+  const maxVal  = Math.max(...sliced.map(d => d[chartMetric]), 1);
+  const avg     = sliced.filter(d => d[chartMetric] > 0).length
+    ? Math.round(sliced.reduce((s, d) => s + d[chartMetric], 0) / sliced.filter(d => d[chartMetric] > 0).length)
+    : 0;
 
-  // ── Confronto periodo corrente vs precedente ──
-  const mondayISO  = getMondayISO();
-  const prevMonISO = (() => { const d = new Date(mondayISO); d.setDate(d.getDate()-7); return toISO(d); })();
-  const thisWkDays = getWeekDays(mondayISO);
-  const prevWkDays = getWeekDays(prevMonISO);
-  const thisWkKm   = thisWkDays.reduce((s,iso) => s + activities.filter(a=>a.date===iso).reduce((ss,a)=>ss+a.distanceKm,0), 0);
-  const prevWkKm   = prevWkDays.reduce((s,iso) => s + activities.filter(a=>a.date===iso).reduce((ss,a)=>ss+a.distanceKm,0), 0);
-  const thisWkKcal = thisWkDays.reduce((s,iso) => s + activities.filter(a=>a.date===iso).reduce((ss,a)=>ss+(a.kcal||0),0), 0);
-  const prevWkKcal = prevWkDays.reduce((s,iso) => s + activities.filter(a=>a.date===iso).reduce((ss,a)=>ss+(a.kcal||0),0), 0);
+  // Streak & costanza
+  const walkDates  = useMemo(() => new Set(activities.map(a => a.date)), [activities]);
+  const streak     = useMemo(() => calcStreak(activities), [activities]);
+  const goalDays   = 5;
+  const thisSess   = curr?.sess || 0;
+  const consistency = Math.round(Math.min(100, (thisSess / goalDays) * 100));
+  const totalDays  = walkDates.size;
 
-  // Mese corrente vs precedente
-  const now     = new Date();
-  const thisY   = now.getFullYear(), thisM = now.getMonth();
-  const prevMd  = new Date(now); prevMd.setMonth(thisM - 1);
-  const prevY   = prevMd.getFullYear(), prevM = prevMd.getMonth();
-  const thisMoActs = activities.filter(a => { const d=new Date(a.date); return d.getFullYear()===thisY && d.getMonth()===thisM; });
-  const prevMoActs = activities.filter(a => { const d=new Date(a.date); return d.getFullYear()===prevY && d.getMonth()===prevM; });
-  const thisMoKm   = thisMoActs.reduce((s,a)=>s+a.distanceKm,0);
-  const prevMoKm   = prevMoActs.reduce((s,a)=>s+a.distanceKm,0);
-  const thisMoKcal = thisMoActs.reduce((s,a)=>s+(a.kcal||0),0);
-  const prevMoKcal = prevMoActs.reduce((s,a)=>s+(a.kcal||0),0);
+  const metricColor = chartMetric === "km" ? T.teal : ORANGE;
+  const metricUnit  = chartMetric === "km" ? "km" : "kcal";
 
-  const thisVal  = period==="week" ? thisWkKm   : thisMoKm;
-  const prevVal  = period==="week" ? prevWkKm   : prevMoKm;
-  const diff     = thisVal - prevVal;
-  const prevLabel = period==="week" ? "scorsa" : MONTH_LABELS[prevM];
+  // Confronto metriche
+  const confrontoMetrics = [
+    { label:"Km",       key:"km",       color:T.teal },
+    { label:"Kcal",     key:"kcal",     color:ORANGE },
+    { label:"Sessioni", key:"sess",     color:T.purple },
+    { label:"Passo",    key:"avgPace",  color:GREEN, inv:true },
+  ];
 
-  const metricKey  = chartMetric; // "km" | "kcal"
-  const metricUnit = chartMetric === "km" ? "km" : "kcal";
+  // Storico tabelle (ultime 6)
+  const visW = weekData.slice().reverse().slice(0, 6);
+  const visM = monthData.slice().reverse().slice(0, 6);
 
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
       {/* Header */}
-      <div style={{ padding:"20px 20px 10px",background:T.bg,position:"sticky",top:0,zIndex:10 }}>
-        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-          <button onClick={onBack} style={{ background:T.card,border:"none",cursor:"pointer",padding:8,borderRadius:10,display:"flex",alignItems:"center",boxShadow:T.shadow }}>
-            <ChevronLeft size={20} color={T.teal}/>
-          </button>
-          <div>
-            <div style={{ fontSize:12,color:T.textMuted,fontWeight:500 }}>Fitness</div>
-            <h1 style={{ fontSize:24,fontWeight:800,color:T.text,margin:0,letterSpacing:-.5 }}>Report</h1>
-          </div>
-        </div>
+      <div style={{ position:"sticky",top:0,zIndex:10,background:T.bg,display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
+        <button onClick={onBack} style={{ width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer" }}>
+          <ChevronLeft size={18} color={T.teal}/>
+        </button>
+        <div style={{ fontSize:20,fontWeight:800,color:T.text }}>Report Camminata</div>
       </div>
 
-      <div style={{ padding:"0 20px" }}>
+      <div style={{ padding:"0 16px" }}>
 
         {/* Toggle settimana/mese */}
         <div style={{ display:"flex",background:"#F3F4F6",borderRadius:12,padding:4,marginBottom:14 }}>
           {[["week","Settimanale"],["month","Mensile"]].map(([v,l]) => (
-            <button key={v} onClick={() => setPeriod(v)} style={{ flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",background:period===v?T.card:"transparent",fontWeight:700,fontSize:13,color:period===v?T.text:T.textMuted,boxShadow:period===v?T.shadow:"none",transition:".2s" }}>{l}</button>
+            <button key={v} onClick={() => setPeriod(v)} style={{
+              flex:1,padding:"9px 0",borderRadius:9,border:"none",cursor:"pointer",
+              background:period===v?T.card:"transparent",fontWeight:700,fontSize:13,
+              color:period===v?T.text:T.textMuted,
+              boxShadow:period===v?T.shadow:"none",transition:".2s",
+            }}>{l}</button>
           ))}
         </div>
 
-        {/* Card confronto */}
-        <div style={{ background:T.gradient,borderRadius:20,padding:"18px 20px",marginBottom:14,color:"#fff" }}>
-          <div style={{ fontSize:11,fontWeight:600,opacity:.85,marginBottom:6 }}>
-            {period==="week" ? "Questa settimana vs scorsa" : `${MONTH_LABELS[thisM]} vs ${prevLabel}`}
-          </div>
-          <div style={{ fontSize:36,fontWeight:900,letterSpacing:-1 }}>
-            {thisVal.toFixed(1)} <span style={{ fontSize:14,opacity:.7 }}>km</span>
-          </div>
-          <div style={{ display:"flex",alignItems:"center",gap:6,marginTop:6 }}>
-            {diff >= 0 ? <TrendingUp size={14}/> : <TrendingDown size={14}/>}
-            <span style={{ fontSize:12,fontWeight:700 }}>
-              {diff >= 0 ? "+" : ""}{diff.toFixed(1)} km rispetto a {prevLabel} ({prevVal.toFixed(1)} km)
-            </span>
-          </div>
-        </div>
-
-        {/* Grafico storico con toggle km/kcal */}
-        <div style={{ background:T.card,borderRadius:18,padding:"16px 14px 10px",boxShadow:T.shadow,marginBottom:14 }}>
-          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
-            <div style={{ fontSize:13,fontWeight:700,color:T.text }}>
-              {period==="week" ? "Ultime 8 settimane" : "Ultimi 8 mesi"}
-            </div>
-            {/* Toggle km / kcal */}
+        {/* ── DETTAGLIO ── */}
+        <div style={{ background:T.card,borderRadius:18,padding:16,boxShadow:T.shadow,marginBottom:12 }}>
+          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
+            <div style={{ fontSize:14,fontWeight:800,color:T.text }}>Dettaglio</div>
             <div style={{ display:"flex",background:"#F3F4F6",borderRadius:20,padding:3,gap:2 }}>
               {[["km","Km"],["kcal","Kcal"]].map(([v,l]) => (
                 <button key={v} onClick={() => setChartMetric(v)} style={{
@@ -908,65 +843,166 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
               ))}
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={130}>
-            <BarChart data={chart} barSize={period==="week"?20:16} margin={{ top:0,right:0,left:-22,bottom:0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={T.border}/>
-              <XAxis dataKey="label" tick={{ fontSize:10,fill:T.textMuted,fontWeight:600 }} axisLine={false} tickLine={false}/>
-              <YAxis tick={{ fontSize:9,fill:T.textMuted }} axisLine={false} tickLine={false}/>
-              <Tooltip
-                contentStyle={{ background:"rgba(0,0,0,.75)",border:"none",borderRadius:8,fontSize:11,color:"#fff" }}
-                cursor={{ fill:`${T.teal}10` }}
-                formatter={v=>[`${v} ${metricUnit}`]}
-              />
-              <Bar dataKey={metricKey} radius={[6,6,0,0]}>
-                {chart.map((d,i) => <Cell key={i} fill={i===chart.length-1?T.teal:T.mint}/>)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Card dati storici (stile food report) */}
-        <div style={{ fontSize:13,fontWeight:700,color:T.text,marginBottom:10 }}>📊 Dati storici</div>
-        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14 }}>
-          {[
-            { label:"Km totali",      val:`${totalKm}`,     unit:"km",   color:T.teal,   Icon:Footprints },
-            { label:"Kcal bruciate",  val:totalKcal.toLocaleString("it-IT"), unit:"kcal", color:ORANGE, Icon:Flame },
-            { label:"Sessioni totali",val:`${activities.length}`, unit:"",  color:T.purple, Icon:Zap },
-            { label:"Media/sessione", val:`${avgDist}`,     unit:"km",   color:GREEN,    Icon:BarChart3 },
-            { label:"Streak attuale", val:`${streak}`,      unit:"gg",   color:T.gold,   Icon:Flame },
-            { label:"Ritmo migliore", val:pr.bestPace < Infinity ? formatPace(pr.bestPace) : "—", unit:"/km", color:T.purple, Icon:Gauge },
-          ].map(({ label, val, unit, color, Icon }) => (
-            <div key={label} style={{ background:T.card,borderRadius:16,padding:"14px 16px",boxShadow:T.shadow }}>
-              <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:8 }}>
-                <div style={{ width:30,height:30,borderRadius:9,background:`${color}15`,display:"flex",alignItems:"center",justifyContent:"center" }}>
-                  <Icon size={15} color={color}/>
+          <div style={{ textAlign:"center",marginBottom:12 }}>
+            <div style={{ fontSize:12,fontWeight:700,color:T.text }}>
+              {period==="week" ? "Ultime 6 settimane" : "Ultimi 6 mesi"}
+            </div>
+          </div>
+          {/* Bar chart semplice */}
+          <div style={{ display:"flex",gap:8,alignItems:"flex-end",height:118,marginBottom:10,padding:"0 2px" }}>
+            {sliced.map((d, i) => {
+              const h = maxVal > 0 ? (d[chartMetric] / maxVal) * 100 : 0;
+              return (
+                <div key={i} style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2 }}>
+                  <div style={{ fontSize:8,fontWeight:700,color:metricColor }}>{d[chartMetric] || ""}</div>
+                  <div style={{ width:"100%",height:80,position:"relative" }}>
+                    <div style={{
+                      position:"absolute",bottom:0,left:"10%",width:"80%",
+                      height:`${Math.max(h, d[chartMetric] > 0 ? 2 : 0)}%`,
+                      background:metricColor,borderRadius:4,opacity:0.85,
+                      transition:"height 0.3s",
+                    }}/>
+                  </div>
+                  <div style={{ fontSize:8,color:T.textMuted,fontWeight:600 }}>{d.label}</div>
                 </div>
-                <div style={{ fontSize:11,color:T.textMuted,fontWeight:600 }}>{label}</div>
-              </div>
-              <div style={{ fontSize:22,fontWeight:900,color:T.text,letterSpacing:-.5,lineHeight:1 }}>
-                {val}<span style={{ fontSize:12,fontWeight:600,color:T.textSec,marginLeft:3 }}>{unit}</span>
-              </div>
-            </div>
-          ))}
+              );
+            })}
+          </div>
+          {/* Media */}
+          <div style={{ display:"flex",justifyContent:"center",padding:"8px 0 0",borderTop:`1px solid ${T.border}` }}>
+            <span style={{ fontSize:16,fontWeight:800,color:metricColor }}>{avg}</span>
+            <span style={{ fontSize:10,color:T.textMuted,marginLeft:4 }}>
+              {metricUnit}/{period==="week"?"settimana":"mese"} media
+            </span>
+          </div>
         </div>
 
-        {/* Record personali */}
-        <div style={{ fontSize:13,fontWeight:700,color:T.text,marginBottom:10 }}>🏆 Record personali</div>
-        <div style={{ background:T.card,borderRadius:18,padding:"4px 0",boxShadow:T.shadow,marginBottom:20 }}>
-          {[
-            { Icon:Trophy,    color:T.gold,   label:"Distanza massima",   val:`${pr.maxDist.toFixed(1)} km` },
-            { Icon:Gauge,     color:T.purple, label:"Ritmo migliore",     val:pr.bestPace < Infinity ? `${formatPace(pr.bestPace)}/km` : "—" },
-            { Icon:Flame,     color:ORANGE,   label:"Kcal max/sessione",  val:`${pr.maxKcal} kcal` },
-            { Icon:Footprints,color:GREEN,    label:"Km totali percorsi", val:`${parseFloat(totalKm).toFixed(0)} km` },
-          ].map(({ Icon, color, label, val }, i, arr) => (
-            <div key={label} style={{ display:"flex",alignItems:"center",gap:12,padding:"13px 16px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none" }}>
-              <div style={{ width:36,height:36,borderRadius:11,background:`${color}15`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                <Icon size={17} color={color}/>
-              </div>
-              <div style={{ flex:1,fontSize:12,color:T.textMuted,fontWeight:600 }}>{label}</div>
-              <div style={{ fontSize:15,fontWeight:800,color:T.text }}>{val}</div>
+        {/* ── CONFRONTO ── */}
+        {curr && prev && (
+          <div style={{ background:T.card,borderRadius:18,padding:16,boxShadow:T.shadow,marginBottom:12 }}>
+            <div style={{ fontSize:14,fontWeight:700,color:T.text,marginBottom:4 }}>📊 Confronto</div>
+            <div style={{ fontSize:10,color:T.textMuted,marginBottom:12 }}>{curr.periodLabel} vs {prev.periodLabel}</div>
+            <div style={{ display:"flex",gap:6 }}>
+              {confrontoMetrics.map(m => {
+                const cV = curr[m.key] || 0;
+                const pV = prev[m.key] || 0;
+                const diff = cV - pV;
+                const pctChange = pV > 0 ? Math.round((diff / pV) * 100) : 0;
+                const isUp = diff > 0;
+                const arrow = isUp ? "↑" : diff < 0 ? "↓" : "=";
+                const arrowColor = m.inv
+                  ? (isUp ? T.coral : GREEN)
+                  : (isUp ? GREEN : T.coral);
+                return (
+                  <div key={m.key} style={{ flex:1,background:`${m.color}0A`,borderRadius:12,padding:"10px 6px",textAlign:"center" }}>
+                    <div style={{ fontSize:9,fontWeight:600,color:T.textMuted,marginBottom:4 }}>{m.label}</div>
+                    <div style={{ fontSize:16,fontWeight:800,color:m.color }}>
+                      {m.key === "avgPace" && cV > 0 ? cV.toFixed(1) : cV}
+                    </div>
+                    <div style={{ fontSize:9,color:T.textMuted,marginTop:2 }}>
+                      vs {m.key === "avgPace" && pV > 0 ? pV.toFixed(1) : pV}
+                    </div>
+                    <div style={{ fontSize:11,fontWeight:700,color: diff === 0 ? T.textMuted : arrowColor,marginTop:4 }}>
+                      {arrow}{Math.abs(pctChange)}%
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          </div>
+        )}
+
+        {/* ── STREAK & COSTANZA ── */}
+        <div style={{ background:T.card,borderRadius:18,padding:16,boxShadow:T.shadow,marginBottom:12 }}>
+          <div style={{ fontSize:14,fontWeight:700,color:T.text,marginBottom:14 }}>🔥 Streak & Costanza</div>
+          <div style={{ display:"flex",gap:8 }}>
+            {/* Streak */}
+            <div style={{ flex:1,background:`${T.gold}0A`,borderRadius:14,padding:14,textAlign:"center" }}>
+              <div style={{ fontSize:30,fontWeight:900,color:T.gold,lineHeight:1 }}>{streak}</div>
+              <div style={{ fontSize:10,color:T.textMuted,fontWeight:600,marginTop:4 }}>giorni consecutivi</div>
+              <div style={{ fontSize:9,color:T.textMuted,marginTop:2 }}>con camminata</div>
+            </div>
+            {/* Consistency ring */}
+            <div style={{ flex:1,background:`${T.mint}0A`,borderRadius:14,padding:14,textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center" }}>
+              <div style={{ position:"relative",width:56,height:56 }}>
+                <CircularRing pct={consistency} size={56} stroke={5} color={T.mint}/>
+                <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
+                  <span style={{ fontSize:14,fontWeight:800,color:T.mint }}>{consistency}%</span>
+                </div>
+              </div>
+              <div style={{ fontSize:10,color:T.textMuted,fontWeight:600,marginTop:6 }}>{thisSess}/{goalDays} sessioni</div>
+              <div style={{ fontSize:9,color:T.textMuted }}>obiettivo sett.</div>
+            </div>
+            {/* Total days */}
+            <div style={{ flex:1,background:`${T.teal}0A`,borderRadius:14,padding:14,textAlign:"center",display:"flex",flexDirection:"column",justifyContent:"center" }}>
+              <div style={{ fontSize:30,fontWeight:900,color:T.teal,lineHeight:1 }}>{totalDays}</div>
+              <div style={{ fontSize:10,color:T.textMuted,fontWeight:600,marginTop:4 }}>giorni tracciati</div>
+              <div style={{ fontSize:9,color:T.textMuted,marginTop:2 }}>totale</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── STORICO ── */}
+        <div style={{ background:T.card,borderRadius:18,padding:16,boxShadow:T.shadow,marginBottom:20 }}>
+          <div style={{ fontSize:14,fontWeight:700,color:T.text,marginBottom:14 }}>🕐 Storico</div>
+
+          {/* Settimanale */}
+          <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8 }}>Settimanale</div>
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%",borderCollapse:"collapse",fontSize:11 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign:"left",padding:"6px 4px",fontWeight:700,fontSize:10,color:T.textMuted,borderBottom:`2px solid ${T.border}` }}>Settimana</th>
+                  <th style={{ textAlign:"right",padding:"6px 4px",fontWeight:700,fontSize:10,color:T.teal,borderBottom:`2px solid ${T.border}` }}>Km</th>
+                  <th style={{ textAlign:"right",padding:"6px 4px",fontWeight:700,fontSize:10,color:ORANGE,borderBottom:`2px solid ${T.border}` }}>Kcal</th>
+                  <th style={{ textAlign:"right",padding:"6px 4px",fontWeight:700,fontSize:10,color:T.purple,borderBottom:`2px solid ${T.border}` }}>Sess.</th>
+                  <th style={{ textAlign:"right",padding:"6px 4px",fontWeight:700,fontSize:10,color:GREEN,borderBottom:`2px solid ${T.border}` }}>Passo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visW.map((w, i) => (
+                  <tr key={i} style={{ background: i === 0 ? `${T.teal}08` : "transparent" }}>
+                    <td style={{ padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:i===0?700:500,color:i===0?T.teal:T.text }}>
+                      {w.periodLabel}{i === 0 && <span style={{ fontSize:8,color:T.mint,marginLeft:4 }}>attuale</span>}
+                    </td>
+                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{w.km}</td>
+                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{w.kcal}</td>
+                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{w.sess}</td>
+                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{w.avgPace > 0 ? w.avgPace.toFixed(1) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mensile */}
+          <div style={{ marginTop:16,fontSize:11,fontWeight:700,color:T.textMuted,textTransform:"uppercase",letterSpacing:0.5,marginBottom:8 }}>Mensile</div>
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%",borderCollapse:"collapse",fontSize:11 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign:"left",padding:"6px 4px",fontWeight:700,fontSize:10,color:T.textMuted,borderBottom:`2px solid ${T.border}` }}>Mese</th>
+                  <th style={{ textAlign:"right",padding:"6px 4px",fontWeight:700,fontSize:10,color:T.teal,borderBottom:`2px solid ${T.border}` }}>Km</th>
+                  <th style={{ textAlign:"right",padding:"6px 4px",fontWeight:700,fontSize:10,color:ORANGE,borderBottom:`2px solid ${T.border}` }}>Kcal</th>
+                  <th style={{ textAlign:"right",padding:"6px 4px",fontWeight:700,fontSize:10,color:T.purple,borderBottom:`2px solid ${T.border}` }}>Sess.</th>
+                  <th style={{ textAlign:"right",padding:"6px 4px",fontWeight:700,fontSize:10,color:GREEN,borderBottom:`2px solid ${T.border}` }}>Passo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visM.map((m, i) => (
+                  <tr key={i} style={{ background: i === 0 ? `${T.teal}08` : "transparent" }}>
+                    <td style={{ padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:i===0?700:500,color:i===0?T.teal:T.text }}>
+                      {m.periodLabel}{i === 0 && <span style={{ fontSize:8,color:T.mint,marginLeft:4 }}>attuale</span>}
+                    </td>
+                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{m.km}</td>
+                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{m.kcal}</td>
+                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{m.sess}</td>
+                    <td style={{ textAlign:"right",padding:"8px 4px",borderBottom:`1px solid ${T.border}`,fontWeight:700,color:T.text }}>{m.avgPace > 0 ? m.avgPace.toFixed(1) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -979,12 +1015,12 @@ const ReportScreen = ({ activities, onBack, onNavigate }) => {
    ROOT EXPORT
    ═══════════════════════════════════════════ */
 export default function FitnessSection({ onNavigate }) {
-  const [subScreen,     setSubScreen]     = useState("main");   // main | addWalk | editWalk | report
+  const [subScreen,     setSubScreen]     = useState("main");
   const [activities,    setActivities]    = useState([]);
   const [weeklyGoal,    setWeeklyGoal]    = useState(20);
   const [showGoalModal, setShowGoalModal] = useState(false);
-  const [editTarget,    setEditTarget]    = useState(null);     // activity da modificare
-  const [lastDistance,  setLastDistance]  = useState(5.0);
+  const [editTarget,    setEditTarget]    = useState(null);
+  const [lastSession,   setLastSession]   = useState(null);
   const [userProfile,   setUserProfile]   = useState(null);
 
   const loadData = useCallback(async () => {
@@ -995,17 +1031,16 @@ export default function FitnessSection({ onNavigate }) {
     ]);
     if (goal)    setWeeklyGoal(goal);
     if (profile) setUserProfile(profile);
-    if (last)    setLastDistance(last.distanceKm);
+    if (last)    setLastSession(last);
 
     const end   = todayISO();
-    const start = toISO(new Date(Date.now() - 120 * 86400000));   // ultimi 120 giorni
+    const start = toISO(new Date(Date.now() - 120 * 86400000));
     const acts  = await getFitnessActivitiesByDateRange(start, end);
     setActivities(acts.sort((a, b) => b.date.localeCompare(a.date)));
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Record personali: controlla se l'ultima sessione salvata è un nuovo record
   const checkNewPR = useCallback((newAct, prevActs) => {
     if (!prevActs.length) return null;
     const pr = calcPR(prevActs);
@@ -1019,7 +1054,7 @@ export default function FitnessSection({ onNavigate }) {
     await addFitnessActivity(act);
     await loadData();
     setSubScreen("main");
-    if (pr) setTimeout(() => alert(pr), 400);  // semplice alert — in produzione usa un toast
+    if (pr) setTimeout(() => alert(pr), 400);
   }, [activities, checkNewPR, loadData]);
 
   const handleSaveEdit = useCallback(async (act) => {
@@ -1047,12 +1082,19 @@ export default function FitnessSection({ onNavigate }) {
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [subScreen]);
 
-  // ── RENDER ──
+  // Default values from last session
+  const defaultInitial = useMemo(() => ({
+    distanceKm:  lastSession?.distanceKm  ?? 5.0,
+    durationMin: lastSession?.durationMin  ?? 50,
+    heartRate:   lastSession?.heartRate    ?? 0,
+    slope:       lastSession?.slope        ?? 0,
+  }), [lastSession]);
+
   if (subScreen === "addWalk") return (
     <>
       <WalkForm
         title="Nuova camminata"
-        initial={{ distanceKm: lastDistance }}
+        initial={defaultInitial}
         userProfile={userProfile}
         onSave={handleSaveNew}
         onBack={() => setSubScreen("main")}

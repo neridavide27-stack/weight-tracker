@@ -115,9 +115,9 @@ const SwipeableItem = ({ entry, onDelete, onTap, T }) => {
       </div>
       <div
         style={{ display: "flex", alignItems: "center", padding: "10px 14px 10px 12px", background: T.card, position: "relative", zIndex: 2, transform: `translateX(${-offsetX}px)`, transition: swipingRef.current ? "none" : "transform 0.25s ease", cursor: "pointer" }}
-        onTouchStart={(e) => { startXRef.current = e.touches[0].clientX; baseRef.current = offsetX; swipingRef.current = true; }}
-        onTouchMove={(e) => { if (!swipingRef.current) return; setOffsetX(Math.max(0, Math.min(75, baseRef.current + (startXRef.current - e.touches[0].clientX)))); }}
-        onTouchEnd={() => { swipingRef.current = false; setOffsetX((prev) => (prev > 35 ? 75 : 0)); }}
+        onTouchStart={(e) => { e.stopPropagation(); startXRef.current = e.touches[0].clientX; baseRef.current = offsetX; swipingRef.current = true; }}
+        onTouchMove={(e) => { if (!swipingRef.current) return; e.stopPropagation(); setOffsetX(Math.max(0, Math.min(75, baseRef.current + (startXRef.current - e.touches[0].clientX)))); }}
+        onTouchEnd={(e) => { e.stopPropagation(); swipingRef.current = false; setOffsetX((prev) => (prev > 35 ? 75 : 0)); }}
         onClick={() => { if (offsetX === 0 && onTap) onTap(entry); }}
       >
         {entry.isCheat && <span style={{ fontSize: 14, marginRight: 4, flexShrink: 0 }}>🍕</span>}
@@ -2246,18 +2246,18 @@ const FoodSection = forwardRef(({ settings, weightEntries, goTo, T, nutritionGoa
           })}
         </div>
 
-        {/* ─── Action Buttons ─── */}
-        <div style={{ padding: "0 16px 16px", display: "flex", gap: 10 }}>
-          <button onClick={() => setFoodScreen("reports")} aria-label="Vedi report calorie" style={{
-            flex: 1, padding: 14, borderRadius: 14, border: `1.5px solid ${T.border}`,
-            background: T.card, cursor: "pointer", fontFamily: "inherit", boxShadow: T.shadow,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          }}>
-            <BarChart3 size={16} color={T.teal} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Report</span>
-            <ChevronRight size={14} color={T.textMuted} />
-          </button>
-        </div>
+        {/* ─── Report FAB (floating, stile fitness) ─── */}
+        <button onClick={() => setFoodScreen("reports")} aria-label="Vedi report calorie" style={{
+          position: "fixed", bottom: 86, right: 20,
+          background: T.gradient, border: "none",
+          borderRadius: 50, padding: "11px 20px",
+          display: "flex", alignItems: "center", gap: 8,
+          boxShadow: "0 6px 24px rgba(2,128,144,0.35)",
+          cursor: "pointer", zIndex: 15,
+        }}>
+          <BarChart3 size={16} color="#fff" />
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Report</span>
+        </button>
 
         {/* Edit gram modal */}
         {editingEntry && foodEntries.find(e => e.id === editingEntry.id) && !foodEntries.find(e => e.id === editingEntry.id).isCheat && (
