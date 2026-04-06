@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import FoodSection from "./FoodSection";
 import FitnessSection from "./FitnessSection";
+import GymSection from "./GymSection";
 import {
   getNutritionGoals, saveNutritionGoals, clearAllFoodData, populateDemoData,
   getSheetsUrl, saveSheetsUrl, pingSheets, fullSyncToSheets, restoreFromSheets,
@@ -18,7 +19,7 @@ import {
   ArrowUp, Minus, Edit3, Check, X, Home, Utensils, Dumbbell,
   User, ChevronRight, Clock, Droplets, Zap, Activity,
   Sun, Moon, Sunrise, Star, Heart, BarChart3, AlertCircle,
-  Sparkles, Trophy, CheckCircle2, Info, Copy
+  Sparkles, Trophy, CheckCircle2, Info, Copy, Footprints
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════
@@ -430,8 +431,8 @@ const BottomNav = ({ active, onNavigate, onAdd }) => {
     { id: "dashboard", icon: Home, label: "Home" },
     { id: "food", icon: Utensils, label: "Cibo" },
     { id: "add", icon: Plus, label: "" },
-    { id: "fitness", icon: Dumbbell, label: "Fitness" },
-    { id: "profile", icon: User, label: "Profilo" },
+    { id: "fitness", icon: Footprints, label: "Fitness" },
+    { id: "gym", icon: Dumbbell, label: "Gym" },
   ];
 
   return (
@@ -1127,7 +1128,7 @@ export default function WeightTrackerApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  const activeTab = ["dashboard", "food", "fitness", "profile"].includes(screen) ? screen : "dashboard";
+  const activeTab = ["dashboard", "food", "fitness", "gym"].includes(screen) ? screen : "dashboard";
 
   /* ═══════════════════════════════════════
      SCREEN: ADD WEIGHT
@@ -1370,7 +1371,14 @@ export default function WeightTrackerApp() {
   }
 
   /* ═══════════════════════════════════════
-     SCREEN: PROFILE / SETTINGS
+     SCREEN: GYM
+     ═══════════════════════════════════════ */
+  if (screen === "gym") {
+    return <GymSection onNavigate={goTo} />;
+  }
+
+  /* ═══════════════════════════════════════
+     SCREEN: PROFILE / SETTINGS (accessible via Settings icon in Home)
      ═══════════════════════════════════════ */
   if (screen === "profile") {
     return (

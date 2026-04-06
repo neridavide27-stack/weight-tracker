@@ -480,11 +480,11 @@ const ConfirmModal = ({ title, message, confirmLabel = "Elimina", onConfirm, onC
 
 const FitnessBottomNav = ({ onAdd, onNavigate }) => {
   const tabs = [
-    { id: "dashboard", Icon: Home,     label: "Home"    },
-    { id: "food",      Icon: Utensils, label: "Cibo"    },
-    { id: "add",       Icon: null,     label: ""        },
-    { id: "fitness",   Icon: Dumbbell, label: "Fitness" },
-    { id: "profile",   Icon: User,     label: "Profilo" },
+    { id: "dashboard", Icon: Home,       label: "Home"    },
+    { id: "food",      Icon: Utensils,   label: "Cibo"    },
+    { id: "add",       Icon: null,       label: ""        },
+    { id: "fitness",   Icon: Footprints, label: "Fitness" },
+    { id: "gym",       Icon: Dumbbell,   label: "Gym"     },
   ];
   return (
     <div style={{
