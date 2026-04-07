@@ -3319,33 +3319,45 @@ export default function GymSection({ onNavigate }) {
     }
   };
 
+  // Wrapper for fullscreen sub-screens that need to cover the BottomNav
+  const FullScreenWrap = ({ children }) => (
+    <div style={{ position: "fixed", inset: 0, zIndex: 30, background: T.bg, overflowY: "auto" }}>
+      {children}
+    </div>
+  );
+
   if (subScreen === "settings") {
     return (
-      <SettingsScreen
-        defaultTimers={defaultTimers}
-        precMode={precMode}
-        onSave={handleSaveSettings}
-        onBack={() => setSubScreen("main")}
-        onResetAll={handleResetAll}
-      />
+      <FullScreenWrap>
+        <SettingsScreen
+          defaultTimers={defaultTimers}
+          precMode={precMode}
+          onSave={handleSaveSettings}
+          onBack={() => setSubScreen("main")}
+          onResetAll={handleResetAll}
+        />
+      </FullScreenWrap>
     );
   }
 
   if (subScreen === "nameModal") {
     return (
-      <NameModal
-        onContinue={(name) => {
-          setNewRoutineName(name);
-          setSubScreen("pickExercises");
-        }}
-        onClose={() => setSubScreen("main")}
-        title="Nome Routine"
-      />
+      <FullScreenWrap>
+        <NameModal
+          onContinue={(name) => {
+            setNewRoutineName(name);
+            setSubScreen("pickExercises");
+          }}
+          onClose={() => setSubScreen("main")}
+          title="Nome Routine"
+        />
+      </FullScreenWrap>
     );
   }
 
   if (subScreen === "pickExercises") {
     return (
+      <FullScreenWrap>
       <ExercisePicker
         onSelect={() => {}}
         onClose={() => setSubScreen("main")}
@@ -3362,11 +3374,13 @@ export default function GymSection({ onNavigate }) {
           setSubScreen("routineEditor");
         }}
       />
+      </FullScreenWrap>
     );
   }
 
   if (subScreen === "routineEditor") {
     return (
+      <FullScreenWrap>
       <RoutineEditor
         routine={{ name: newRoutineName, exercises: newRoutineExercises, id: editingRoutineId }}
         exercises={newRoutineExercises}
@@ -3380,11 +3394,13 @@ export default function GymSection({ onNavigate }) {
         onAddCustomExercise={() => {}}
         onAddExercises={() => {}}
       />
+      </FullScreenWrap>
     );
   }
 
   if (subScreen === "routineSummary") {
     return (
+      <FullScreenWrap>
       <RoutineSummary
         name={newRoutineName}
         exercises={newRoutineExercises}
@@ -3392,6 +3408,7 @@ export default function GymSection({ onNavigate }) {
         onBack={() => setSubScreen("routineEditor")}
         customExercises={customExercises}
       />
+      </FullScreenWrap>
     );
   }
 
@@ -3399,6 +3416,7 @@ export default function GymSection({ onNavigate }) {
     const workout = selectedWorkout;
     const sets = allSets.filter(s => s.workoutId === workout?.id);
     return (
+      <FullScreenWrap>
       <WorkoutDetailScreen
         workout={workout}
         sets={sets}
@@ -3407,11 +3425,13 @@ export default function GymSection({ onNavigate }) {
         onExerciseDetail={handleExerciseDetail}
         onDelete={handleDeleteWorkout}
       />
+      </FullScreenWrap>
     );
   }
 
   if (subScreen === "exerciseDetail") {
     return (
+      <FullScreenWrap>
       <ExerciseDetailScreen
         exerciseId={selectedExerciseId}
         allWorkouts={workouts}
@@ -3419,12 +3439,14 @@ export default function GymSection({ onNavigate }) {
         customExercises={customExercises}
         onBack={() => setSubScreen(selectedWorkout ? "workoutDetail" : "main")}
       />
+      </FullScreenWrap>
     );
   }
 
   if (subScreen === "workout" && selectedRoutine) {
     const isSuspendedResume = suspendedWorkout && suspendedWorkout.routineId === selectedRoutine.id;
     return (
+      <FullScreenWrap>
       <ActiveWorkoutScreen
         workout={isSuspendedResume ? suspendedWorkout.workout : {
           id: Date.now().toString(),
@@ -3447,6 +3469,7 @@ export default function GymSection({ onNavigate }) {
         initialExs={isSuspendedResume ? suspendedWorkout.exs : null}
         initialElapsed={isSuspendedResume ? suspendedWorkout.elapsedSoFar : null}
       />
+      </FullScreenWrap>
     );
   }
 
