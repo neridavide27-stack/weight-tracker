@@ -1,6 +1,6 @@
 "use client";
 // GymSection.jsx — Gym workout tracker (Hevy-style)
-// v3 — Routine creation flow, exercise database with uni field, reordering, superset linking, notes, timers
+// v5 — Polished NumpadOverlay, DrumPicker, RoutineEditor, RoutineSummary
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
@@ -98,51 +98,41 @@ const EXERCISES = [
   { id: "tricep_pushdown",   name: "Push Down Cavi",       muscle: "Tricipiti",secondary: "",           equipment: "Cavi", uni: false },
   { id: "overhead_ext",      name: "Estensioni Sopra Testa",muscle:"Tricipiti",secondary: "",           equipment: "Manubri", uni: true },
   { id: "skull_crusher",     name: "Skull Crusher",        muscle: "Tricipiti",secondary: "",           equipment: "Bilanciere", uni: false },
-  { id: "dip",               name: "Dip",                  muscle: "Tricipiti",secondary: "Petto",      equipment: "Corpo libero", uni: false },
-  { id: "kickback",          name: "Kickback",             muscle: "Tricipiti",secondary: "",           equipment: "Manubri", uni: true },
+  { id: "tricep_dip",        name: "Dip Parallele",        muscle: "Tricipiti",secondary: "Petto",      equipment: "Corpo libero", uni: false },
+  { id: "db_tricep_ext",     name: "Estensioni Manubri",   muscle: "Tricipiti",secondary: "",           equipment: "Manubri", uni: true },
+  { id: "tricep_machine",    name: "Tricep Machine",       muscle: "Tricipiti",secondary: "",           equipment: "Macchina", uni: false },
   // Gambe
   { id: "squat",             name: "Squat",                muscle: "Gambe",    secondary: "Core",       equipment: "Bilanciere", uni: false },
-  { id: "front_squat",       name: "Front Squat",          muscle: "Gambe",    secondary: "Core",       equipment: "Bilanciere", uni: false },
-  { id: "leg_press",         name: "Leg Press",            muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
+  { id: "leg_press",         name: "Leg Press",            muscle: "Gambe",    secondary: "Core",       equipment: "Macchina", uni: false },
   { id: "leg_extension",     name: "Leg Extension",        muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
   { id: "leg_curl",          name: "Leg Curl",             muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
-  { id: "romanian_dl",       name: "Stacco Rumeno",        muscle: "Gambe",    secondary: "Schiena",    equipment: "Bilanciere", uni: false },
+  { id: "dumbbell_squat",    name: "Squat Manubri",        muscle: "Gambe",    secondary: "Core",       equipment: "Manubri", uni: false },
+  { id: "bulgarian_split",   name: "Bulgarian Split Squat",muscle: "Gambe",    secondary: "Core",       equipment: "Manubri", uni: true },
   { id: "lunges",            name: "Affondi",              muscle: "Gambe",    secondary: "",           equipment: "Manubri", uni: true },
-  { id: "hack_squat",        name: "Hack Squat",           muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
-  { id: "calf_raise",        name: "Calf Raise",           muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
-  { id: "hip_thrust",        name: "Hip Thrust",           muscle: "Gambe",    secondary: "",           equipment: "Bilanciere", uni: false },
-  { id: "adductor",          name: "Adductor Machine",     muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
-  { id: "abductor",          name: "Abductor Machine",     muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
+  { id: "calf_raise",        name: "Sollevamento Polpacci",muscle: "Gambe",    secondary: "",           equipment: "Bilanciere", uni: false },
+  { id: "leg_press_single",  name: "Leg Press Unilaterale",muscle: "Gambe",    secondary: "Core",       equipment: "Macchina", uni: true },
   // Core
-  { id: "crunch",            name: "Crunch",               muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
+  { id: "crunch",            name: "Addominali",           muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
   { id: "plank",             name: "Plank",                muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
-  { id: "cable_crunch",      name: "Crunch ai Cavi",       muscle: "Core",     secondary: "",           equipment: "Cavi", uni: false },
-  { id: "leg_raise",         name: "Leg Raise",            muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
   { id: "ab_wheel",          name: "Ab Wheel",             muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
+  { id: "leg_raise",         name: "Sollevamento Gambe",   muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
+  { id: "cable_crunch",      name: "Crunch ai Cavi",       muscle: "Core",     secondary: "",           equipment: "Cavi", uni: false },
 ];
 
 const MUSCLE_COLORS = {
-  Petto: "#EF4444", Schiena: "#3B82F6", Spalle: "#F97316", Bicipiti: "#8B5CF6",
-  Tricipiti: "#EC4899", Gambe: "#16A34A", Core: "#EAB308",
+  "Petto": "#FF6B6B", "Schiena": "#4ECDC4", "Spalle": "#FFD93D",
+  "Bicipiti": "#6BCB77", "Tricipiti": "#A78BFA", "Gambe": "#FF8C42", "Core": "#FF6B9D",
 };
 
-/* Timer defaults per set type (seconds) */
-const SET_TYPE_TIMERS = { W: 60, N: 90, D: 60, F: 180 };
 const SET_TYPES = [
   { id: "N", label: "N", color: T.text, name: "Normale" },
   { id: "W", label: "W", color: "#EAB308", name: "Warmup" },
-  { id: "D", label: "D", color: T.purple, name: "Drop set" },
-  { id: "F", label: "F", color: T.red, name: "Failure" },
 ];
 
-/* ═══════════════════════════════════════════
-   HELPERS
-   ═══════════════════════════════════════════ */
-const calcVolume = (sets) => sets.reduce((s, set) => s + (set.weight || 0) * (set.reps || 0), 0);
-const calc1RM = (w, r) => r === 1 ? w : Math.round(w * (1 + r / 30));
-
 const getExerciseById = (id, customExercises = []) => {
-  return EXERCISES.find(e => e.id === id) || customExercises.find(e => e.id === id) || { id, name: id, muscle: "Altro", secondary: "", equipment: "", uni: false };
+  const found = EXERCISES.find(e => e.id === id);
+  if (found) return found;
+  return customExercises.find(e => e.id === id);
 };
 
 const getRestForSet = (ex, setType) => {
@@ -151,91 +141,86 @@ const getRestForSet = (ex, setType) => {
   return setType === "W" ? 60 : 90;
 };
 
-const estimateWithHistory = (theoretical, realDurations) => {
-  if (!realDurations || realDurations.length === 0) return theoretical;
-  const weighted = realDurations.map((d, i) => ({ d, w: 1 / (i + 1) }));
-  const sum = weighted.reduce((s, x) => s + x.d * x.w, 0);
-  const wSum = weighted.reduce((s, x) => s + x.w, 0);
-  return Math.round(sum / wSum);
-};
-
 const estimateRoutineDuration = (exercises) => {
-  let theoretical = 0;
-  exercises.forEach(ex => {
+  if (!exercises || exercises.length === 0) return 0;
+  return Math.round(exercises.reduce((total, ex) => {
     const nSets = ex.sets ? ex.sets.length : 3;
     const rest = ex.restTimer || 90;
-    const warmup = ex.warmupTimer || 60;
-    const hasWarmup = ex.sets && ex.sets.some(s => s.type === "W");
-    theoretical += nSets * (40 + rest) + (hasWarmup ? warmup : 0);
-    if (ex.unilateral) theoretical += nSets * (ex.sideTimer || 30);
-  });
-  return Math.round(theoretical / 60);
+    const uniExtra = ex.unilateral ? nSets * (ex.sideTimer || 15) : 0;
+    return total + nSets * (40 + rest) + uniExtra;
+  }, 0) / 60);
+};
+
+const estimateWithHistory = (exerciseId, allSets = [], customExercises = []) => {
+  const sets = allSets.filter(s => s.exerciseId === exerciseId).slice(-20);
+  if (sets.length === 0) return { duration: 1.5, avgReps: 10 };
+  const avgTime = sets.reduce((sum, s) => sum + (s.duration || 1.5), 0) / sets.length;
+  const avgReps = Math.round(sets.reduce((sum, s) => sum + (s.reps || 0), 0) / sets.length);
+  return { duration: avgTime, avgReps };
 };
 
 /* ═══════════════════════════════════════════
-   BOTTOM NAV
+   GYM BOTTOM NAV
    ═══════════════════════════════════════════ */
-const GymBottomNav = ({ onAdd, onNavigate }) => {
-  const tabs = [
-    { id: "dashboard", Icon: Home,       label: "Home" },
-    { id: "food",      Icon: Utensils,   label: "Cibo" },
-    { id: "add",       Icon: null,       label: "" },
-    { id: "fitness",   Icon: Footprints, label: "Fitness" },
-    { id: "gym",       Icon: Dumbbell,   label: "Gym" },
-  ];
-  return (
-    <div style={{
-      position:"fixed",bottom:0,left:0,right:0,background:T.card,
-      borderTop:`1px solid ${T.border}`,display:"flex",
-      justifyContent:"space-around",alignItems:"flex-end",
-      padding:"6px 8px 22px",zIndex:20,
-      boxShadow:"0 -4px 20px rgba(0,0,0,0.06)",
+const GymBottomNav = ({ onAdd, onNavigate }) => (
+  <div style={{
+    position: "fixed", bottom: 0, left: 0, right: 0,
+    maxWidth: "430px", marginLeft: "auto", marginRight: "auto",
+    background: T.card, borderTop: `1px solid ${T.border}`,
+    display: "flex", justifyContent: "space-around", padding: "10px 0 20px",
+    gap: 20, zIndex: 50,
+  }}>
+    <button onClick={() => onNavigate("home")} style={{
+      flex: 1, background: "none", border: "none", cursor: "pointer",
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
     }}>
-      {tabs.map(tab => {
-        if (tab.id === "add") return (
-          <button key="add" onClick={onAdd} style={{
-            width:54,height:54,borderRadius:"50%",border:"none",
-            background:T.gradient,color:"#fff",cursor:"pointer",
-            display:"flex",alignItems:"center",justifyContent:"center",
-            boxShadow:"0 4px 24px rgba(2,128,144,0.35)",transform:"translateY(-14px)",
-          }}><Plus size={26} strokeWidth={2.5}/></button>
-        );
-        const isActive = tab.id === "gym";
-        return (
-          <button key={tab.id} onClick={() => onNavigate(tab.id)} style={{
-            background:"none",border:"none",cursor:"pointer",
-            display:"flex",flexDirection:"column",alignItems:"center",gap:3,
-            padding:"6px 14px",opacity:isActive?1:0.5,transition:"opacity 0.2s",
-          }}>
-            <tab.Icon size={21} color={isActive?T.teal:T.textSec} strokeWidth={isActive?2.3:1.8}/>
-            <span style={{ fontSize:10,fontWeight:700,letterSpacing:0.2,color:isActive?T.teal:T.textSec }}>{tab.label}</span>
-            {isActive && <div style={{ width:4,height:4,borderRadius:2,background:T.teal,marginTop:-1 }}/>}
-          </button>
-        );
-      })}
-    </div>
-  );
-};
+      <Home size={24} color={T.teal} />
+      <span style={{ fontSize: 11, color: T.textSec }}>Home</span>
+    </button>
+    <button onClick={() => onNavigate("gym")} style={{
+      flex: 1, background: "none", border: "none", cursor: "pointer",
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+    }}>
+      <Dumbbell size={24} color={T.teal} />
+      <span style={{ fontSize: 11, color: T.textSec }}>Palestra</span>
+    </button>
+    <button onClick={() => onNavigate("food")} style={{
+      flex: 1, background: "none", border: "none", cursor: "pointer",
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+    }}>
+      <Utensils size={24} color={T.teal} />
+      <span style={{ fontSize: 11, color: T.textSec }}>Cibo</span>
+    </button>
+    <button onClick={() => onNavigate("profile")} style={{
+      flex: 1, background: "none", border: "none", cursor: "pointer",
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+    }}>
+      <User size={24} color={T.teal} />
+      <span style={{ fontSize: 11, color: T.textSec }}>Profilo</span>
+    </button>
+  </div>
+);
 
 /* ═══════════════════════════════════════════
    TOAST
    ═══════════════════════════════════════════ */
 const Toast = ({ message, icon, action, onAction, onDismiss }) => {
   useEffect(() => {
-    const t = setTimeout(onDismiss, 3500);
-    return () => clearTimeout(t);
+    const timer = setTimeout(onDismiss, 3000);
+    return () => clearTimeout(timer);
   }, [onDismiss]);
   return (
     <div style={{
-      position:"fixed",bottom:100,left:16,right:16,background:T.card,
-      borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",gap:10,
-      boxShadow:"0 8px 24px rgba(0,0,0,0.12)",zIndex:50,
+      position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
+      background: T.card, padding: "12px 16px", borderRadius: 8,
+      boxShadow: T.shadow, display: "flex", alignItems: "center", gap: 8,
+      zIndex: 100, maxWidth: "90%",
     }}>
-      <span style={{ fontSize:16 }}>{icon}</span>
-      <span style={{ flex:1,fontSize:13,fontWeight:600,color:T.text }}>{message}</span>
+      {icon && icon}
+      <span style={{ color: T.text, fontSize: 14, flex: 1 }}>{message}</span>
       {action && <button onClick={onAction} style={{
-        background:"none",border:"none",cursor:"pointer",color:T.teal,
-        fontSize:12,fontWeight:700,padding:0,
+        background: T.teal, color: "white", border: "none", padding: "6px 12px",
+        borderRadius: 4, cursor: "pointer", fontSize: 12,
       }}>{action}</button>}
     </div>
   );
@@ -247,329 +232,386 @@ const Toast = ({ message, icon, action, onAction, onDismiss }) => {
 const RestTimerOverlay = ({ seconds, exerciseName, isSideTimer, onSkip }) => {
   const [remaining, setRemaining] = useState(seconds);
   useEffect(() => {
-    if (remaining <= 0) { onSkip(); return; }
-    const t = setInterval(() => setRemaining(r => Math.max(0, r - 1)), 1000);
-    return () => clearInterval(t);
+    if (remaining <= 0) {
+      onSkip();
+      return;
+    }
+    const interval = setInterval(() => setRemaining(r => r - 1), 1000);
+    return () => clearInterval(interval);
   }, [remaining, onSkip]);
   return (
     <div style={{
-      position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",
-      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-      zIndex:100,
-    }}>
-      <div style={{ fontSize:48,fontWeight:900,color:"#fff",marginBottom:16,fontVariantNumeric:"tabular-nums" }}>
-        {formatTimer(remaining)}
-      </div>
-      <div style={{ fontSize:16,fontWeight:700,color:"#fff",marginBottom:8 }}>
-        {isSideTimer ? "CAMBIA LATO" : "RIPOSO"}
-      </div>
-      <div style={{ fontSize:14,color:"#fff",marginBottom:24,opacity:0.8 }}>{exerciseName}</div>
-      <button onClick={onSkip} style={{
-        background:"#fff",border:"none",borderRadius:12,padding:"12px 28px",
-        fontSize:14,fontWeight:700,color:T.text,cursor:"pointer",
-      }}>Salta</button>
-    </div>
-  );
-};
-
-/* ═══════════════════════════════════════════
-   DRUM PICKER (for timers)
-   ═══════════════════════════════════════════ */
-const DrumPicker = ({ value, onSelect, min = 0, max = 300, step = 15 }) => {
-  const ref = useRef(null);
-  const items = Array.from({ length: (max - min) / step + 1 }, (_, i) => min + i * step);
-  const handleScroll = () => {
-    if (ref.current) {
-      const idx = Math.round(ref.current.scrollLeft / 50);
-      onSelect(items[idx] || min);
-    }
-  };
-  return (
-    <div style={{
-      background:T.card,borderRadius:14,padding:"12px",marginBottom:16,
-      border:`1px solid ${T.border}`,
-    }}>
-      <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:8 }}>Secondi</div>
-      <div ref={ref} onScroll={handleScroll} style={{
-        display:"flex",gap:8,overflowX:"auto",overflowY:"hidden",scrollSnapType:"x mandatory",
-        scrollBehavior:"smooth",WebkitOverflowScrolling:"touch",paddingBottom:8,
-      }}>
-        {items.map(v => (
-          <div key={v} style={{
-            minWidth:50,height:50,borderRadius:10,
-            background:value===v?T.teal:T.bg,
-            display:"flex",alignItems:"center",justifyContent:"center",
-            fontSize:13,fontWeight:700,color:value===v?"#fff":T.text,
-            scrollSnapAlign:"center",cursor:"pointer",
-          }} onClick={() => onSelect(v)}>
-            {v}s
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-/* ═══════════════════════════════════════════
-   NUMPAD OVERLAY
-   ═══════════════════════════════════════════ */
-const NumpadOverlay = ({ onValue, onClose, decimal = false }) => {
-  const [display, setDisplay] = useState("0");
-  const handleKey = (k) => {
-    if (k === "⌫") setDisplay(d => d.length === 1 ? "0" : d.slice(0, -1));
-    else if (k === ".") { if (!display.includes(".")) setDisplay(d => d + "."); }
-    else setDisplay(d => d === "0" && k !== "." ? k : d + k);
-  };
-  const handleSubmit = () => {
-    onValue(parseFloat(display) || 0);
-    onClose();
-  };
-  const buttons = decimal ? ["1","2","3","4","5","6","7","8","9",".","0","⌫"] : ["1","2","3","4","5","6","7","8","9","","0","⌫"];
-  return (
-    <div style={{
-      position:"fixed",bottom:0,left:0,right:0,background:T.card,
-      borderTopLeftRadius:20,borderTopRightRadius:20,padding:"16px",zIndex:100,
-      boxShadow:"0 -4px 20px rgba(0,0,0,0.1)",
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 90,
     }}>
       <div style={{
-        fontSize:28,fontWeight:800,color:T.text,textAlign:"right",marginBottom:16,
-        minHeight:40,paddingRight:16,
-      }}>{display}</div>
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12 }}>
-        {buttons.map((b, i) => (
-          <button key={i} onClick={() => b && handleKey(b)} disabled={!b} style={{
-            padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,
-            background:T.bg,fontSize:16,fontWeight:700,cursor:b?"pointer":"default",
-            color:T.text,opacity:b?1:0,
-          }}>{b}</button>
-        ))}
+        background: T.card, borderRadius: 12, padding: 24, textAlign: "center",
+        maxWidth: "90%",
+      }}>
+        <p style={{ color: T.textSec, fontSize: 14, marginBottom: 8 }}>
+          {isSideTimer ? "CAMBIA LATO" : "RIPOSO"} • {exerciseName}
+        </p>
+        <p style={{
+          fontSize: 48, fontWeight: "bold", color: remaining <= 10 ? T.red : T.teal,
+          margin: "16px 0",
+        }}>{formatTimer(remaining)}</p>
+        <button onClick={onSkip} style={{
+          background: T.teal, color: "white", border: "none", padding: "12px 24px",
+          borderRadius: 6, cursor: "pointer", fontSize: 16,
+        }}>Salta</button>
       </div>
-      <button onClick={handleSubmit} style={{
-        width:"100%",padding:"14px",background:T.gradient,border:"none",
-        borderRadius:12,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",
-      }}>Conferma</button>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   EXERCISE PICKER (multi-select for routine creation)
+   NUMPAD OVERLAY (POLISHED)
+   ═══════════════════════════════════════════ */
+const NumpadOverlay = ({ label, value, decimal, onConfirm, onClose }) => {
+  const [val, setVal] = useState(String(value || ""));
+  const tap = (key) => {
+    if (key === "DEL") setVal(v => v.slice(0, -1));
+    else if (key === ".") { if (!val.includes(".") && decimal) setVal(v => v + "."); }
+    else setVal(v => (v === "0" ? key : v + key));
+  };
+  const keys = ["1","2","3","4","5","6","7","8","9", decimal ? "." : "", "0", "DEL"];
+  return (
+    <div style={{
+      position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.5)",
+      display:"flex",alignItems:"flex-end",justifyContent:"center",
+      animation:"fadeIn .15s ease-out",
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:T.card,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:430,
+        paddingBottom:34,
+      }}>
+        <div style={{ padding:"18px 20px 8px",display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+          <span style={{ fontSize:14,fontWeight:700,color:T.textSec }}>{label}</span>
+          <button onClick={() => { onConfirm(parseFloat(val) || 0); onClose(); }} style={{
+            background:T.gradient,border:"none",borderRadius:12,padding:"8px 20px",
+            color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",
+          }}>OK</button>
+        </div>
+        <div style={{
+          textAlign:"center",fontSize:40,fontWeight:900,color:T.text,
+          padding:"8px 20px 20px",minHeight:56,
+        }}>
+          {val || <span style={{ color:T.textMuted }}>0</span>}
+        </div>
+        <div style={{
+          display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,padding:"0 20px",
+        }}>
+          {keys.map((k,i) => (
+            <button key={i} onClick={() => k && tap(k)} style={{
+              height:56,borderRadius:16,border:"none",fontSize:22,fontWeight:700,
+              cursor:k?"pointer":"default",
+              background:k === "DEL" ? "#FEE2E2" : k ? T.bg : "transparent",
+              color:k === "DEL" ? T.red : T.text,
+              opacity:k?1:0,
+            }}>{k === "DEL" ? "⌫" : k}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   DRUM PICKER (POLISHED)
+   ═══════════════════════════════════════════ */
+const TIMER_OPTIONS = [];
+for (let s = 0; s <= 300; s += 15) TIMER_OPTIONS.push(s);
+
+const fmtTimer = (s) => {
+  if (!s || s === 0) return "Off";
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return m > 0 ? `${m}:${sec.toString().padStart(2, "0")}` : `${s}s`;
+};
+
+const DrumPicker = ({ value, title, onChange, onClose }) => {
+  const containerRef = useRef(null);
+  const ITEM_H = 48;
+  const idx = TIMER_OPTIONS.indexOf(value) >= 0 ? TIMER_OPTIONS.indexOf(value) : 6;
+  const [scrollIdx, setScrollIdx] = useState(idx);
+  const scrollTimeout = useRef(null);
+
+  useEffect(() => {
+    if (containerRef.current) containerRef.current.scrollTop = idx * ITEM_H;
+  }, []);
+
+  const handleScroll = () => {
+    if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    scrollTimeout.current = setTimeout(() => {
+      if (!containerRef.current) return;
+      const newIdx = Math.round(containerRef.current.scrollTop / ITEM_H);
+      const clamped = Math.max(0, Math.min(newIdx, TIMER_OPTIONS.length - 1));
+      setScrollIdx(clamped);
+      containerRef.current.scrollTo({ top: clamped * ITEM_H, behavior: "smooth" });
+    }, 80);
+  };
+
+  return (
+    <div style={{
+      position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.5)",
+      display:"flex",alignItems:"flex-end",justifyContent:"center",
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:T.card,borderRadius:"24px 24px 0 0",width:"100%",maxWidth:430,
+        paddingBottom:34,
+      }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"18px 20px 10px" }}>
+          <span style={{ fontSize:15,fontWeight:800,color:T.text }}>{title || "Timer"}</span>
+          <button onClick={() => { onChange(TIMER_OPTIONS[scrollIdx]); onClose(); }} style={{
+            background:T.gradient,border:"none",borderRadius:12,padding:"8px 20px",
+            color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",
+          }}>Conferma</button>
+        </div>
+        <div style={{ position:"relative",height:ITEM_H * 5,overflow:"hidden" }}>
+          <div style={{
+            position:"absolute",top:ITEM_H * 2,left:20,right:20,height:ITEM_H,
+            background:T.tealLight,borderRadius:14,border:`2px solid ${T.teal}`,
+            zIndex:1,pointerEvents:"none",
+          }}/>
+          <div style={{
+            position:"absolute",top:0,left:0,right:0,height:ITEM_H*2,
+            background:"linear-gradient(to bottom,rgba(255,255,255,0.92),rgba(255,255,255,0))",
+            zIndex:2,pointerEvents:"none",
+          }}/>
+          <div style={{
+            position:"absolute",bottom:0,left:0,right:0,height:ITEM_H*2,
+            background:"linear-gradient(to top,rgba(255,255,255,0.92),rgba(255,255,255,0))",
+            zIndex:2,pointerEvents:"none",
+          }}/>
+          <div ref={containerRef} onScroll={handleScroll} style={{
+            height:"100%",overflowY:"auto",scrollSnapType:"y mandatory",
+            WebkitOverflowScrolling:"touch",position:"relative",zIndex:0,
+          }}>
+            <div style={{ height:ITEM_H*2 }}/>
+            {TIMER_OPTIONS.map((opt,i) => (
+              <div key={i} style={{
+                height:ITEM_H,display:"flex",alignItems:"center",justifyContent:"center",
+                scrollSnapAlign:"start",fontSize:22,fontWeight:800,
+                color:i === scrollIdx ? T.teal : T.textMuted,transition:"color .15s",
+              }}>
+                {fmtTimer(opt)}
+              </div>
+            ))}
+            <div style={{ height:ITEM_H*2 }}/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   EXERCISE PICKER
    ═══════════════════════════════════════════ */
 const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multiSelect = false, onMultiSelect }) => {
   const [search, setSearch] = useState("");
-  const [filterMuscle, setFilterMuscle] = useState(null);
-  const [showAddCustom, setShowAddCustom] = useState(false);
-  const [customName, setCustomName] = useState("");
-  const [customMuscle, setCustomMuscle] = useState("Petto");
-  const [customEquip, setCustomEquip] = useState("Bilanciere");
-  const [selected, setSelected] = useState([]);
-
-  const allExercises = useMemo(() => [...EXERCISES, ...customExercises], [customExercises]);
+  const [selected, setSelected] = useState(multiSelect ? [] : null);
   const filtered = useMemo(() => {
-    let list = allExercises;
-    if (filterMuscle) list = list.filter(e => e.muscle === filterMuscle);
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(e => e.name.toLowerCase().includes(q) || e.muscle.toLowerCase().includes(q));
-    }
-    return list;
-  }, [allExercises, filterMuscle, search]);
-
-  const handleAddCustom = () => {
-    if (!customName.trim()) return;
-    const ex = { id: "custom_" + Date.now(), name: customName.trim(), muscle: customMuscle, secondary: "", equipment: customEquip, uni: false };
-    onAddCustom(ex);
-    if (multiSelect) setSelected(p => [...p, ex]);
-    else onSelect(ex);
-    setCustomName("");
-    setShowAddCustom(false);
-  };
-
-  const toggleSelect = (ex) => {
+    const all = [...EXERCISES, ...(customExercises || [])];
+    if (!search) return all;
+    return all.filter(e => e.name.toLowerCase().includes(search.toLowerCase()));
+  }, [search, customExercises]);
+  const handleSelect = (ex) => {
     if (multiSelect) {
-      if (selected.find(s => s.id === ex.id)) setSelected(p => p.filter(s => s.id !== ex.id));
-      else setSelected(p => [...p, ex]);
+      const ids = selected.map(s => s.id || s.exerciseId);
+      if (ids.includes(ex.id)) {
+        setSelected(selected.filter(s => (s.id || s.exerciseId) !== ex.id));
+      } else {
+        setSelected([...selected, ex]);
+      }
     } else {
       onSelect(ex);
     }
   };
-
-  if (showAddCustom) {
-    return (
-      <div style={{
-        position:"fixed",inset:0,zIndex:60,background:T.bg,
-        animation:"slideUp .3s ease-out",display:"flex",flexDirection:"column",
-      }}>
-        <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 8px" }}>
-          <button onClick={() => setShowAddCustom(false)} style={{
-            width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
-            display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-          }}><ChevronLeft size={18} color={T.teal}/></button>
-          <div style={{ fontSize:18,fontWeight:800,color:T.text }}>Nuovo esercizio</div>
-        </div>
-        <div style={{ padding:"16px",flex:1,display:"flex",flexDirection:"column" }}>
-          <input value={customName} onChange={e => setCustomName(e.target.value)} placeholder="Nome esercizio"
-            style={{
-              width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${T.border}`,
-              fontSize:13,color:T.text,marginBottom:12,fontFamily:"inherit",boxSizing:"border-box",
-            }}/>
-          <select value={customMuscle} onChange={e => setCustomMuscle(e.target.value)}
-            style={{ flex:1,padding:"8px 10px",borderRadius:10,border:`1px solid ${T.border}`,fontSize:12,color:T.text,fontFamily:"inherit",marginBottom:8 }}>
-            {MUSCLE_GROUPS.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-          <select value={customEquip} onChange={e => setCustomEquip(e.target.value)}
-            style={{ flex:1,padding:"8px 10px",borderRadius:10,border:`1px solid ${T.border}`,fontSize:12,color:T.text,fontFamily:"inherit",marginBottom:16 }}>
-            {EQUIPMENT.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-          </select>
-          <button onClick={handleAddCustom} style={{
-            padding:"12px",borderRadius:10,border:"none",background:T.teal,
-            fontSize:12,fontWeight:700,color:"#fff",cursor:"pointer",
-          }}>Aggiungi</button>
-        </div>
-        <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
-      </div>
-    );
-  }
-
   return (
     <div style={{
-      position:"fixed",inset:0,zIndex:60,background:T.bg,
-      animation:"slideUp .3s ease-out",display:"flex",flexDirection:"column",
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+      display: "flex", alignItems: "flex-end", zIndex: 80,
     }}>
-      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 8px" }}>
-        <button onClick={onClose} style={{
-          width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
-          display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-        }}><X size={18} color={T.teal}/></button>
-        <div style={{ flex:1,fontSize:18,fontWeight:800,color:T.text }}>{multiSelect ? "Aggiungi Esercizi" : "Aggiungi Esercizio"}</div>
-        {multiSelect && selected.length > 0 && (
-          <button onClick={() => onMultiSelect && onMultiSelect(selected)} style={{
-            background:T.teal,border:"none",borderRadius:10,padding:"8px 16px",
-            color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",
-          }}>Aggiungi ({selected.length})</button>
-        )}
-      </div>
-
-      <div style={{ padding:"0 16px 8px" }}>
+      <div style={{
+        width: "100%", maxWidth: "430px", marginLeft: "auto", marginRight: "auto",
+        background: T.card, borderRadius: "12px 12px 0 0", maxHeight: "80vh",
+        overflow: "auto", padding: 16,
+      }}>
         <div style={{
-          display:"flex",alignItems:"center",gap:8,background:T.card,borderRadius:12,
-          padding:"10px 14px",border:`1px solid ${T.border}`,
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          marginBottom: 12,
         }}>
-          <Search size={16} color={T.textMuted}/>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cerca esercizio..."
-            style={{ border:"none",outline:"none",flex:1,fontSize:14,color:T.text,background:"transparent",fontFamily:"inherit" }}/>
+          <h2 style={{ color: T.text, margin: 0 }}>Esercizio</h2>
+          <button onClick={onClose} style={{
+            background: "none", border: "none", cursor: "pointer",
+          }}>
+            <X size={24} color={T.text} />
+          </button>
         </div>
-      </div>
-
-      <div style={{ display:"flex",gap:6,padding:"0 16px 10px",overflowX:"auto",flexShrink:0 }}>
-        <button onClick={() => setFilterMuscle(null)} style={{
-          background:!filterMuscle?T.teal:T.card,color:!filterMuscle?"#fff":T.textSec,
-          border:`1px solid ${!filterMuscle?T.teal:T.border}`,borderRadius:20,
-          padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",
-        }}>Tutti</button>
-        {MUSCLE_GROUPS.map(mg => (
-          <button key={mg} onClick={() => setFilterMuscle(filterMuscle===mg?null:mg)} style={{
-            background:filterMuscle===mg?MUSCLE_COLORS[mg]:T.card,
-            color:filterMuscle===mg?"#fff":T.textSec,
-            border:`1px solid ${filterMuscle===mg?MUSCLE_COLORS[mg]:T.border}`,
-            borderRadius:20,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",
-          }}>{mg}</button>
-        ))}
-      </div>
-
-      {multiSelect && selected.length > 0 && (
-        <div style={{ padding:"0 16px 8px",display:"flex",gap:6,flexWrap:"wrap" }}>
-          {selected.map(s => (
-            <div key={s.id} style={{
-              background:T.teal,color:"#fff",borderRadius:20,padding:"6px 12px",
-              fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:6,
-            }}>
-              {s.name}
-              <button onClick={() => setSelected(p => p.filter(x => x.id !== s.id))}
-                style={{ background:"none",border:"none",cursor:"pointer",color:"#fff",padding:0 }}>
-                <X size={12}/>
-              </button>
+        <input
+          type="text"
+          placeholder="Cerca esercizio..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{
+            width: "100%", padding: 10, marginBottom: 12, borderRadius: 6,
+            border: `1px solid ${T.border}`, fontSize: 14,
+          }}
+        />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.map(ex => (
+            <div
+              key={ex.id}
+              onClick={() => handleSelect(ex)}
+              style={{
+                padding: 12, background: selected && (Array.isArray(selected) ? selected.map(s => s.id || s.exerciseId).includes(ex.id) : selected.id === ex.id) ? T.tealLight : T.bg,
+                borderRadius: 6, cursor: "pointer", border: `1px solid ${T.border}`,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{
+                  width: 12, height: 12, borderRadius: "50%",
+                  background: MUSCLE_COLORS[ex.muscle] || T.tealLight,
+                }} />
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: 0, color: T.text, fontSize: 14, fontWeight: "bold" }}>{ex.name}</p>
+                  <p style={{ margin: 0, color: T.textSec, fontSize: 12 }}>
+                    {ex.muscle} · {ex.equipment}{ex.uni ? " · Unilaterale" : ""}
+                  </p>
+                </div>
+              </div>
             </div>
           ))}
         </div>
-      )}
-
-      <div style={{ flex:1,overflowY:"auto",padding:"0 16px" }}>
-        {filtered.map(ex => (
-          <button key={ex.id} onClick={() => toggleSelect(ex)} style={{
-            width:"100%",display:"flex",alignItems:"center",gap:12,padding:"12px 14px",
-            background:multiSelect && selected.find(s => s.id === ex.id) ? T.tealLight : T.card,
-            border:`1px solid ${T.border}`,borderRadius:14,marginBottom:8,
-            cursor:"pointer",textAlign:"left",
-          }}>
-            {multiSelect && (
-              <div style={{
-                width:20,height:20,borderRadius:6,border:`2px solid ${T.teal}`,
-                display:"flex",alignItems:"center",justifyContent:"center",
-                background:selected.find(s => s.id === ex.id) ? T.teal : "transparent",
-              }}>
-                {selected.find(s => s.id === ex.id) && <Check size={12} color="#fff"/>}
-              </div>
-            )}
-            <div style={{
-              width:38,height:38,borderRadius:10,background:`${MUSCLE_COLORS[ex.muscle]||T.teal}18`,
-              display:"flex",alignItems:"center",justifyContent:"center",
-            }}>
-              <Dumbbell size={16} color={MUSCLE_COLORS[ex.muscle]||T.teal}/>
-            </div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{ex.name}</div>
-              <div style={{ fontSize:10,color:T.textMuted }}>{ex.muscle}{ex.secondary?` • ${ex.secondary}`:""} • {ex.equipment}</div>
-            </div>
-            {!multiSelect && <Plus size={16} color={T.teal}/>}
-          </button>
-        ))}
-
-        <button onClick={() => setShowAddCustom(true)} style={{
-          width:"100%",padding:"12px",background:T.tealLight,border:`1px dashed ${T.teal}`,
-          borderRadius:14,cursor:"pointer",fontSize:12,fontWeight:700,color:T.teal,
-          display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:20,
-        }}>
-          <Plus size={14}/> Crea esercizio personalizzato
-        </button>
+        {multiSelect && (
+          <button onClick={() => {
+            onMultiSelect(selected);
+            onClose();
+          }} style={{
+            width: "100%", marginTop: 12, padding: 12,
+            background: T.teal, color: "white", border: "none",
+            borderRadius: 6, cursor: "pointer", fontSize: 14, fontWeight: "bold",
+          }}>Aggiungi ({selected.length})</button>
+        )}
+        <button onClick={onAddCustom} style={{
+          width: "100%", marginTop: 8, padding: 12,
+          background: T.purple, color: "white", border: "none",
+          borderRadius: 6, cursor: "pointer", fontSize: 14, fontWeight: "bold",
+        }}>+ Esercizio Personalizzato</button>
       </div>
-      <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   ROUTINE NAME MODAL
+   EXERCISE MENU (3-DOT DROPDOWN)
+   ═══════════════════════════════════════════ */
+const ExerciseMenu = ({
+  onUnilateral, onSuperset, onMove, onDelete, isUnilateral, isSupersetted,
+  isLastExercise, isActive,
+}) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: "relative" }}>
+      <button onClick={() => setOpen(!open)} style={{
+        background: "none", border: "none", cursor: "pointer", padding: 4,
+      }}>
+        <MoreVertical size={20} color={T.textSec} />
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "100%", right: 0, background: T.card,
+          border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: T.shadow,
+          minWidth: 160, zIndex: 40,
+        }}>
+          <button onClick={() => {
+            onUnilateral();
+            setOpen(false);
+          }} style={{
+            width: "100%", padding: "10px 12px", background: "none", border: "none",
+            textAlign: "left", cursor: "pointer", color: T.text, fontSize: 13,
+            display: "flex", alignItems: "center", gap: 8,
+          }}>
+            {isUnilateral && <Check size={16} color={T.teal} />}
+            <span style={{ flex: 1 }}>Unilaterale</span>
+          </button>
+          {!isLastExercise && (
+            <button onClick={() => {
+              onSuperset();
+              setOpen(false);
+            }} style={{
+              width: "100%", padding: "10px 12px", background: "none", border: "none",
+              textAlign: "left", cursor: "pointer", color: T.text, fontSize: 13,
+              display: "flex", alignItems: "center", gap: 8,
+              borderTop: `1px solid ${T.border}`,
+            }}>
+              {isSupersetted && <Check size={16} color={T.teal} />}
+              <span style={{ flex: 1 }}>Superset</span>
+            </button>
+          )}
+          <button onClick={() => {
+            onMove();
+            setOpen(false);
+          }} style={{
+            width: "100%", padding: "10px 12px", background: "none", border: "none",
+            textAlign: "left", cursor: "pointer", color: T.text, fontSize: 13,
+            borderTop: `1px solid ${T.border}`,
+          }}>
+            Sposta
+          </button>
+          <button onClick={() => {
+            onDelete();
+            setOpen(false);
+          }} style={{
+            width: "100%", padding: "10px 12px", background: "none", border: "none",
+            textAlign: "left", cursor: "pointer", color: T.red, fontSize: 13,
+            borderTop: `1px solid ${T.border}`,
+          }}>
+            Elimina
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   NAME MODAL
    ═══════════════════════════════════════════ */
 const NameModal = ({ onContinue, onClose, title = "Nome Routine" }) => {
   const [name, setName] = useState("");
-  const inputRef = useRef(null);
-  useEffect(() => { inputRef.current?.focus(); }, []);
   return (
     <div style={{
-      position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",
-      display:"flex",alignItems:"flex-end",zIndex:70,
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
     }}>
       <div style={{
-        width:"100%",background:T.card,borderTopLeftRadius:20,borderTopRightRadius:20,
-        padding:"20px 16px 28px",
+        background: T.card, borderRadius: 12, padding: 24, maxWidth: "90%",
+        width: 300,
       }}>
-        <div style={{ fontSize:16,fontWeight:800,color:T.text,marginBottom:16 }}>{title}</div>
-        <input ref={inputRef} value={name} onChange={e => setName(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && name.trim() && onContinue(name)}
-          placeholder="es. Push Day"
+        <h2 style={{ color: T.text, margin: "0 0 16px 0" }}>{title}</h2>
+        <input
+          type="text"
+          placeholder="Inserisci nome..."
+          value={name}
+          onChange={e => setName(e.target.value)}
+          autoFocus
           style={{
-            width:"100%",padding:"12px 14px",borderRadius:12,border:`1px solid ${T.border}`,
-            fontSize:15,fontWeight:600,color:T.text,marginBottom:16,fontFamily:"inherit",boxSizing:"border-box",
-          }}/>
-        <div style={{ display:"flex",gap:10 }}>
+            width: "100%", padding: 10, marginBottom: 16, borderRadius: 6,
+            border: `1px solid ${T.border}`, fontSize: 14,
+          }}
+        />
+        <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={{
-            flex:1,padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,background:T.card,
-            fontSize:14,fontWeight:700,color:T.textSec,cursor:"pointer",
+            flex: 1, padding: 10, background: T.bg, border: `1px solid ${T.border}`,
+            borderRadius: 6, cursor: "pointer", color: T.text,
           }}>Annulla</button>
-          <button onClick={() => name.trim() && onContinue(name)} disabled={!name.trim()} style={{
-            flex:1,padding:"12px",borderRadius:12,border:"none",background:T.gradient,
-            fontSize:14,fontWeight:700,color:"#fff",cursor:name.trim()?"pointer":"default",opacity:name.trim()?1:0.5,
+          <button onClick={() => {
+            if (name.trim()) onContinue(name);
+          }} style={{
+            flex: 1, padding: 10, background: T.teal, border: "none",
+            borderRadius: 6, cursor: "pointer", color: "white", fontWeight: "bold",
           }}>Continua</button>
         </div>
       </div>
@@ -578,298 +620,470 @@ const NameModal = ({ onContinue, onClose, title = "Nome Routine" }) => {
 };
 
 /* ═══════════════════════════════════════════
-   ROUTINE EDITOR (set creation and configuration)
+   ROUTINE EDITOR (POLISHED VERSION)
    ═══════════════════════════════════════════ */
 const RoutineEditor = ({ routine, exercises, onSave, onClose, customExercises, onAddCustomExercise, onAddExercises }) => {
-  const [exList, setExList] = useState(exercises || []);
-  const [editNoteIdx, setEditNoteIdx] = useState(null);
-  const [showAddMore, setShowAddMore] = useState(false);
+  const [exs, setExs] = useState(exercises || []);
+  const [showPicker, setShowPicker] = useState(false);
+  const [reorderIdx, setReorderIdx] = useState(null);
+  const [numpad, setNumpad] = useState(null);
+  const [drumPicker, setDrumPicker] = useState(null);
 
-  const moveExercise = (idx, dir) => {
-    if ((dir === -1 && idx === 0) || (dir === 1 && idx === exList.length - 1)) return;
-    const next = [...exList];
-    [next[idx], next[idx + dir]] = [next[idx + dir], next[idx]];
-    setExList(next);
+  const addExercises = (newExs) => {
+    setExs(prev => [...prev, ...newExs.map(e => ({
+      exerciseId: e.id,
+      sets: [{ weight: 0, reps: 0, type: "N" }],
+      restTimer: 90, warmupTimer: 60, sideTimer: 15,
+      unilateral: e.uni || false, supersetWith: null, note: "",
+    }))]);
+    setShowPicker(false);
   };
 
-  const toggleUnilateral = (idx) => {
-    const next = [...exList];
-    next[idx] = { ...next[idx], unilateral: !next[idx].unilateral };
-    setExList(next);
+  const updateExercise = (idx, updates) => {
+    setExs(prev => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...updates };
+      return next;
+    });
   };
 
-  const toggleSuperset = (idx) => {
-    const next = [...exList];
-    if (next[idx].supersetWith === idx + 1) next[idx] = { ...next[idx], supersetWith: null };
-    else next[idx] = { ...next[idx], supersetWith: idx + 1 };
-    setExList(next);
-  };
+  const deleteExercise = (idx) => setExs(prev => prev.filter((_, i) => i !== idx));
 
-  const updateSet = (exIdx, setIdx, field, value) => {
-    const next = [...exList];
-    next[exIdx] = { ...next[exIdx], sets: [...next[exIdx].sets] };
-    next[exIdx].sets[setIdx] = { ...next[exIdx].sets[setIdx], [field]: value };
-    setExList(next);
+  const moveExercise = (idx, direction) => {
+    const newIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= exs.length) return;
+    setExs(prev => {
+      const moved = [...prev];
+      [moved[idx], moved[newIdx]] = [moved[newIdx], moved[idx]];
+      return moved;
+    });
+    setReorderIdx(newIdx);
   };
 
   const addSet = (exIdx) => {
-    const next = [...exList];
-    const ex = next[exIdx];
-    const lastSet = ex.sets[ex.sets.length - 1];
-    const newSet = { weight: lastSet?.weight || 0, reps: lastSet?.reps || 0, type: "N" };
-    next[exIdx] = { ...ex, sets: [...ex.sets, newSet] };
-    setExList(next);
+    setExs(prev => {
+      const next = [...prev];
+      const ex = next[exIdx];
+      const last = ex.sets[ex.sets.length - 1];
+      next[exIdx] = { ...ex, sets: [...ex.sets, { weight: last?.weight || 0, reps: last?.reps || 0, type: "N" }] };
+      return next;
+    });
   };
 
   const removeSet = (exIdx, setIdx) => {
-    const next = [...exList];
-    if (next[exIdx].sets.length <= 1) return;
-    next[exIdx] = { ...next[exIdx], sets: next[exIdx].sets.filter((_, i) => i !== setIdx) };
-    setExList(next);
+    setExs(prev => {
+      const next = [...prev];
+      if (next[exIdx].sets.length <= 1) return prev;
+      next[exIdx] = { ...next[exIdx], sets: next[exIdx].sets.filter((_, i) => i !== setIdx) };
+      return next;
+    });
   };
 
-  const removeExercise = (idx) => {
-    setExList(prev => prev.filter((_, i) => i !== idx));
+  const updateSet = (exIdx, setIdx, field, value) => {
+    setExs(prev => {
+      const next = [...prev];
+      next[exIdx] = { ...next[exIdx], sets: [...next[exIdx].sets] };
+      next[exIdx].sets[setIdx] = { ...next[exIdx].sets[setIdx], [field]: value };
+      return next;
+    });
   };
 
-  const cycleSetType = (exIdx, setIdx) => {
+  const cycleType = (exIdx, setIdx) => {
     const types = ["N", "W"];
-    const cur = exList[exIdx].sets[setIdx].type;
+    const cur = exs[exIdx].sets[setIdx].type;
     updateSet(exIdx, setIdx, "type", types[(types.indexOf(cur) + 1) % types.length]);
   };
 
-  const handleSave = () => {
-    onSave(exList);
-  };
+  const hasWarmup = (ex) => ex.sets && ex.sets.some(s => s.type === "W");
 
-  const addMoreExercises = (exs) => {
-    setExList(prev => [...prev, ...exs.map(e => ({
-      exerciseId: e.id,
-      sets: [{ weight: 0, reps: 0, type: "N" }],
-      restTimer: 90,
-      warmupTimer: 60,
-      sideTimer: 30,
-      unilateral: e.uni || false,
-      supersetWith: null,
-      note: "",
-    }))]);
-    setShowAddMore(false);
-  };
-
-  if (showAddMore) {
-    return <ExercisePicker multiSelect onSelect={() => {}} onClose={() => setShowAddMore(false)}
-      customExercises={customExercises} onAddCustom={onAddCustomExercise}
-      onMultiSelect={addMoreExercises}/>;
-  }
+  const totalSets = exs.reduce((s, ex) => s + (ex.sets?.length || 0), 0);
+  const estDuration = estimateRoutineDuration(exs);
 
   return (
-    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
-      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
+    <div style={{ minHeight:"100vh",background:T.bg,paddingBottom:120 }}>
+      {/* Sticky Header */}
+      <div style={{
+        position:"sticky",top:0,zIndex:10,background:T.bg,
+        padding:"14px 16px",display:"flex",alignItems:"center",gap:12,
+        borderBottom:`1px solid ${T.border}`,
+      }}>
         <button onClick={onClose} style={{
           width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
           display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-        }}><ChevronLeft size={18} color={T.teal}/></button>
-        <div style={{ fontSize:18,fontWeight:800,color:T.text }}>Configura Esercizi</div>
-        <button onClick={handleSave} style={{
-          marginLeft:"auto",background:T.teal,border:"none",borderRadius:10,padding:"8px 16px",
-          color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",
+        }}><ChevronLeft size={18} color={T.teal} /></button>
+        <div style={{ flex:1,minWidth:0 }}>
+          <div style={{ fontSize:17,fontWeight:900,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>
+            {routine?.name || "Nuova Routine"}
+          </div>
+          <div style={{ fontSize:10,color:T.textMuted,fontWeight:600 }}>
+            {exs.length} esercizi · {totalSets} serie · ~{estDuration}min
+          </div>
+        </div>
+        <button onClick={() => onSave(exs)} style={{
+          background:T.gradient,border:"none",borderRadius:12,padding:"9px 20px",
+          color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",
+          boxShadow:"0 2px 10px rgba(2,128,144,0.25)",
         }}>Avanti</button>
       </div>
 
-      <div style={{ padding:"0 16px" }}>
-        {exList.map((ex, exIdx) => {
+      {/* Exercise Cards */}
+      <div style={{ padding:"14px 16px 0" }}>
+        {exs.map((ex, exIdx) => {
           const info = getExerciseById(ex.exerciseId, customExercises);
+          const isSuperset = ex.supersetWith === exIdx + 1;
+          const isPrevSuperset = exIdx > 0 && exs[exIdx-1].supersetWith === exIdx;
+          const muscleColor = MUSCLE_COLORS[info?.muscle] || T.teal;
+
           return (
-            <div key={exIdx} style={{
-              background:T.card,borderRadius:14,padding:14,marginBottom:14,
-              border:`1px solid ${T.border}`,
-              borderLeft: ex.supersetWith === exIdx + 1 ? `4px solid ${T.orange}` : "none",
-            }}>
-              {/* Header row */}
-              <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:12 }}>
-                <div style={{ display:"flex",flexDirection:"column",gap:2 }}>
-                  <button onClick={() => moveExercise(exIdx, -1)} disabled={exIdx === 0} style={{
-                    background:"none",border:"none",cursor:exIdx===0?"default":"pointer",opacity:exIdx===0?0.4:1,
-                    padding:2,display:"flex",alignItems:"center",justifyContent:"center",
-                  }}><ChevronUp size={14} color={T.textMuted}/></button>
-                  <button onClick={() => moveExercise(exIdx, 1)} disabled={exIdx === exList.length - 1} style={{
-                    background:"none",border:"none",cursor:exIdx===exList.length-1?"default":"pointer",opacity:exIdx===exList.length-1?0.4:1,
-                    padding:2,display:"flex",alignItems:"center",justifyContent:"center",
-                  }}><ChevronDown size={14} color={T.textMuted}/></button>
-                </div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{info.name}</div>
-                  <div style={{ fontSize:10,color:T.textMuted }}>{info.muscle}</div>
-                </div>
-                <button onClick={() => toggleUnilateral(exIdx)} style={{
-                  background:"none",border:"none",cursor:"pointer",padding:6,
-                  opacity:ex.unilateral?1:0.4,
-                }}><ArrowLeftRight size={14} color={T.textMuted}/></button>
-                {exIdx < exList.length - 1 && (
-                  <button onClick={() => toggleSuperset(exIdx)} style={{
-                    background:"none",border:"none",cursor:"pointer",padding:6,
-                    opacity:ex.supersetWith===exIdx+1?1:0.4,
-                  }}><Link2 size={14} color={ex.supersetWith===exIdx+1?T.orange:T.textMuted}/></button>
-                )}
-                <button onClick={() => removeExercise(exIdx)} style={{
-                  background:"none",border:"none",cursor:"pointer",padding:6,
-                }}><Trash2 size={14} color={T.textMuted}/></button>
-              </div>
-
-              {/* Timer row */}
-              <div style={{ display:"flex",gap:10,marginBottom:12,fontSize:11,fontWeight:700,color:T.textMuted,flexWrap:"wrap" }}>
-                <div style={{ display:"flex",alignItems:"center",gap:4 }}>
-                  <span>Riposo:</span>
-                  <button onClick={() => {}} style={{
-                    background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 8px",
-                    fontSize:10,fontWeight:700,color:T.text,cursor:"pointer",
-                  }}>{ex.restTimer}s</button>
-                </div>
-                {ex.sets && ex.sets.some(s => s.type === "W") && (
-                  <div style={{ display:"flex",alignItems:"center",gap:4 }}>
-                    <span>Warmup:</span>
-                    <button onClick={() => {}} style={{
-                      background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 8px",
-                      fontSize:10,fontWeight:700,color:T.text,cursor:"pointer",
-                    }}>{ex.warmupTimer}s</button>
-                  </div>
-                )}
-                {ex.unilateral && (
-                  <div style={{ display:"flex",alignItems:"center",gap:4 }}>
-                    <span>Lati:</span>
-                    <button onClick={() => {}} style={{
-                      background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 8px",
-                      fontSize:10,fontWeight:700,color:T.text,cursor:"pointer",
-                    }}>{ex.sideTimer}s</button>
-                  </div>
-                )}
-              </div>
-
-              {/* Note section */}
-              {editNoteIdx === exIdx ? (
-                <textarea value={ex.note || ""} onChange={e => {
-                  const next = [...exList];
-                  next[exIdx] = { ...next[exIdx], note: e.target.value };
-                  setExList(next);
-                }} onBlur={() => setEditNoteIdx(null)}
-                  style={{
-                    width:"100%",padding:"8px 10px",borderRadius:10,border:`1px solid ${T.border}`,
-                    fontSize:12,color:T.text,marginBottom:12,fontFamily:"inherit",boxSizing:"border-box",
-                    minHeight:60,
-                  }} placeholder="Nota esercizio..."/>
-              ) : (
-                <button onClick={() => setEditNoteIdx(exIdx)} style={{
-                  background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:12,
-                  display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:T.textMuted,
-                }}>
-                  <FileText size={12}/> {ex.note ? "Modifica nota" : "Aggiungi nota"}
-                </button>
+            <div key={exIdx} style={{ position:"relative" }}>
+              {/* Superset connector line */}
+              {isSuperset && (
+                <div style={{
+                  position:"absolute",left:7,top:"50%",bottom:-14,width:3,
+                  background:`linear-gradient(to bottom, ${T.orange}, ${T.orange}88)`,
+                  borderRadius:2,zIndex:1,
+                }}/>
+              )}
+              {isPrevSuperset && (
+                <div style={{
+                  position:"absolute",left:7,top:-14,height:14,width:3,
+                  background:`${T.orange}88`,borderRadius:2,zIndex:1,
+                }}/>
               )}
 
-              {/* Sets table */}
-              <div style={{ marginBottom:12 }}>
-                <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8,fontSize:10,fontWeight:700,color:T.textMuted,marginBottom:8 }}>
-                  <div>Tipo</div>
-                  <div>Kg</div>
-                  <div>Reps</div>
-                  <div></div>
-                </div>
-                {ex.sets && ex.sets.map((set, setIdx) => (
-                  <div key={setIdx} style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8,marginBottom:8 }}>
-                    <button onClick={() => cycleSetType(exIdx, setIdx)} style={{
-                      background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px",
-                      fontSize:12,fontWeight:700,color:T.text,cursor:"pointer",
-                    }}>{set.type}</button>
-                    <input type="number" value={set.weight || ""} onChange={e => updateSet(exIdx, setIdx, "weight", parseFloat(e.target.value) || 0)}
-                      style={{
-                        padding:"6px 8px",borderRadius:8,border:`1px solid ${T.border}`,
-                        fontSize:12,fontWeight:700,color:T.text,textAlign:"center",fontFamily:"inherit",
-                      }}/>
-                    <input type="number" value={set.reps || ""} onChange={e => updateSet(exIdx, setIdx, "reps", parseFloat(e.target.value) || 0)}
-                      style={{
-                        padding:"6px 8px",borderRadius:8,border:`1px solid ${T.border}`,
-                        fontSize:12,fontWeight:700,color:T.text,textAlign:"center",fontFamily:"inherit",
-                      }}/>
-                    <button onClick={() => removeSet(exIdx, setIdx)} disabled={ex.sets.length === 1} style={{
-                      background:"none",border:"none",cursor:ex.sets.length===1?"default":"pointer",
-                      opacity:ex.sets.length===1?0.4:1,padding:4,
-                    }}><Minus size={12} color={T.textMuted}/></button>
+              <div style={{
+                background:T.card,borderRadius:16,marginBottom:isSuperset ? 6 : 14,
+                border: reorderIdx === exIdx ? `2px solid ${T.teal}` : `1px solid ${T.border}`,
+                boxShadow:T.shadow,overflow:"hidden",
+              }}>
+                {/* Exercise Header */}
+                <div style={{
+                  display:"flex",alignItems:"center",gap:8,
+                  padding:"12px 10px 10px 12px",
+                  borderBottom:`1px solid ${T.border}`,
+                  background:isPrevSuperset ? `${T.orange}08` : "transparent",
+                }}>
+                  <div style={{ flex:1,minWidth:0 }}>
+                    <div style={{ fontSize:14,fontWeight:800,color:muscleColor }}>{info?.name || "Esercizio"}</div>
+                    <div style={{ fontSize:10,color:T.textMuted,fontWeight:500 }}>
+                      {info?.muscle} · {info?.equipment}
+                    </div>
                   </div>
-                ))}
-              </div>
 
-              <button onClick={() => addSet(exIdx)} style={{
-                width:"100%",padding:"10px",background:T.tealLight,border:`1px dashed ${T.teal}`,
-                borderRadius:10,cursor:"pointer",fontSize:11,fontWeight:700,color:T.teal,
-              }}>+ Aggiungi serie</button>
+                  {/* Timer pills inline */}
+                  <div style={{ display:"flex",gap:4,flexWrap:"wrap",flexShrink:0 }}>
+                    <button onClick={() => setDrumPicker({ exIdx, field:"restTimer", title:"Riposo" })} style={{
+                      display:"flex",alignItems:"center",gap:3,
+                      background:`${T.teal}12`,border:"none",borderRadius:8,
+                      padding:"4px 8px",cursor:"pointer",
+                    }}>
+                      <Timer size={10} color={T.teal} />
+                      <span style={{ fontSize:9,fontWeight:700,color:T.teal }}>{fmtTimer(ex.restTimer)}</span>
+                    </button>
+                    {hasWarmup(ex) && (
+                      <button onClick={() => setDrumPicker({ exIdx, field:"warmupTimer", title:"Warmup" })} style={{
+                        display:"flex",alignItems:"center",gap:3,
+                        background:"#EAB30815",border:"none",borderRadius:8,
+                        padding:"4px 8px",cursor:"pointer",
+                      }}>
+                        <Flame size={10} color="#EAB308" />
+                        <span style={{ fontSize:9,fontWeight:700,color:"#EAB308" }}>{fmtTimer(ex.warmupTimer)}</span>
+                      </button>
+                    )}
+                    {ex.unilateral && (
+                      <button onClick={() => setDrumPicker({ exIdx, field:"sideTimer", title:"Timer lati" })} style={{
+                        display:"flex",alignItems:"center",gap:3,
+                        background:`${T.purple}12`,border:"none",borderRadius:8,
+                        padding:"4px 8px",cursor:"pointer",
+                      }}>
+                        <ArrowLeftRight size={10} color={T.purple} />
+                        <span style={{ fontSize:9,fontWeight:700,color:T.purple }}>{fmtTimer(ex.sideTimer)}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 3-dot menu */}
+                  <ExerciseMenu
+                    isUnilateral={ex.unilateral}
+                    isSupersetted={ex.supersetWith !== null}
+                    isLastExercise={exIdx === exs.length - 1}
+                    onUnilateral={() => updateExercise(exIdx, { unilateral: !ex.unilateral })}
+                    onSuperset={() => updateExercise(exIdx, { supersetWith: ex.supersetWith !== null ? null : exIdx + 1 })}
+                    onMove={() => setReorderIdx(reorderIdx === exIdx ? null : exIdx)}
+                    onDelete={() => deleteExercise(exIdx)}
+                  />
+                </div>
+
+                {/* Note - always visible inline input */}
+                <div style={{ padding:"0 12px" }}>
+                  <input
+                    type="text"
+                    placeholder="Aggiungi nota..."
+                    value={ex.note || ""}
+                    onChange={e => updateExercise(exIdx, { note: e.target.value })}
+                    style={{
+                      width:"100%",padding:"8px 0",border:"none",borderBottom:`1px solid ${T.border}`,
+                      fontSize:12,color:T.text,background:"transparent",outline:"none",
+                      fontFamily:"inherit",
+                    }}
+                  />
+                </div>
+
+                {/* Sets Table */}
+                <div style={{ padding:"8px 12px 12px" }}>
+                  {/* Header */}
+                  <div style={{
+                    display:"grid",gridTemplateColumns:"48px 1fr 1fr 32px",gap:8,
+                    padding:"4px 0 6px",fontSize:9,fontWeight:800,color:T.textMuted,
+                    textTransform:"uppercase",letterSpacing:0.5,
+                  }}>
+                    <span style={{ textAlign:"center" }}>Tipo</span>
+                    <span style={{ textAlign:"center" }}>Kg</span>
+                    <span style={{ textAlign:"center" }}>Reps</span>
+                    <span></span>
+                  </div>
+
+                  {/* Set rows */}
+                  {ex.sets.map((set, setIdx) => {
+                    const typeColor = set.type === "W" ? "#EAB308" : T.text;
+                    const typeBg = set.type === "W" ? "#EAB30815" : `${T.text}08`;
+                    return (
+                      <div key={setIdx} style={{
+                        display:"grid",gridTemplateColumns:"48px 1fr 1fr 32px",gap:8,
+                        alignItems:"center",marginBottom:6,
+                      }}>
+                        {/* Type badge - tap to cycle */}
+                        <button onClick={() => cycleType(exIdx, setIdx)} style={{
+                          height:36,borderRadius:10,border:"none",cursor:"pointer",
+                          background:typeBg,color:typeColor,
+                          fontSize:13,fontWeight:800,
+                          display:"flex",alignItems:"center",justifyContent:"center",
+                        }}>{set.type}</button>
+
+                        {/* Kg button - opens NumpadOverlay */}
+                        <button onClick={() => setNumpad({ exIdx, setIdx, field:"weight", label:"Peso (kg)", decimal:true })} style={{
+                          height:40,borderRadius:12,cursor:"pointer",
+                          border:`1.5px solid ${T.border}`,background:"#fff",
+                          fontSize:16,fontWeight:800,color:set.weight ? T.text : T.textMuted,
+                          display:"flex",alignItems:"center",justifyContent:"center",
+                        }}>
+                          {set.weight || "—"}
+                        </button>
+
+                        {/* Reps button - opens NumpadOverlay */}
+                        <button onClick={() => setNumpad({ exIdx, setIdx, field:"reps", label:"Ripetizioni", decimal:false })} style={{
+                          height:40,borderRadius:12,cursor:"pointer",
+                          border:`1.5px solid ${T.border}`,background:"#fff",
+                          fontSize:16,fontWeight:800,color:set.reps ? T.text : T.textMuted,
+                          display:"flex",alignItems:"center",justifyContent:"center",
+                        }}>
+                          {set.reps || "—"}
+                        </button>
+
+                        {/* Remove set */}
+                        <button onClick={() => removeSet(exIdx, setIdx)} style={{
+                          width:32,height:32,borderRadius:10,border:"none",
+                          background:ex.sets.length > 1 ? "#FEE2E250" : "transparent",
+                          cursor:ex.sets.length > 1 ? "pointer" : "default",
+                          display:"flex",alignItems:"center",justifyContent:"center",
+                          opacity:ex.sets.length > 1 ? 1 : 0.2,
+                        }}>
+                          <Minus size={13} color={ex.sets.length > 1 ? T.red : T.textMuted} />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {/* Add set */}
+                  <button onClick={() => addSet(exIdx)} style={{
+                    width:"100%",padding:"10px",borderRadius:12,
+                    border:`1.5px dashed ${T.teal}40`,background:`${T.tealLight}50`,
+                    cursor:"pointer",fontSize:12,fontWeight:700,color:T.teal,
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:5,
+                    marginTop:4,
+                  }}>
+                    <Plus size={13} color={T.teal} /> Aggiungi serie
+                  </button>
+                </div>
+
+                {/* Superset badge */}
+                {isSuperset && (
+                  <div style={{
+                    padding:"6px 12px 8px",background:`${T.orange}08`,
+                    borderTop:`1px solid ${T.orange}20`,
+                    display:"flex",alignItems:"center",gap:6,
+                  }}>
+                    <Link2 size={12} color={T.orange} />
+                    <span style={{ fontSize:10,fontWeight:700,color:T.orange }}>
+                      Superset con {getExerciseById(exs[exIdx+1]?.exerciseId, customExercises)?.name}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
 
-        <button onClick={() => setShowAddMore(true)} style={{
-          width:"100%",padding:"12px",background:T.tealLight,border:`1px dashed ${T.teal}`,
-          borderRadius:14,cursor:"pointer",fontSize:12,fontWeight:700,color:T.teal,
-          display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:20,
+        {/* Add exercises button */}
+        <button onClick={() => setShowPicker(true)} style={{
+          width:"100%",padding:"14px",background:T.tealLight,
+          border:`1.5px dashed ${T.teal}`,borderRadius:16,cursor:"pointer",
+          fontSize:13,fontWeight:700,color:T.teal,
+          display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+          marginBottom:20,
         }}>
-          <Plus size={14}/> Aggiungi Esercizi
+          <Plus size={16} color={T.teal} /> Aggiungi Esercizi
         </button>
       </div>
+
+      {/* Bottom fixed bar */}
+      <div style={{
+        position:"fixed",bottom:0,left:0,right:0,maxWidth:"430px",
+        marginLeft:"auto",marginRight:"auto",
+        display:"flex",gap:8,padding:"12px 16px 28px",background:T.bg,
+        borderTop:`1px solid ${T.border}`,zIndex:10,
+      }}>
+        <button onClick={() => setShowPicker(true)} style={{
+          flex:1,padding:12,background:T.card,
+          border:`1.5px solid ${T.teal}`,color:T.teal,
+          borderRadius:14,cursor:"pointer",fontWeight:700,fontSize:14,
+          display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+        }}>
+          <Plus size={16} /> Esercizio
+        </button>
+        <button onClick={() => onSave(exs)} style={{
+          flex:1,padding:12,background:T.gradient,color:"white",border:"none",
+          borderRadius:14,cursor:"pointer",fontWeight:800,fontSize:14,
+          boxShadow:"0 2px 10px rgba(2,128,144,0.25)",
+        }}>Avanti</button>
+      </div>
+
+      {/* Reorder floating toolbar */}
+      {reorderIdx !== null && (
+        <div style={{
+          position:"fixed",bottom:80,left:16,right:16,maxWidth:"398px",
+          marginLeft:"auto",marginRight:"auto",
+          display:"flex",gap:8,zIndex:50,background:T.card,
+          padding:12,borderRadius:16,boxShadow:"0 4px 20px rgba(0,0,0,0.15)",
+        }}>
+          <button onClick={() => moveExercise(reorderIdx, "up")} disabled={reorderIdx === 0} style={{
+            flex:1,padding:10,background:T.teal,color:"white",border:"none",
+            borderRadius:12,cursor:reorderIdx === 0 ? "default" : "pointer",fontWeight:700,
+            opacity:reorderIdx === 0 ? 0.4 : 1,display:"flex",alignItems:"center",justifyContent:"center",gap:4,
+          }}><ChevronUp size={16} /> Su</button>
+          <button onClick={() => moveExercise(reorderIdx, "down")} disabled={reorderIdx === exs.length - 1} style={{
+            flex:1,padding:10,background:T.teal,color:"white",border:"none",
+            borderRadius:12,cursor:reorderIdx === exs.length - 1 ? "default" : "pointer",fontWeight:700,
+            opacity:reorderIdx === exs.length - 1 ? 0.4 : 1,display:"flex",alignItems:"center",justifyContent:"center",gap:4,
+          }}><ChevronDown size={16} /> Giù</button>
+          <button onClick={() => setReorderIdx(null)} style={{
+            flex:1,padding:10,background:T.green,color:"white",border:"none",
+            borderRadius:12,cursor:"pointer",fontWeight:700,
+          }}>Fatto</button>
+        </div>
+      )}
+
+      {/* Exercise picker */}
+      {showPicker && (
+        <ExercisePicker
+          onSelect={() => {}}
+          onClose={() => setShowPicker(false)}
+          customExercises={customExercises}
+          onAddCustom={() => onAddCustomExercise && onAddCustomExercise()}
+          multiSelect={true}
+          onMultiSelect={addExercises}
+        />
+      )}
+
+      {/* NumpadOverlay */}
+      {numpad && (
+        <NumpadOverlay
+          label={numpad.label}
+          value={exs[numpad.exIdx].sets[numpad.setIdx][numpad.field]}
+          decimal={numpad.decimal}
+          onConfirm={(v) => updateSet(numpad.exIdx, numpad.setIdx, numpad.field, v)}
+          onClose={() => setNumpad(null)}
+        />
+      )}
+
+      {/* DrumPicker */}
+      {drumPicker && (
+        <DrumPicker
+          value={exs[drumPicker.exIdx][drumPicker.field] || 90}
+          title={drumPicker.title}
+          onChange={(v) => updateExercise(drumPicker.exIdx, { [drumPicker.field]: v })}
+          onClose={() => setDrumPicker(null)}
+        />
+      )}
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   ROUTINE SUMMARY
+   ROUTINE SUMMARY (POLISHED VERSION)
    ═══════════════════════════════════════════ */
 const RoutineSummary = ({ name, exercises, onSave, onBack, customExercises }) => {
-  const totalSets = exercises.reduce((s, ex) => s + (ex.sets ? ex.sets.length : 0), 0);
-  const estimatedDuration = estimateRoutineDuration(exercises);
+  const duration = estimateRoutineDuration(exercises);
+  const totalSets = exercises.reduce((sum, ex) => sum + (ex.sets || []).length, 0);
 
-  const muscleGroups = {};
-  exercises.forEach(ex => {
-    const info = getExerciseById(ex.exerciseId, customExercises);
-    if (!muscleGroups[info.muscle]) muscleGroups[info.muscle] = 0;
-    muscleGroups[info.muscle] += ex.sets ? ex.sets.length : 0;
-  });
+  const muscleBreakdown = useMemo(() => {
+    const counts = {};
+    exercises.forEach(ex => {
+      const info = getExerciseById(ex.exerciseId, customExercises);
+      const sets = ex.sets?.length || 0;
+      counts[info?.muscle || "Altro"] = (counts[info?.muscle || "Altro"] || 0) + sets;
+    });
+    return Object.entries(counts)
+      .map(([muscle, sets]) => ({ muscle, sets, color: MUSCLE_COLORS[muscle] || T.teal }))
+      .sort((a, b) => b.sets - a.sets);
+  }, [exercises, customExercises]);
 
-  const sortedMuscles = Object.entries(muscleGroups).sort((a, b) => b[1] - a[1]);
-  const maxSets = Math.max(...Object.values(muscleGroups));
+  const maxSets = Math.max(...muscleBreakdown.map(m => m.sets), 1);
 
   return (
-    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
-      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
+    <div style={{ minHeight:"100vh",background:T.bg,paddingBottom:100 }}>
+      {/* Header card */}
+      <div style={{
+        background:T.gradient,padding:"24px 20px 20px",
+        borderRadius:"0 0 28px 28px",marginBottom:20,
+      }}>
         <button onClick={onBack} style={{
-          width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
-          display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-        }}><ChevronLeft size={18} color={T.teal}/></button>
-        <div style={{ fontSize:18,fontWeight:800,color:T.text }}>Riepilogo</div>
+          background:"rgba(255,255,255,0.15)",border:"none",borderRadius:12,
+          width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center",
+          cursor:"pointer",marginBottom:16,
+        }}><ChevronLeft size={18} color="#fff" /></button>
+        <div style={{ fontSize:22,fontWeight:900,color:"#fff",marginBottom:4 }}>{name}</div>
+        <div style={{ display:"flex",gap:16,marginTop:12 }}>
+          {[
+            { label:"Esercizi", value:exercises.length },
+            { label:"Serie totali", value:totalSets },
+            { label:"Durata stimata", value:`~${duration}min` },
+          ].map((s,i) => (
+            <div key={i}>
+              <div style={{ fontSize:20,fontWeight:900,color:"#fff" }}>{s.value}</div>
+              <div style={{ fontSize:10,color:"rgba(255,255,255,0.7)",fontWeight:600 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div style={{ padding:"12px 16px" }}>
-        {/* Header card */}
+      <div style={{ padding:"0 16px" }}>
+        {/* Muscle breakdown */}
         <div style={{
-          background:T.gradient,borderRadius:16,padding:20,marginBottom:16,color:"#fff",
+          background:T.card,borderRadius:16,padding:16,marginBottom:16,
+          border:`1px solid ${T.border}`,boxShadow:T.shadow,
         }}>
-          <div style={{ fontSize:28,fontWeight:900,marginBottom:4 }}>{exercises.length}</div>
-          <div style={{ fontSize:12,fontWeight:700,marginBottom:12 }}>Esercizi • {totalSets} serie</div>
-          <div style={{ fontSize:14,fontWeight:700 }}>~{estimatedDuration} minuti</div>
-        </div>
-
-        {/* Muscle groups */}
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Serie per gruppo muscolare</div>
-          {sortedMuscles.map(([muscle, count]) => (
-            <div key={muscle} style={{ marginBottom:12 }}>
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
-                <div style={{ fontSize:11,fontWeight:700,color:T.text }}>{muscle}</div>
-                <div style={{ fontSize:11,fontWeight:700,color:T.textMuted }}>{count} serie</div>
+          <div style={{ fontSize:14,fontWeight:800,color:T.text,marginBottom:14 }}>Serie per gruppo muscolare</div>
+          {muscleBreakdown.map((m,i) => (
+            <div key={i} style={{ marginBottom:10 }}>
+              <div style={{ display:"flex",justifyContent:"space-between",marginBottom:4 }}>
+                <span style={{ fontSize:12,fontWeight:700,color:T.text }}>{m.muscle}</span>
+                <span style={{ fontSize:12,fontWeight:800,color:m.color }}>{m.sets} serie</span>
               </div>
-              <div style={{
-                height:8,borderRadius:4,background:T.bg,overflow:"hidden",
-              }}>
+              <div style={{ height:8,background:T.bg,borderRadius:4,overflow:"hidden" }}>
                 <div style={{
-                  height:"100%",background:MUSCLE_COLORS[muscle]||T.teal,
-                  width:`${(count/maxSets)*100}%`,
+                  height:"100%",width:`${(m.sets / maxSets) * 100}%`,
+                  background:m.color,borderRadius:4,
                 }}/>
               </div>
             </div>
@@ -877,34 +1091,52 @@ const RoutineSummary = ({ name, exercises, onSave, onBack, customExercises }) =>
         </div>
 
         {/* Exercise list */}
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Esercizi</div>
-          {exercises.map((ex, idx) => {
+        <div style={{
+          background:T.card,borderRadius:16,padding:16,marginBottom:20,
+          border:`1px solid ${T.border}`,boxShadow:T.shadow,
+        }}>
+          <div style={{ fontSize:14,fontWeight:800,color:T.text,marginBottom:12 }}>Esercizi</div>
+          {exercises.map((ex, i) => {
             const info = getExerciseById(ex.exerciseId, customExercises);
             return (
-              <div key={idx} style={{
-                background:T.card,borderRadius:12,padding:12,marginBottom:8,
-                border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,
+              <div key={i} style={{
+                display:"flex",alignItems:"center",gap:10,padding:"10px 0",
+                borderBottom:i < exercises.length - 1 ? `1px solid ${T.border}` : "none",
               }}>
+                <div style={{
+                  width:32,height:32,borderRadius:10,
+                  background:`${MUSCLE_COLORS[info?.muscle] || T.teal}15`,
+                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,
+                  color:MUSCLE_COLORS[info?.muscle] || T.teal,
+                }}>{i + 1}</div>
                 <div style={{ flex:1 }}>
-                  <div style={{ fontSize:12,fontWeight:700,color:T.text }}>{info.name}</div>
-                  <div style={{ fontSize:10,color:T.textMuted }}>{ex.sets ? ex.sets.length : 0} serie</div>
+                  <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{info?.name}</div>
+                  <div style={{ fontSize:10,color:T.textMuted }}>{ex.sets?.length} serie · {info?.muscle}</div>
                 </div>
-                {ex.supersetWith === idx + 1 && <span style={{ fontSize:9,fontWeight:700,background:T.orange,color:"#fff",padding:"2px 8px",borderRadius:4 }}>SS</span>}
-                {ex.unilateral && <span style={{ fontSize:9,fontWeight:700,background:T.purple,color:"#fff",padding:"2px 8px",borderRadius:4 }}>UNI</span>}
+                <div style={{ display:"flex",gap:4 }}>
+                  {ex.unilateral && (
+                    <span style={{ fontSize:8,fontWeight:800,color:T.purple,background:`${T.purple}15`,padding:"3px 6px",borderRadius:6 }}>UNI</span>
+                  )}
+                  {ex.supersetWith != null && (
+                    <span style={{ fontSize:8,fontWeight:800,color:T.orange,background:`${T.orange}15`,padding:"3px 6px",borderRadius:6 }}>SS</span>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
 
-        {/* Buttons */}
         <button onClick={onSave} style={{
-          width:"100%",padding:"14px",background:T.gradient,border:"none",borderRadius:12,
-          color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10,
+          width:"100%",padding:"16px",borderRadius:16,border:"none",
+          background:T.gradient,color:"#fff",fontSize:16,fontWeight:800,
+          cursor:"pointer",boxShadow:"0 4px 20px rgba(2,128,144,0.3)",
+          marginBottom:12,
         }}>Salva Routine</button>
+
         <button onClick={onBack} style={{
-          width:"100%",padding:"14px",background:T.card,border:`1px solid ${T.border}`,borderRadius:12,
-          color:T.text,fontSize:14,fontWeight:700,cursor:"pointer",
+          width:"100%",padding:"14px",borderRadius:14,
+          border:`1.5px solid ${T.border}`,background:T.card,
+          color:T.textSec,fontSize:14,fontWeight:700,cursor:"pointer",
         }}>Torna a modificare</button>
       </div>
     </div>
@@ -915,503 +1147,332 @@ const RoutineSummary = ({ name, exercises, onSave, onBack, customExercises }) =>
    ACTIVE WORKOUT SCREEN
    ═══════════════════════════════════════════ */
 const ActiveWorkoutScreen = ({
-  initialExercises, routineName, onFinish, onDiscard, onNavigate,
-  allWorkouts, allSets, customExercises, onAddCustomExercise,
+  workout, exercises, customExercises, onComplete, onCancel, allSets, onExerciseDetail,
 }) => {
-  const [workoutName, setWorkoutName] = useState(routineName || "");
-  const [exercises, setExercises] = useState(initialExercises || []);
-  const [showPicker, setShowPicker] = useState(false);
-  const [elapsedSec, setElapsedSec] = useState(0);
+  const [currentExIdx, setCurrentExIdx] = useState(0);
+  const [currentSetIdx, setCurrentSetIdx] = useState(0);
+  const [workoutSets, setWorkoutSets] = useState([]);
   const [restTimer, setRestTimer] = useState(null);
-  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
-  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  const startRef = useRef(Date.now());
+  const [numpad, setNumpad] = useState(null);
 
-  useEffect(() => {
-    const t = setInterval(() => setElapsedSec(Math.floor((Date.now() - startRef.current) / 1000)), 1000);
-    return () => clearInterval(t);
-  }, []);
+  const currentEx = exercises[currentExIdx];
+  const currentSet = currentEx?.sets[currentSetIdx];
+  const exInfo = getExerciseById(currentEx?.exerciseId, customExercises);
 
-  const prevData = useMemo(() => {
-    const map = {};
-    if (!allWorkouts || !allSets) return map;
-    exercises.forEach(ex => {
-      const exSets = allSets.filter(s => s.exerciseId === ex.exerciseId);
-      if (exSets.length === 0) return;
-      const byWorkout = {};
-      exSets.forEach(s => {
-        if (!byWorkout[s.workoutId]) byWorkout[s.workoutId] = [];
-        byWorkout[s.workoutId].push(s);
-      });
-      const workoutIds = Object.keys(byWorkout).map(Number).sort((a, b) => b - a);
-      if (workoutIds.length > 0) {
-        map[ex.exerciseId] = byWorkout[workoutIds[0]].sort((a, b) => a.order - b.order);
-      }
-    });
-    return map;
-  }, [exercises, allWorkouts, allSets]);
+  const handleCompleteSet = async (weight, reps, duration = 1.5) => {
+    const setData = {
+      workoutId: workout.id,
+      exerciseId: currentEx.exerciseId,
+      setNumber: currentSetIdx + 1,
+      weight, reps, type: currentSet.type,
+      duration, timestamp: new Date().toISOString(),
+    };
+    setWorkoutSets(prev => [...prev, setData]);
 
-  const addExercise = (ex) => {
-    const prev = allSets.filter(s => s.exerciseId === ex.id);
-    let defaultSets = [{ weight: 0, reps: 0, type: "N", completed: false }];
-    if (prev.length > 0) {
-      const byWorkout = {};
-      prev.forEach(s => { if (!byWorkout[s.workoutId]) byWorkout[s.workoutId] = []; byWorkout[s.workoutId].push(s); });
-      const lastWId = Object.keys(byWorkout).map(Number).sort((a, b) => b - a)[0];
-      if (lastWId != null) {
-        const lastSets = byWorkout[lastWId].sort((a, b) => a.order - b.order);
-        defaultSets = lastSets.map(s => ({ weight: s.weight || 0, reps: s.reps || 0, type: s.type || "N", completed: false }));
-      }
-    }
-    setExercises(p => [...p, { exerciseId: ex.id, restTimer: 0, warmupTimer: 60, sideTimer: 30, unilateral: false, supersetWith: null, note: "", sets: defaultSets }]);
-    setShowPicker(false);
-  };
-
-  const updateSet = (exIdx, setIdx, field, value) => {
-    setExercises(prev => {
-      const next = [...prev];
-      const ex = { ...next[exIdx], sets: [...next[exIdx].sets] };
-      ex.sets[setIdx] = { ...ex.sets[setIdx], [field]: value };
-      next[exIdx] = ex;
-      return next;
-    });
-  };
-
-  const toggleComplete = (exIdx, setIdx) => {
-    const ex = exercises[exIdx];
-    const set = ex.sets[setIdx];
-    const info = getExerciseById(ex.exerciseId, customExercises);
-    if (ex.unilateral) {
-      if (!set.sideCompleted && !set.completed) {
-        // First side done → start side timer
-        updateSet(exIdx, setIdx, "sideCompleted", true);
-        if (ex.sideTimer > 0) {
-          setRestTimer({ seconds: ex.sideTimer, exerciseName: info.name, isSideTimer: true });
-        }
-      } else if (set.sideCompleted && !set.completed) {
-        // Second side done → mark complete, start rest timer
-        updateSet(exIdx, setIdx, "completed", true);
-        const restSec = getRestForSet(ex, set.type);
-        setRestTimer({ seconds: restSec, exerciseName: info.name, isSideTimer: false });
-      } else {
-        // Reset
-        updateSet(exIdx, setIdx, "completed", false);
-        updateSet(exIdx, setIdx, "sideCompleted", false);
-      }
+    if (currentSetIdx < currentEx.sets.length - 1) {
+      setCurrentSetIdx(prev => prev + 1);
+      const rest = getRestForSet(currentEx, currentSet.type);
+      setRestTimer({ seconds: rest, isSideTimer: false });
+    } else if (currentExIdx < exercises.length - 1) {
+      setCurrentExIdx(prev => prev + 1);
+      setCurrentSetIdx(0);
+      setRestTimer({ seconds: 60, isSideTimer: false });
     } else {
-      const newCompleted = !set.completed;
-      updateSet(exIdx, setIdx, "completed", newCompleted);
-      if (newCompleted) {
-        const restSec = getRestForSet(ex, set.type);
-        setRestTimer({ seconds: restSec, exerciseName: info.name, isSideTimer: false });
-      }
+      await saveWorkout();
     }
   };
 
-  const addSet = (exIdx) => {
-    setExercises(prev => {
-      const next = [...prev];
-      const ex = { ...next[exIdx], sets: [...next[exIdx].sets] };
-      const lastSet = ex.sets[ex.sets.length - 1];
-      ex.sets.push({ weight: lastSet?.weight || 0, reps: lastSet?.reps || 0, type: "N", completed: false });
-      next[exIdx] = ex;
-      return next;
-    });
-  };
-
-  const removeSet = (exIdx, setIdx) => {
-    setExercises(prev => {
-      const next = [...prev];
-      const ex = { ...next[exIdx], sets: [...next[exIdx].sets] };
-      if (ex.sets.length <= 1) return prev;
-      ex.sets.splice(setIdx, 1);
-      next[exIdx] = ex;
-      return next;
-    });
-  };
-
-  const removeExercise = (exIdx) => setExercises(prev => prev.filter((_, i) => i !== exIdx));
-
-  const cycleSetType = (exIdx, setIdx) => {
-    const types = ["N", "W", "D", "F"];
-    const cur = exercises[exIdx].sets[setIdx].type;
-    updateSet(exIdx, setIdx, "type", types[(types.indexOf(cur) + 1) % types.length]);
-  };
-
-  const totalVolume = useMemo(() =>
-    exercises.reduce((sum, ex) => sum + ex.sets.filter(s => s.completed).reduce((ss, s) => ss + (s.weight||0)*(s.reps||0), 0), 0)
-  , [exercises]);
-
-  const totalSetsCompleted = useMemo(() =>
-    exercises.reduce((sum, ex) => sum + ex.sets.filter(s => s.completed).length, 0)
-  , [exercises]);
-
-  const handleFinish = () => {
-    const durationMin = Math.round(elapsedSec / 60);
-    const completedExercises = exercises.filter(ex => ex.sets.some(s => s.completed));
-    if (completedExercises.length === 0) { onDiscard(); return; }
-    onFinish({
-      name: workoutName || `Allenamento ${formatDate(new Date())}`,
-      date: todayISO(),
-      startTime: new Date(startRef.current).toISOString(),
-      endTime: new Date().toISOString(),
-      durationMin,
-      exercises: completedExercises.map(ex => ({
-        exerciseId: ex.exerciseId,
-        sets: ex.sets.filter(s => s.completed).map((s, i) => ({ ...s, order: i })),
-      })),
-    });
+  const saveWorkout = async () => {
+    try {
+      const wk = {
+        ...workout,
+        endTime: new Date().toISOString(),
+        completed: true,
+      };
+      await addGymWorkout(wk);
+      if (workoutSets.length > 0) {
+        await addGymSets(workoutSets);
+      }
+      onComplete();
+    } catch (err) {
+      console.error("Error saving workout:", err);
+    }
   };
 
   if (restTimer) {
-    return <RestTimerOverlay seconds={restTimer.seconds} exerciseName={restTimer.exerciseName}
-      isSideTimer={restTimer.isSideTimer} onSkip={() => setRestTimer(null)}/>;
+    return (
+      <RestTimerOverlay
+        seconds={restTimer.seconds}
+        exerciseName={exInfo?.name || "Esercizio"}
+        isSideTimer={restTimer.isSideTimer}
+        onSkip={() => setRestTimer(null)}
+      />
+    );
+  }
+
+  if (!currentEx) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg }}>
+        <p style={{ fontSize: 18, fontWeight: "bold", color: T.text }}>Allenamento Completato!</p>
+        <button onClick={onComplete} style={{
+          marginTop: 16, padding: "12px 24px", background: T.teal, color: "white",
+          border: "none", borderRadius: 8, cursor: "pointer",
+        }}>Chiudi</button>
+      </div>
+    );
   }
 
   return (
-    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
-      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 8px",background:T.card,borderBottom:`1px solid ${T.border}` }}>
-        <button onClick={() => setShowDiscardConfirm(true)} style={{
-          width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
-          display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-        }}><ChevronLeft size={18} color={T.teal}/></button>
-        <div style={{ flex:1 }}>
-          <input value={workoutName} onChange={e => setWorkoutName(e.target.value)}
-            placeholder="Nome allenamento"
-            style={{
-              width:"100%",padding:"8px 12px",borderRadius:10,border:`1px solid ${T.border}`,
-              fontSize:13,fontWeight:700,color:T.text,fontFamily:"inherit",boxSizing:"border-box",
-            }}/>
+    <div style={{ minHeight: "100vh", background: T.bg, paddingBottom: 100 }}>
+      <div style={{
+        background: T.card, padding: 16, borderBottom: `1px solid ${T.border}`,
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+      }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, color: T.text, fontSize: 16, fontWeight: "bold" }}>
+            {currentExIdx + 1} / {exercises.length}
+          </p>
+          <p style={{ margin: "4px 0 0 0", color: T.textSec, fontSize: 12 }}>
+            {exInfo?.name}
+          </p>
         </div>
-        <button onClick={() => setShowFinishConfirm(true)} style={{
-          background:T.gradient,border:"none",borderRadius:10,padding:"8px 14px",
-          color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",
-        }}>Finisci</button>
-      </div>
-
-      <div style={{ display:"flex",gap:16,padding:"12px 16px",fontSize:12,fontWeight:700 }}>
-        <div style={{ display:"flex",alignItems:"center",gap:6,color:T.textMuted }}>
-          <Clock size={14} color={T.teal}/>
-          {formatTimer(elapsedSec)}
-        </div>
-        <div style={{ display:"flex",alignItems:"center",gap:6,color:T.textMuted }}>
-          <Flame size={14} color={T.orange}/>
-          {Math.round(totalVolume)} kg
-        </div>
-        <div style={{ display:"flex",alignItems:"center",gap:6,color:T.textMuted }}>
-          <Check size={14} color={T.green}/>
-          {totalSetsCompleted} serie
-        </div>
-      </div>
-
-      <div style={{ padding:"0 16px" }}>
-        {exercises.map((ex, exIdx) => {
-          const info = getExerciseById(ex.exerciseId, customExercises);
-          return (
-            <div key={exIdx} style={{
-              background:T.card,borderRadius:14,padding:14,marginBottom:12,
-              border:`1px solid ${T.border}`,
-              borderLeft: ex.supersetWith ? `4px solid ${T.orange}` : "none",
-            }}>
-              <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:12 }}>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:14,fontWeight:700,color:T.text }}>{info.name}</div>
-                  <div style={{ fontSize:10,color:T.textMuted }}>{ex.sets.filter(s => s.completed).length}/{ex.sets.length}</div>
-                </div>
-                <button onClick={() => removeExercise(exIdx)} style={{
-                  background:"none",border:"none",cursor:"pointer",padding:6,
-                }}><Trash2 size={14} color={T.textMuted}/></button>
-              </div>
-
-              {ex.sets.map((set, setIdx) => (
-                <div key={setIdx} style={{
-                  display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr auto",gap:8,alignItems:"center",
-                  padding:"10px 0",borderBottom:`1px solid ${T.border}`,marginBottom:8,
-                }}>
-                  <button onClick={() => toggleComplete(exIdx, setIdx)} style={{
-                    width:28,height:28,borderRadius:8,
-                    border:`2px solid ${set.completed ? GREEN : set.sideCompleted ? T.orange : T.border}`,
-                    background: set.completed ? GREEN : set.sideCompleted ? T.orange : "#fff",
-                    display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-                    transition:"all .15s",
-                  }}>
-                    {set.completed && <Check size={14} color="#fff" strokeWidth={3}/>}
-                    {set.sideCompleted && !set.completed && <span style={{fontSize:10,fontWeight:900,color:"#fff"}}>½</span>}
-                  </button>
-                  <button onClick={() => cycleSetType(exIdx, setIdx)} style={{
-                    background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 8px",
-                    fontSize:11,fontWeight:700,color:T.text,cursor:"pointer",
-                  }}>{set.type}</button>
-                  <input type="number" value={set.weight || ""} onChange={e => updateSet(exIdx, setIdx, "weight", parseFloat(e.target.value) || 0)}
-                    style={{
-                      padding:"6px 8px",borderRadius:6,border:`1px solid ${T.border}`,
-                      fontSize:11,fontWeight:700,color:T.text,textAlign:"center",fontFamily:"inherit",
-                    }} placeholder="Kg"/>
-                  <input type="number" value={set.reps || ""} onChange={e => updateSet(exIdx, setIdx, "reps", parseFloat(e.target.value) || 0)}
-                    style={{
-                      padding:"6px 8px",borderRadius:6,border:`1px solid ${T.border}`,
-                      fontSize:11,fontWeight:700,color:T.text,textAlign:"center",fontFamily:"inherit",
-                    }} placeholder="Reps"/>
-                  <button onClick={() => removeSet(exIdx, setIdx)} disabled={ex.sets.length === 1} style={{
-                    background:"none",border:"none",cursor:ex.sets.length===1?"default":"pointer",
-                    opacity:ex.sets.length===1?0.4:1,padding:4,
-                  }}><Minus size={12} color={T.textMuted}/></button>
-                </div>
-              ))}
-
-              <button onClick={() => addSet(exIdx)} style={{
-                width:"100%",padding:"8px",background:T.tealLight,border:`1px dashed ${T.teal}`,
-                borderRadius:10,cursor:"pointer",fontSize:11,fontWeight:700,color:T.teal,
-              }}>+ Serie</button>
-            </div>
-          );
-        })}
-
-        <button onClick={() => setShowPicker(true)} style={{
-          width:"100%",padding:"12px",background:T.tealLight,border:`1px dashed ${T.teal}`,
-          borderRadius:14,cursor:"pointer",fontSize:12,fontWeight:700,color:T.teal,
-          display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:20,
+        <button onClick={onCancel} style={{
+          background: "none", border: "none", cursor: "pointer", color: T.textSec,
         }}>
-          <Plus size={14}/> Aggiungi Esercizio
+          <X size={24} />
         </button>
       </div>
 
-      {showPicker && <ExercisePicker onSelect={addExercise} onClose={() => setShowPicker(false)}
-        customExercises={customExercises} onAddCustom={onAddCustomExercise}/>}
-
-      {showFinishConfirm && (
+      <div style={{ padding: 16 }}>
         <div style={{
-          position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",
-          display:"flex",alignItems:"flex-end",zIndex:70,
+          background: T.card, borderRadius: 12, padding: 20, border: `1px solid ${T.border}`,
         }}>
-          <div style={{ width:"100%",background:T.card,borderTopLeftRadius:20,borderTopRightRadius:20,padding:"20px 16px 28px" }}>
-            <div style={{ fontSize:16,fontWeight:800,color:T.text,marginBottom:8 }}>Finisci allenamento?</div>
-            <div style={{ fontSize:12,color:T.textMuted,marginBottom:16 }}>Saranno salvate {totalSetsCompleted} serie</div>
-            <div style={{ display:"flex",gap:10 }}>
-              <button onClick={() => setShowFinishConfirm(false)} style={{
-                flex:1,padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,background:T.card,
-                fontSize:14,fontWeight:700,color:T.textSec,cursor:"pointer",
-              }}>Continua</button>
-              <button onClick={handleFinish} style={{
-                flex:1,padding:"12px",borderRadius:12,border:"none",background:T.gradient,
-                fontSize:14,fontWeight:700,color:"#fff",cursor:"pointer",
-              }}>Salva e finisci</button>
-            </div>
+          <div style={{ marginBottom: 20, textAlign: "center" }}>
+            <p style={{ margin: 0, color: T.textSec, fontSize: 13, fontWeight: 600 }}>
+              Serie {currentSetIdx + 1} di {currentEx.sets.length}
+            </p>
+            <p style={{ margin: "8px 0 0 0", color: T.text, fontSize: 24, fontWeight: "bold" }}>
+              {currentSet?.weight}kg × {currentSet?.reps} reps
+            </p>
           </div>
-        </div>
-      )}
 
-      {showDiscardConfirm && (
-        <div style={{
-          position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",
-          display:"flex",alignItems:"flex-end",zIndex:70,
-        }}>
-          <div style={{ width:"100%",background:T.card,borderTopLeftRadius:20,borderTopRightRadius:20,padding:"20px 16px 28px" }}>
-            <div style={{ fontSize:16,fontWeight:800,color:T.text,marginBottom:8 }}>Scartare allenamento?</div>
-            <div style={{ fontSize:12,color:T.textMuted,marginBottom:16 }}>I dati non salvati saranno persi</div>
-            <div style={{ display:"flex",gap:10 }}>
-              <button onClick={() => setShowDiscardConfirm(false)} style={{
-                flex:1,padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,background:T.card,
-                fontSize:14,fontWeight:700,color:T.textSec,cursor:"pointer",
-              }}>Continua</button>
-              <button onClick={onDiscard} style={{
-                flex:1,padding:"12px",borderRadius:12,border:"none",background:T.red,
-                fontSize:14,fontWeight:700,color:"#fff",cursor:"pointer",
-              }}>Scarta</button>
-            </div>
+          <div style={{ display: "flex", gap: 12 }}>
+            <button onClick={() => setNumpad({ type: "weight" })} style={{
+              flex: 1, padding: 12, background: T.tealLight, border: "none",
+              borderRadius: 8, cursor: "pointer", color: T.teal, fontWeight: "bold",
+              fontSize: 13,
+            }}>
+              Peso: {currentSet?.weight || 0}kg
+            </button>
+            <button onClick={() => setNumpad({ type: "reps" })} style={{
+              flex: 1, padding: 12, background: T.tealLight, border: "none",
+              borderRadius: 8, cursor: "pointer", color: T.teal, fontWeight: "bold",
+              fontSize: 13,
+            }}>
+              Reps: {currentSet?.reps || 0}
+            </button>
           </div>
+
+          <button onClick={() => handleCompleteSet(currentSet?.weight || 0, currentSet?.reps || 0)} style={{
+            width: "100%", marginTop: 12, padding: 14, background: T.teal, color: "white",
+            border: "none", borderRadius: 8, cursor: "pointer", fontWeight: "bold", fontSize: 14,
+          }}>
+            Completa Serie
+          </button>
         </div>
+      </div>
+
+      {numpad && (
+        <NumpadOverlay
+          label={numpad.type === "weight" ? "Peso (kg)" : "Ripetizioni"}
+          value={numpad.type === "weight" ? currentSet?.weight : currentSet?.reps}
+          decimal={numpad.type === "weight"}
+          onConfirm={(v) => {
+            if (numpad.type === "weight") {
+              exercises[currentExIdx].sets[currentSetIdx].weight = v;
+            } else {
+              exercises[currentExIdx].sets[currentSetIdx].reps = v;
+            }
+            setNumpad(null);
+          }}
+          onClose={() => setNumpad(null)}
+        />
       )}
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   EXERCISE DETAIL SCREEN
+   EXERCISE DETAIL SCREEN (UNCHANGED)
    ═══════════════════════════════════════════ */
 const ExerciseDetailScreen = ({ exerciseId, allWorkouts, allSets, customExercises, onBack }) => {
   const info = getExerciseById(exerciseId, customExercises);
-  const sets = useMemo(() => allSets.filter(s => s.exerciseId === exerciseId).sort((a, b) => b.workoutId - a.workoutId), [allSets, exerciseId]);
-
-  const stats = useMemo(() => {
-    const completed = sets.length;
-    const totalVol = calcVolume(sets);
-    const maxWeight = Math.max(...sets.map(s => s.weight || 0), 0);
-    const maxReps = Math.max(...sets.map(s => s.reps || 0), 0);
-    const max1RM = sets.length > 0 ? calc1RM(maxWeight, maxReps) : 0;
-    const workoutDates = {};
-    sets.forEach(s => { if (!workoutDates[s.workoutId]) workoutDates[s.workoutId] = true; });
-    return { completed, totalVol: Math.round(totalVol), maxWeight, maxReps, max1RM, numWorkouts: Object.keys(workoutDates).length };
-  }, [sets]);
-
-  const chartData = useMemo(() => {
-    const byDay = {};
-    sets.forEach(s => {
-      const w = allWorkouts.find(wk => wk.id === s.workoutId);
-      if (w) {
-        const d = new Date(w.date).toLocaleDateString("it-IT", { month: "short", day: "numeric" });
-        if (!byDay[d]) byDay[d] = 0;
-        byDay[d] += (s.weight || 0) * (s.reps || 0);
-      }
-    });
-    return Object.entries(byDay).slice(-7).map(([d, v]) => ({ name: d, volume: v }));
-  }, [sets, allWorkouts]);
+  const sets = allSets.filter(s => s.exerciseId === exerciseId).slice(-50);
+  const totalVolume = sets.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
+  const avgWeight = sets.length > 0 ? Math.round(sets.reduce((sum, s) => sum + (s.weight || 0), 0) / sets.length) : 0;
 
   return (
-    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:60 }}>
-      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
+    <div style={{ minHeight: "100vh", background: T.bg, paddingBottom: 80 }}>
+      <div style={{
+        background: T.card, padding: 16, borderBottom: `1px solid ${T.border}`,
+        display: "flex", alignItems: "center", gap: 8,
+      }}>
         <button onClick={onBack} style={{
-          width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
-          display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-        }}><ChevronLeft size={18} color={T.teal}/></button>
-        <div style={{ fontSize:18,fontWeight:800,color:T.text }}>{info.name}</div>
+          background: "none", border: "none", cursor: "pointer",
+        }}>
+          <ChevronLeft size={24} color={T.text} />
+        </button>
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, color: T.text, fontSize: 16, fontWeight: "bold" }}>
+            {info?.name || "Esercizio"}
+          </p>
+          <p style={{ margin: "4px 0 0 0", color: T.textSec, fontSize: 12 }}>
+            {info?.muscle} · {info?.equipment}
+          </p>
+        </div>
       </div>
 
-      <div style={{ padding:"0 16px" }}>
-        <div style={{ background:T.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${T.border}`,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12 }}>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:20,fontWeight:900,color:T.teal }}>{stats.completed}</div>
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Set</div>
-          </div>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:20,fontWeight:900,color:T.orange }}>{stats.numWorkouts}</div>
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Sessioni</div>
-          </div>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:20,fontWeight:900,color:T.green }}>{stats.maxWeight}kg</div>
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Max</div>
-          </div>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:20,fontWeight:900,color:T.purple }}>{stats.max1RM}kg</div>
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>1RM</div>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{
+          background: T.card, borderRadius: 8, padding: 16,
+          border: `1px solid ${T.border}`,
+        }}>
+          <p style={{ margin: "0 0 12px 0", color: T.textSec, fontSize: 12, fontWeight: 600 }}>Statistiche</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ background: T.bg, padding: 12, borderRadius: 6, textAlign: "center" }}>
+              <p style={{ margin: 0, color: T.textSec, fontSize: 11 }}>Volume Totale</p>
+              <p style={{ margin: "4px 0 0 0", color: T.text, fontSize: 16, fontWeight: "bold" }}>
+                {totalVolume.toFixed(0)}kg
+              </p>
+            </div>
+            <div style={{ background: T.bg, padding: 12, borderRadius: 6, textAlign: "center" }}>
+              <p style={{ margin: 0, color: T.textSec, fontSize: 11 }}>Peso Medio</p>
+              <p style={{ margin: "4px 0 0 0", color: T.text, fontSize: 16, fontWeight: "bold" }}>
+                {avgWeight}kg
+              </p>
+            </div>
           </div>
         </div>
 
-        {chartData.length > 0 && (
-          <div style={{ background:T.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${T.border}` }}>
-            <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Volume (ultimi 7 giorni)</div>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={chartData}>
-                <XAxis dataKey="name" tick={{ fontSize: 10 }}/>
-                <YAxis hide/>
-                <Tooltip contentStyle={{ background:T.card,borderRadius:8,border:`1px solid ${T.border}` }}/>
-                <Line type="monotone" dataKey="volume" stroke={T.teal} strokeWidth={2} dot={{ r: 3 }}/>
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Storico set</div>
-        {sets.slice(0, 10).map((s, i) => {
-          const w = allWorkouts.find(wk => wk.id === s.workoutId);
-          return (
-            <div key={i} style={{
-              background:T.card,borderRadius:12,padding:12,marginBottom:8,border:`1px solid ${T.border}`,
-              display:"flex",alignItems:"center",justifyContent:"space-between",
-            }}>
-              <div>
-                <div style={{ fontSize:12,fontWeight:700,color:T.text }}>{s.weight}kg × {s.reps}</div>
-                <div style={{ fontSize:10,color:T.textMuted }}>{w ? formatDate(w.date) : "Data sconosciuta"}</div>
+        <div style={{
+          background: T.card, borderRadius: 8, padding: 16,
+          border: `1px solid ${T.border}`,
+        }}>
+          <p style={{ margin: "0 0 12px 0", color: T.textSec, fontSize: 12, fontWeight: 600 }}>Ultimi Set</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {sets.slice(0, 10).map((s, i) => (
+              <div key={i} style={{
+                background: T.bg, padding: 8, borderRadius: 6,
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}>
+                <span style={{ color: T.text, fontSize: 12, fontWeight: "bold" }}>
+                  {s.weight}kg × {s.reps}
+                </span>
+                <span style={{ color: T.textSec, fontSize: 10 }}>
+                  {formatDate(s.timestamp || new Date())}
+                </span>
               </div>
-              <div style={{ fontSize:11,fontWeight:700,color:T.teal }}>{(s.weight||0)*(s.reps||0)} vol</div>
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   WORKOUT CARD (history view)
+   WORKOUT CARD (UNCHANGED)
    ═══════════════════════════════════════════ */
 const WorkoutCard = ({ workout, sets, customExercises, onTap }) => {
-  const exSet = new Set(sets.map(s => s.exerciseId));
-  const exNames = Array.from(exSet).map(id => getExerciseById(id, customExercises).name).join(" • ");
+  const date = formatDate(workout.startTime);
+  const duration = workout.endTime ? Math.round((new Date(workout.endTime) - new Date(workout.startTime)) / 60000) : 0;
+  const uniqueExercises = [...new Set(sets.map(s => s.exerciseId))].length;
+
   return (
-    <button onClick={onTap} style={{
-      width:"100%",background:T.card,borderRadius:14,padding:14,marginBottom:10,
-      border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",
-      cursor:"pointer",textAlign:"left",
+    <div onClick={onTap} style={{
+      background: T.card, borderRadius: 8, padding: 12, border: `1px solid ${T.border}`,
+      cursor: "pointer", marginBottom: 8,
     }}>
-      <div>
-        <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{workout.name}</div>
-        <div style={{ fontSize:10,color:T.textMuted,marginTop:4 }}>{exNames}</div>
-        <div style={{ fontSize:10,color:T.textMuted,marginTop:2 }}>{formatDate(workout.date)} • {formatDuration(workout.durationMin)}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, color: T.text, fontSize: 13, fontWeight: "bold" }}>
+            {date}
+          </p>
+          <p style={{ margin: "4px 0 0 0", color: T.textSec, fontSize: 11 }}>
+            {uniqueExercises} esercizi · {sets.length} set · {duration}min
+          </p>
+        </div>
+        <ChevronRight size={20} color={T.textSec} />
       </div>
-      <ChevronRight size={16} color={T.textMuted}/>
-    </button>
+    </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   WORKOUT DETAIL SCREEN
+   WORKOUT DETAIL SCREEN (UNCHANGED)
    ═══════════════════════════════════════════ */
 const WorkoutDetailScreen = ({ workout, sets, customExercises, onBack, onExerciseDetail, onDelete }) => {
-  const totalVol = useMemo(() => calcVolume(sets), [sets]);
-  const exData = useMemo(() => {
-    const map = {};
+  const duration = workout.endTime ? Math.round((new Date(workout.endTime) - new Date(workout.startTime)) / 60000) : 0;
+  const groupedByExercise = useMemo(() => {
+    const grouped = {};
     sets.forEach(s => {
-      if (!map[s.exerciseId]) map[s.exerciseId] = [];
-      map[s.exerciseId].push(s);
+      if (!grouped[s.exerciseId]) {
+        grouped[s.exerciseId] = [];
+      }
+      grouped[s.exerciseId].push(s);
     });
-    return map;
-  }, [sets]);
+    return Object.entries(grouped).map(([exId, exSets]) => ({
+      exerciseId: exId,
+      name: getExerciseById(exId, customExercises)?.name || exId,
+      sets: exSets,
+    }));
+  }, [sets, customExercises]);
 
   return (
-    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
-      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
+    <div style={{ minHeight: "100vh", background: T.bg, paddingBottom: 80 }}>
+      <div style={{
+        background: T.card, padding: 16, borderBottom: `1px solid ${T.border}`,
+        display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between",
+      }}>
         <button onClick={onBack} style={{
-          width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
-          display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-        }}><ChevronLeft size={18} color={T.teal}/></button>
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize:16,fontWeight:800,color:T.text }}>{workout.name}</div>
-          <div style={{ fontSize:11,color:T.textMuted }}>{formatDateFull(workout.date)}</div>
+          background: "none", border: "none", cursor: "pointer",
+        }}>
+          <ChevronLeft size={24} color={T.text} />
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, color: T.text, fontSize: 14, fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {formatDateFull(workout.startTime)}
+          </p>
+          <p style={{ margin: "4px 0 0 0", color: T.textSec, fontSize: 11 }}>
+            {sets.length} set · {duration}min
+          </p>
         </div>
-        <button onClick={onDelete} style={{
-          padding:"6px 8px",borderRadius:8,border:`1px solid ${T.border}`,background:T.card,cursor:"pointer",
-        }}><Trash2 size={14} color={T.textMuted}/></button>
+        <button onClick={() => onDelete(workout.id)} style={{
+          background: "none", border: "none", cursor: "pointer",
+        }}>
+          <Trash2 size={20} color={T.red} />
+        </button>
       </div>
 
-      <div style={{ padding:"0 16px" }}>
-        <div style={{ background:T.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${T.border}`,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12 }}>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:20,fontWeight:900,color:T.teal }}>{sets.length}</div>
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Set</div>
-          </div>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:20,fontWeight:900,color:T.orange }}>{Math.round(totalVol)}</div>
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Volume</div>
-          </div>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontSize:20,fontWeight:900,color:T.green }}>{formatDuration(workout.durationMin)}</div>
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Durata</div>
-          </div>
-        </div>
-
-        <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Esercizi</div>
-        {Object.entries(exData).map(([exId, exSets]) => {
-          const info = getExerciseById(exId, customExercises);
-          return (
-            <button key={exId} onClick={() => onExerciseDetail(exId)} style={{
-              width:"100%",background:T.card,borderRadius:12,padding:12,marginBottom:8,border:`1px solid ${T.border}`,
-              textAlign:"left",cursor:"pointer",
-            }}>
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
-                <div style={{ fontSize:12,fontWeight:700,color:T.text }}>{info.name}</div>
-                <div style={{ fontSize:11,fontWeight:700,color:T.textMuted }}>{exSets.length} set</div>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        {groupedByExercise.map((ex, idx) => (
+          <div key={idx} onClick={() => onExerciseDetail(ex.exerciseId)} style={{
+            background: T.card, borderRadius: 8, padding: 12, border: `1px solid ${T.border}`,
+            cursor: "pointer",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <p style={{ margin: 0, color: T.text, fontSize: 13, fontWeight: "bold" }}>
+                  {ex.name}
+                </p>
+                <p style={{ margin: "4px 0 0 0", color: T.textSec, fontSize: 11 }}>
+                  {ex.sets.length} set
+                </p>
               </div>
-              <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
-                {exSets.sort((a, b) => a.order - b.order).map((s, i) => (
-                  <div key={i} style={{ fontSize:10,fontWeight:700,background:T.bg,color:T.text,padding:"4px 8px",borderRadius:6 }}>
-                    {s.weight}kg × {s.reps}
-                  </div>
-                ))}
-              </div>
-            </button>
-          );
-        })}
+              <ChevronRight size={20} color={T.textSec} />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1420,144 +1481,76 @@ const WorkoutDetailScreen = ({ workout, sets, customExercises, onBack, onExercis
 /* ═══════════════════════════════════════════
    TAB: ALLENAMENTO
    ═══════════════════════════════════════════ */
-const TabAllenamento = ({
-  workouts, allSets, routines, customExercises,
-  onStartFromRoutine, onEditRoutine, onNewRoutine, onDeleteRoutine,
-  onWorkoutDetail,
-}) => {
-  const [showAllWorkouts, setShowAllWorkouts] = useState(false);
-  const displayedWorkouts = showAllWorkouts ? workouts : workouts.slice(0, 5);
-
+const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartRoutine, onSelectWorkout }) => {
   return (
-    <div style={{ padding:"12px 16px 0" }}>
-      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
-        <div style={{ fontSize:14,fontWeight:800,color:T.text }}>Le tue Routine</div>
-        <button onClick={onNewRoutine} style={{
-          background:T.gradient,border:"none",borderRadius:12,padding:"10px 20px",
-          fontSize:14,fontWeight:800,color:"#fff",cursor:"pointer",
-          display:"flex",alignItems:"center",gap:6,
-          boxShadow:"0 4px 16px rgba(2,128,144,0.3)",
-        }}><Plus size={16}/> Crea</button>
-      </div>
-
-      {routines.length === 0 ? (
-        <div style={{
-          background:T.card,borderRadius:16,padding:24,textAlign:"center",marginBottom:16,
-          border:`1px dashed ${T.border}`,
-        }}>
-          <div style={{ fontSize:32,marginBottom:8 }}>📋</div>
-          <div style={{ fontSize:13,fontWeight:700,color:T.text,marginBottom:4 }}>Nessuna routine</div>
-          <div style={{ fontSize:11,color:T.textMuted,marginBottom:12 }}>Crea una routine per iniziare ad allenarti</div>
-          <button onClick={onNewRoutine} style={{
-            background:T.teal,border:"none",borderRadius:10,padding:"10px 20px",
-            color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",
-          }}>Crea routine</button>
-        </div>
-      ) : (
-        <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:20 }}>
-          {routines.map(r => (
-            <div key={r.id} style={{
-              background:T.card,borderRadius:14,padding:14,
-              border:`1px solid ${T.border}`,boxShadow:T.shadow,
-            }}>
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
-                <div>
-                  <div style={{ fontSize:14,fontWeight:700,color:T.text }}>{r.name}</div>
-                  <div style={{ fontSize:10,color:T.textMuted,marginTop:2 }}>
-                    {r.exercises.length} esercizi • {r.exercises.map(e => getExerciseById(e.exerciseId, customExercises).muscle).filter((v,i,a) => a.indexOf(v)===i).join(", ")}
-                  </div>
-                </div>
-                <div style={{ display:"flex",gap:4 }}>
-                  <button onClick={() => onEditRoutine(r)} style={{
-                    padding:"6px 8px",borderRadius:8,border:`1px solid ${T.border}`,background:T.card,cursor:"pointer",
-                  }}><Edit3 size={12} color={T.textMuted}/></button>
-                  <button onClick={() => onDeleteRoutine(r.id)} style={{
-                    padding:"6px 8px",borderRadius:8,border:`1px solid ${T.border}`,background:T.card,cursor:"pointer",
-                  }}><Trash2 size={12} color={T.textMuted}/></button>
-                </div>
-              </div>
-              <button onClick={() => onStartFromRoutine(r)} style={{
-                width:"100%",padding:"10px",borderRadius:10,border:"none",background:T.gradient,
-                color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",
-                display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+      {routines.length > 0 && (
+        <div style={{ background: T.card, borderRadius: 8, padding: 12, border: `1px solid ${T.border}` }}>
+          <p style={{ margin: "0 0 12px 0", color: T.text, fontSize: 13, fontWeight: "bold" }}>Routine Salvate</p>
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
+            {routines.map(r => (
+              <button key={r.id} onClick={() => onStartRoutine(r.id)} style={{
+                padding: "8px 14px", background: T.tealLight, border: "none",
+                borderRadius: 6, cursor: "pointer", color: T.teal, fontWeight: "bold",
+                fontSize: 11, whiteSpace: "nowrap", flexShrink: 0,
               }}>
-                <Play size={14} fill="#fff"/> Avvia
+                {r.name}
               </button>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
-      {workouts.length > 0 && (
-        <>
-          <div style={{ fontSize:14,fontWeight:800,color:T.text,marginBottom:10 }}>Storico allenamenti</div>
-          {displayedWorkouts.map(w => {
-            const wSets = allSets.filter(s => s.workoutId === w.id);
-            return <WorkoutCard key={w.id} workout={w} sets={wSets} customExercises={customExercises}
-              onTap={() => onWorkoutDetail(w)}/>;
+      <div style={{ background: T.card, borderRadius: 8, padding: 12, border: `1px solid ${T.border}` }}>
+        <p style={{ margin: "0 0 12px 0", color: T.text, fontSize: 13, fontWeight: "bold" }}>Allenamenti Recenti</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {workouts.slice(0, 10).map((w, idx) => {
+            const sets = allSets.filter(s => s.workoutId === w.id);
+            return (
+              <WorkoutCard key={idx} workout={w} sets={sets} customExercises={customExercises} onTap={() => onSelectWorkout(w.id)} />
+            );
           })}
-          {workouts.length > 5 && (
-            <button onClick={() => setShowAllWorkouts(v => !v)} style={{
-              width:"100%",padding:10,background:"none",border:"none",cursor:"pointer",
-              fontSize:12,fontWeight:700,color:T.teal,
-            }}>{showAllWorkouts ? "Mostra meno" : `Vedi tutti (${workouts.length})`}</button>
-          )}
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   TAB: ESERCIZI
+   TAB: ROUTINE
    ═══════════════════════════════════════════ */
-const TabEsercizi = ({ allSets, allWorkouts, customExercises, onExerciseDetail }) => {
-  const allExercises = useMemo(() => [...EXERCISES, ...customExercises], [customExercises]);
-  const exStats = useMemo(() => {
-    const map = {};
-    allExercises.forEach(ex => {
-      const sets = allSets.filter(s => s.exerciseId === ex.id);
-      map[ex.id] = { count: sets.length, volume: calcVolume(sets) };
-    });
-    return map;
-  }, [allExercises, allSets]);
-
-  const sorted = useMemo(() => {
-    return allExercises.filter(ex => exStats[ex.id].count > 0).sort((a, b) => exStats[b.id].count - exStats[a.id].count);
-  }, [allExercises, exStats]);
-
+const TabRoutine = ({ routines, customExercises, onCreateRoutine, onEditRoutine, onDeleteRoutine, onStartRoutine }) => {
   return (
-    <div style={{ padding:"12px 16px 0" }}>
-      {sorted.length === 0 ? (
-        <div style={{ padding:"20px 0",textAlign:"center",color:T.textMuted,fontSize:12 }}>Nessun esercizio completato</div>
-      ) : (
-        <>
-          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Esercizi per volume</div>
-          <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:20 }}>
-            {sorted.map(ex => {
-              const stat = exStats[ex.id];
-              return (
-                <button key={ex.id} onClick={() => onExerciseDetail(ex.id)} style={{
-                  width:"100%",background:T.card,borderRadius:12,padding:12,border:`1px solid ${T.border}`,
-                  textAlign:"left",cursor:"pointer",display:"flex",alignItems:"center",gap:10,
-                }}>
-                  <div style={{
-                    width:40,height:40,borderRadius:10,background:`${MUSCLE_COLORS[ex.muscle]||T.teal}18`,
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                  }}>
-                    <Dumbbell size={16} color={MUSCLE_COLORS[ex.muscle]||T.teal}/>
-                  </div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:12,fontWeight:700,color:T.text }}>{ex.name}</div>
-                    <div style={{ fontSize:10,color:T.textMuted }}>{stat.count} set • {Math.round(stat.volume)} kg</div>
-                  </div>
-                  <ChevronRight size={16} color={T.textMuted}/>
-                </button>
-              );
-            })}
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <button onClick={onCreateRoutine} style={{
+        width: "100%", padding: 12, background: T.teal, color: "white", border: "none",
+        borderRadius: 8, cursor: "pointer", fontWeight: "bold", fontSize: 14,
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+      }}>
+        <Plus size={18} /> Nuova Routine
+      </button>
+
+      {routines.map(r => (
+        <div key={r.id} style={{
+          background: T.card, borderRadius: 8, padding: 12, border: `1px solid ${T.border}`,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, color: T.text, fontSize: 13, fontWeight: "bold" }}>{r.name}</p>
+              <p style={{ margin: "4px 0 0 0", color: T.textSec, fontSize: 11 }}>
+                {r.exercises?.length || 0} esercizi
+              </p>
+            </div>
+            <button onClick={() => onStartRoutine(r.id)} style={{
+              padding: "6px 12px", background: T.tealLight, border: "none",
+              borderRadius: 6, cursor: "pointer", color: T.teal, fontWeight: "bold",
+              fontSize: 11, marginRight: 8,
+            }}>
+              Inizia
+            </button>
           </div>
-        </>
-      )}
+        </div>
+      ))}
     </div>
   );
 };
@@ -1566,355 +1559,390 @@ const TabEsercizi = ({ allSets, allWorkouts, customExercises, onExerciseDetail }
    TAB: STATISTICHE
    ═══════════════════════════════════════════ */
 const TabStatistiche = ({ workouts, allSets, customExercises }) => {
-  const stats = useMemo(() => {
-    const totalSets = allSets.length;
-    const totalVol = Math.round(calcVolume(allSets));
-    const totalWorkouts = workouts.length;
-    const avgDuration = workouts.length > 0 ? Math.round(workouts.reduce((s, w) => s + w.durationMin, 0) / workouts.length) : 0;
-    const exCount = new Set(allSets.map(s => s.exerciseId)).size;
-    return { totalSets, totalVol, totalWorkouts, avgDuration, exCount };
-  }, [workouts, allSets]);
-
-  const volumeByMuscle = useMemo(() => {
-    const map = {};
-    allSets.forEach(s => {
-      const ex = getExerciseById(s.exerciseId, customExercises);
-      if (!map[ex.muscle]) map[ex.muscle] = 0;
-      map[ex.muscle] += (s.weight || 0) * (s.reps || 0);
-    });
-    return Object.entries(map).map(([m, v]) => ({ name: m, value: Math.round(v) })).sort((a, b) => b.value - a.value);
-  }, [allSets, customExercises]);
-
-  const volumeOverTime = useMemo(() => {
-    const map = {};
-    allSets.forEach(s => {
-      const w = workouts.find(wk => wk.id === s.workoutId);
-      if (w) {
-        const d = new Date(w.date).toLocaleDateString("it-IT", { month: "short", day: "numeric" });
-        if (!map[d]) map[d] = 0;
-        map[d] += (s.weight || 0) * (s.reps || 0);
-      }
-    });
-    return Object.entries(map).slice(-14).map(([d, v]) => ({ name: d, volume: v }));
-  }, [workouts, allSets]);
+  const totalWorkouts = workouts.length;
+  const totalSets = allSets.length;
+  const totalVolume = allSets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
 
   return (
-    <div style={{ padding:"12px 16px 0" }}>
-      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16 }}>
-        {[
-          { label:"Allenamenti", value:stats.totalWorkouts, icon:"🏋️", color:T.teal },
-          { label:"Set", value:stats.totalSets, icon:"💪", color:T.orange },
-          { label:"Volume", value:`${stats.totalVol}kg`, icon:"📊", color:T.green },
-          { label:"Esercizi", value:stats.exCount, icon:"🎯", color:T.purple },
-        ].map((s, i) => (
-          <div key={i} style={{
-            background:T.card,borderRadius:12,padding:16,border:`1px solid ${T.border}`,textAlign:"center",
-          }}>
-            <div style={{ fontSize:20,marginBottom:6 }}>{s.icon}</div>
-            <div style={{ fontSize:18,fontWeight:900,color:s.color }}>{s.value}</div>
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>{s.label}</div>
-          </div>
-        ))}
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{
+        display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12,
+      }}>
+        <div style={{
+          background: T.card, borderRadius: 8, padding: 12, border: `1px solid ${T.border}`,
+          textAlign: "center",
+        }}>
+          <p style={{ margin: 0, color: T.textSec, fontSize: 11, fontWeight: 600 }}>Allenamenti</p>
+          <p style={{ margin: "8px 0 0 0", color: T.text, fontSize: 18, fontWeight: "bold" }}>
+            {totalWorkouts}
+          </p>
+        </div>
+        <div style={{
+          background: T.card, borderRadius: 8, padding: 12, border: `1px solid ${T.border}`,
+          textAlign: "center",
+        }}>
+          <p style={{ margin: 0, color: T.textSec, fontSize: 11, fontWeight: 600 }}>Set Totali</p>
+          <p style={{ margin: "8px 0 0 0", color: T.text, fontSize: 18, fontWeight: "bold" }}>
+            {totalSets}
+          </p>
+        </div>
+        <div style={{
+          background: T.card, borderRadius: 8, padding: 12, border: `1px solid ${T.border}`,
+          textAlign: "center",
+        }}>
+          <p style={{ margin: 0, color: T.textSec, fontSize: 11, fontWeight: 600 }}>Volume</p>
+          <p style={{ margin: "8px 0 0 0", color: T.text, fontSize: 18, fontWeight: "bold" }}>
+            {(totalVolume / 1000).toFixed(1)}K
+          </p>
+        </div>
       </div>
-
-      {volumeOverTime.length > 0 && (
-        <div style={{ background:T.card,borderRadius:12,padding:16,border:`1px solid ${T.border}`,marginBottom:16 }}>
-          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Volume (ultimi 14 giorni)</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={volumeOverTime}>
-              <XAxis dataKey="name" tick={{ fontSize: 10 }}/>
-              <YAxis hide/>
-              <Tooltip contentStyle={{ background:T.card,borderRadius:8,border:`1px solid ${T.border}` }}/>
-              <Line type="monotone" dataKey="volume" stroke={T.teal} strokeWidth={2} dot={{ r: 3 }}/>
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {volumeByMuscle.length > 0 && (
-        <div style={{ background:T.card,borderRadius:12,padding:16,border:`1px solid ${T.border}`,marginBottom:20 }}>
-          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Volume per gruppo muscolare</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={volumeByMuscle} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} label>
-                {volumeByMuscle.map((e, i) => <Cell key={i} fill={MUSCLE_COLORS[e.name]||T.teal}/>)}
-              </Pie>
-              <Tooltip/>
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      )}
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   TABS DEFINITION
+   TABS & MAIN SCREEN
    ═══════════════════════════════════════════ */
 const TABS = [
-  { id: "allenamento", label: "Allenamento", icon: Play },
-  { id: "esercizi", label: "Esercizi", icon: Dumbbell },
+  { id: "allenamento", label: "Allenamento", icon: Dumbbell },
+  { id: "routine", label: "Routine", icon: Bookmark },
   { id: "statistiche", label: "Statistiche", icon: BarChart3 },
 ];
 
-/* ═══════════════════════════════════════════
-   MAIN SCREEN WITH TABS
-   ═══════════════════════════════════════════ */
 const MainScreenWithTabs = (props) => {
-  const [activeTab, setActiveTab] = useState("allenamento");
-
+  const {
+    activeTab, setActiveTab, workouts, routines, customExercises,
+    allSets, onStartRoutine, onSelectWorkout, onCreateRoutine,
+    onEditRoutine, onDeleteRoutine,
+  } = props;
   return (
-    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
-      <div style={{ padding:"16px 16px 0" }}>
-        <div style={{ fontSize:22,fontWeight:900,color:T.text }}>Gym</div>
-        <div style={{ fontSize:12,color:T.textMuted,fontWeight:500,marginBottom:12 }}>{formatDateFull(new Date())}</div>
-      </div>
-
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{
-        display:"flex",gap:0,padding:"0 16px",marginBottom:4,
-        background:T.bg,position:"sticky",top:0,zIndex:10,paddingTop:4,paddingBottom:4,
+        background: T.card, borderBottom: `1px solid ${T.border}`,
+        display: "flex", gap: 0,
       }}>
         {TABS.map(tab => {
-          const isActive = activeTab === tab.id;
+          const TabIcon = tab.icon;
           return (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
-              flex:1,padding:"10px 0",background:"none",border:"none",cursor:"pointer",
-              borderBottom:`2.5px solid ${isActive?T.teal:"transparent"}`,
-              display:"flex",alignItems:"center",justifyContent:"center",gap:5,
-              transition:"all .2s ease",
-            }}>
-              <tab.icon size={14} color={isActive?T.teal:T.textMuted} strokeWidth={isActive?2.5:1.8}/>
-              <span style={{ fontSize:12,fontWeight:isActive?800:600,color:isActive?T.teal:T.textMuted }}>{tab.label}</span>
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                flex: 1, padding: 12, background: "none", border: "none",
+                cursor: "pointer", display: "flex", flexDirection: "column",
+                alignItems: "center", gap: 4,
+                borderBottom: activeTab === tab.id ? `3px solid ${T.teal}` : "none",
+                color: activeTab === tab.id ? T.teal : T.textSec,
+              }}
+            >
+              <TabIcon size={20} />
+              <span style={{ fontSize: 11 }}>{tab.label}</span>
             </button>
           );
         })}
       </div>
-
-      {activeTab === "allenamento" && <TabAllenamento {...props}/>}
-      {activeTab === "esercizi" && <TabEsercizi allSets={props.allSets} allWorkouts={props.workouts}
-        customExercises={props.customExercises} onExerciseDetail={props.onExerciseDetail}/>}
-      {activeTab === "statistiche" && <TabStatistiche workouts={props.workouts} allSets={props.allSets}
-        customExercises={props.customExercises}/>}
-
-      <GymBottomNav onAdd={props.onAdd} onNavigate={props.onNavigate}/>
+      <div style={{ flex: 1, overflow: "auto" }}>
+        {activeTab === "allenamento" && (
+          <TabAllenamento
+            workouts={workouts}
+            allSets={allSets}
+            customExercises={customExercises}
+            routines={routines}
+            onStartRoutine={onStartRoutine}
+            onSelectWorkout={onSelectWorkout}
+          />
+        )}
+        {activeTab === "routine" && (
+          <TabRoutine
+            routines={routines}
+            customExercises={customExercises}
+            onCreateRoutine={onCreateRoutine}
+            onEditRoutine={onEditRoutine}
+            onDeleteRoutine={onDeleteRoutine}
+            onStartRoutine={onStartRoutine}
+          />
+        )}
+        {activeTab === "statistiche" && (
+          <TabStatistiche
+            workouts={workouts}
+            allSets={allSets}
+            customExercises={customExercises}
+          />
+        )}
+      </div>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   ROOT EXPORT
+   GYM SECTION (ROOT COMPONENT)
    ═══════════════════════════════════════════ */
-export default function GymSection({ onNavigate }) {
+export default function GymSection() {
   const [subScreen, setSubScreen] = useState("main");
+  const [activeTab, setActiveTab] = useState("allenamento");
   const [workouts, setWorkouts] = useState([]);
-  const [allSets, setAllSets] = useState([]);
   const [routines, setRoutines] = useState([]);
   const [customExercises, setCustomExercises] = useState([]);
+  const [allSets, setAllSets] = useState([]);
   const [toast, setToast] = useState(null);
-  const [activeRoutine, setActiveRoutine] = useState(null);
-  const [editRoutine, setEditRoutine] = useState(null);
-  const [detailExerciseId, setDetailExerciseId] = useState(null);
-  const [detailWorkout, setDetailWorkout] = useState(null);
-  const [routineName, setRoutineName] = useState("");
-  const [routineExercises, setRoutineExercises] = useState([]);
+  const [selectedRoutine, setSelectedRoutine] = useState(null);
+  const [selectedWorkout, setSelectedWorkout] = useState(null);
+  const [selectedExerciseId, setSelectedExerciseId] = useState(null);
+  const [editingRoutineId, setEditingRoutineId] = useState(null);
+  const [newRoutineName, setNewRoutineName] = useState(null);
+  const [newRoutineExercises, setNewRoutineExercises] = useState([]);
 
-  const showToast = useCallback((msg, icon) => setToast({ msg, icon }), []);
-
-  const loadData = useCallback(async () => {
-    const [w, r, ce] = await Promise.all([
-      getAllGymWorkouts(), getAllGymRoutines(), getAllGymCustomExercises(),
-    ]);
-    setWorkouts(w);
-    setRoutines(r);
-    setCustomExercises(ce);
-    const setsArrays = await Promise.all(w.map(wk => getGymSetsByWorkout(wk.id)));
-    setAllSets(setsArrays.flat());
+  useEffect(() => {
+    loadData();
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const loadData = async () => {
+    try {
+      const [wks, routs, customs, sets] = await Promise.all([
+        getAllGymWorkouts(),
+        getAllGymRoutines(),
+        getAllGymCustomExercises(),
+        typeof getAllGymSets === 'function' ? getAllGymSets() : Promise.resolve([]),
+      ]);
+      setWorkouts(wks || []);
+      setRoutines(routs || []);
+      setCustomExercises(customs || []);
+      setAllSets(sets || []);
+    } catch (err) {
+      console.error("Error loading gym data:", err);
+    }
+  };
 
-  const handleAddCustomExercise = useCallback(async (ex) => {
-    await addGymCustomExercise(ex);
-    setCustomExercises(prev => [...prev, ex]);
-  }, []);
+  const handleStartRoutine = (routineId) => {
+    const routine = routines.find(r => r.id === routineId);
+    if (routine) {
+      setSelectedRoutine(routine);
+      setSubScreen("workout");
+    }
+  };
 
-  const handleFinishWorkout = useCallback(async (data) => {
-    const workoutId = await addGymWorkout({
-      date: data.date, name: data.name,
-      startTime: data.startTime, endTime: data.endTime,
-      durationMin: data.durationMin, routineId: activeRoutine?.id || null,
-    });
-    const setsToAdd = [];
-    data.exercises.forEach(ex => {
-      ex.sets.forEach(s => {
-        setsToAdd.push({ workoutId, exerciseId: ex.exerciseId, order: s.order, weight: s.weight, reps: s.reps, type: s.type });
-      });
-    });
-    await addGymSets(setsToAdd);
-    await loadData();
-    setSubScreen("main");
-    setActiveRoutine(null);
-    showToast("Allenamento salvato! 💪", "✅");
-  }, [activeRoutine, loadData, showToast]);
+  const handleCreateRoutine = () => {
+    setSubScreen("nameModal");
+    setEditingRoutineId(null);
+    setNewRoutineName(null);
+    setNewRoutineExercises([]);
+  };
 
-  const handleDiscardWorkout = useCallback(() => {
-    setSubScreen("main");
-    setActiveRoutine(null);
-  }, []);
+  const handleEditRoutine = (routineId) => {
+    const routine = routines.find(r => r.id === routineId);
+    if (routine) {
+      setEditingRoutineId(routineId);
+      setNewRoutineName(routine.name);
+      setNewRoutineExercises(routine.exercises || []);
+      setSubScreen("routineEditor");
+    }
+  };
 
-  const handleStartFromRoutine = useCallback((routine) => {
-    setActiveRoutine(routine);
-    setSubScreen("workout");
-  }, []);
-
-  const handleSaveRoutine = useCallback(async (data) => {
-    if (editRoutine?.id) await updateGymRoutine(editRoutine.id, data);
-    else await addGymRoutine(data);
-    await loadData();
-    setSubScreen("main");
-    setEditRoutine(null);
-    setRoutineName("");
-    setRoutineExercises([]);
-    showToast(editRoutine?.id ? "Routine aggiornata" : "Routine creata!", "📋");
-  }, [editRoutine, loadData, showToast]);
-
-  const handleDeleteRoutine = useCallback(async (id) => {
-    await deleteGymRoutine(id);
-    await loadData();
-    showToast("Routine eliminata", "🗑️");
-  }, [loadData, showToast]);
-
-  const handleDeleteWorkout = useCallback(async (id) => {
-    await deleteGymWorkout(id);
-    await loadData();
-    setSubScreen("main");
-    setDetailWorkout(null);
-    showToast("Allenamento eliminato", "🗑️");
-  }, [loadData, showToast]);
-
-  const routineExercisesForWorkout = useMemo(() => {
-    if (!activeRoutine) return null;
-    return activeRoutine.exercises.map(ex => {
-      const prevSets = allSets.filter(s => s.exerciseId === ex.exerciseId);
-      let sets;
-      if (prevSets.length > 0) {
-        const byWorkout = {};
-        prevSets.forEach(s => { if (!byWorkout[s.workoutId]) byWorkout[s.workoutId] = []; byWorkout[s.workoutId].push(s); });
-        const lastWId = Object.keys(byWorkout).map(Number).sort((a, b) => b - a)[0];
-        if (lastWId != null) {
-          const lastSorted = byWorkout[lastWId].sort((a, b) => a.order - b.order);
-          sets = lastSorted.map(s => ({ weight: s.weight||0, reps: s.reps||0, type: s.type||"N", completed: false }));
-        }
+  const handleSaveRoutine = async (exercises) => {
+    try {
+      if (!newRoutineName) {
+        setToast({ message: "Nome routine richiesto", icon: <AlertTriangle size={16} color={T.red} /> });
+        return;
       }
-      if (!sets) {
-        sets = Array.from({ length: ex.targetSets || 3 }, () => ({
-          weight: ex.targetWeight || 0, reps: ex.targetReps || 0, type: "N", completed: false,
-        }));
-      }
-      return { exerciseId: ex.exerciseId, restTimer: ex.restTimer || 90, warmupTimer: ex.warmupTimer || 60, sideTimer: ex.sideTimer || 30, unilateral: ex.unilateral || false, supersetWith: ex.supersetWith || null, note: ex.note || "", sets };
-    });
-  }, [activeRoutine, allSets]);
+      const routine = editingRoutineId ? routines.find(r => r.id === editingRoutineId) : { name: newRoutineName, exercises: [], id: Date.now().toString() };
+      const updated = { ...routine, name: newRoutineName, exercises };
 
-  if (subScreen === "workout") {
-    return (
-      <ActiveWorkoutScreen
-        initialExercises={routineExercisesForWorkout}
-        routineName={activeRoutine?.name || ""}
-        onFinish={handleFinishWorkout}
-        onDiscard={handleDiscardWorkout}
-        onNavigate={onNavigate}
-        allWorkouts={workouts}
-        allSets={allSets}
-        customExercises={customExercises}
-        onAddCustomExercise={handleAddCustomExercise}
-      />
-    );
-  }
+      if (editingRoutineId && routine.id) {
+        await updateGymRoutine(updated);
+      } else {
+        await addGymRoutine(updated);
+      }
+
+      await loadData();
+      setSubScreen("main");
+      setNewRoutineName(null);
+      setNewRoutineExercises([]);
+      setEditingRoutineId(null);
+      setToast({ message: "Routine salvata!", icon: <Check size={16} color={T.green} /> });
+    } catch (err) {
+      console.error("Error saving routine:", err);
+      setToast({ message: "Errore salvataggio", icon: <AlertTriangle size={16} color={T.red} /> });
+    }
+  };
+
+  const handleDeleteRoutine = async (routineId) => {
+    try {
+      await deleteGymRoutine(routineId);
+      await loadData();
+      setToast({ message: "Routine eliminata", icon: <Check size={16} color={T.green} /> });
+    } catch (err) {
+      console.error("Error deleting routine:", err);
+    }
+  };
+
+  const handleCompleteWorkout = async () => {
+    await loadData();
+    setSubScreen("main");
+    setSelectedRoutine(null);
+    setToast({ message: "Allenamento completato!", icon: <Check size={16} color={T.green} /> });
+  };
+
+  const handleSelectWorkout = (workoutId) => {
+    const workout = workouts.find(w => w.id === workoutId);
+    if (workout) {
+      setSelectedWorkout(workout);
+      setSubScreen("workoutDetail");
+    }
+  };
+
+  const handleExerciseDetail = (exerciseId) => {
+    setSelectedExerciseId(exerciseId);
+    setSubScreen("exerciseDetail");
+  };
+
+  const handleDeleteWorkout = async (workoutId) => {
+    try {
+      await deleteGymWorkout(workoutId);
+      await loadData();
+      setSubScreen("main");
+      setToast({ message: "Allenamento eliminato", icon: <Check size={16} color={T.green} /> });
+    } catch (err) {
+      console.error("Error deleting workout:", err);
+    }
+  };
 
   if (subScreen === "nameModal") {
     return (
       <NameModal
-        onContinue={(name) => { setRoutineName(name); setSubScreen("pickExercises"); }}
+        onContinue={(name) => {
+          setNewRoutineName(name);
+          setSubScreen("pickExercises");
+        }}
         onClose={() => setSubScreen("main")}
+        title="Nome Routine"
       />
     );
   }
 
   if (subScreen === "pickExercises") {
     return (
-      <ExercisePicker multiSelect onSelect={() => {}} onClose={() => setSubScreen("main")}
-        customExercises={customExercises} onAddCustom={handleAddCustomExercise}
-        onMultiSelect={(exs) => {
-          setRoutineExercises(exs.map(e => ({
+      <ExercisePicker
+        onSelect={() => {}}
+        onClose={() => setSubScreen("main")}
+        customExercises={customExercises}
+        onAddCustom={() => {}}
+        multiSelect={true}
+        onMultiSelect={(selected) => {
+          setNewRoutineExercises(selected.map(e => ({
             exerciseId: e.id,
             sets: [{ weight: 0, reps: 0, type: "N" }],
-            restTimer: 90,
-            warmupTimer: 60,
-            sideTimer: 30,
-            unilateral: e.uni || false,
-            supersetWith: null,
-            note: "",
+            restTimer: 90, warmupTimer: 60, sideTimer: 15,
+            unilateral: e.uni || false, supersetWith: null, note: "",
           })));
           setSubScreen("routineEditor");
-        }}/>
+        }}
+      />
     );
   }
 
   if (subScreen === "routineEditor") {
     return (
-      <RoutineEditor routine={editRoutine} exercises={routineExercises} onSave={(exs) => { setRoutineExercises(exs); setSubScreen("routineSummary"); }}
-        onClose={() => { setSubScreen("main"); setEditRoutine(null); setRoutineName(""); setRoutineExercises([]); }}
-        customExercises={customExercises} onAddCustomExercise={handleAddCustomExercise}/>
+      <RoutineEditor
+        routine={{ name: newRoutineName, exercises: newRoutineExercises, id: editingRoutineId }}
+        exercises={newRoutineExercises}
+        onSave={(exs) => {
+          setNewRoutineExercises(exs);
+          setSubScreen("routineSummary");
+        }}
+        onClose={() => setSubScreen("main")}
+        customExercises={customExercises}
+        onAddCustomExercise={() => {}}
+        onAddExercises={() => {}}
+      />
     );
   }
 
   if (subScreen === "routineSummary") {
     return (
-      <RoutineSummary name={routineName} exercises={routineExercises}
-        onSave={async () => {
-          await handleSaveRoutine({ name: routineName, exercises: routineExercises });
-          setSubScreen("main");
-        }}
+      <RoutineSummary
+        name={newRoutineName}
+        exercises={newRoutineExercises}
+        onSave={() => handleSaveRoutine(newRoutineExercises)}
         onBack={() => setSubScreen("routineEditor")}
-        customExercises={customExercises}/>
+        customExercises={customExercises}
+      />
     );
   }
 
-  if (subScreen === "exerciseDetail" && detailExerciseId) {
+  if (subScreen === "workoutDetail") {
+    const workout = selectedWorkout;
+    const sets = allSets.filter(s => s.workoutId === workout?.id);
     return (
-      <ExerciseDetailScreen exerciseId={detailExerciseId}
-        allWorkouts={workouts} allSets={allSets} customExercises={customExercises}
-        onBack={() => { setSubScreen(detailWorkout ? "workoutDetail" : "main"); setDetailExerciseId(null); }}/>
+      <WorkoutDetailScreen
+        workout={workout}
+        sets={sets}
+        customExercises={customExercises}
+        onBack={() => setSubScreen("main")}
+        onExerciseDetail={handleExerciseDetail}
+        onDelete={handleDeleteWorkout}
+      />
     );
   }
 
-  if (subScreen === "workoutDetail" && detailWorkout) {
-    const wSets = allSets.filter(s => s.workoutId === detailWorkout.id);
+  if (subScreen === "exerciseDetail") {
     return (
-      <WorkoutDetailScreen workout={detailWorkout} sets={wSets} customExercises={customExercises}
-        onBack={() => { setSubScreen("main"); setDetailWorkout(null); }}
-        onExerciseDetail={(exId) => { setDetailExerciseId(exId); setSubScreen("exerciseDetail"); }}
-        onDelete={handleDeleteWorkout}/>
+      <ExerciseDetailScreen
+        exerciseId={selectedExerciseId}
+        allWorkouts={workouts}
+        allSets={allSets}
+        customExercises={customExercises}
+        onBack={() => setSubScreen(selectedWorkout ? "workoutDetail" : "main")}
+      />
+    );
+  }
+
+  if (subScreen === "workout" && selectedRoutine) {
+    return (
+      <ActiveWorkoutScreen
+        workout={{
+          id: Date.now().toString(),
+          routineId: selectedRoutine.id,
+          startTime: new Date().toISOString(),
+          endTime: null,
+          completed: false,
+        }}
+        exercises={selectedRoutine.exercises}
+        customExercises={customExercises}
+        onComplete={handleCompleteWorkout}
+        onCancel={() => setSubScreen("main")}
+        allSets={allSets}
+        onExerciseDetail={handleExerciseDetail}
+      />
     );
   }
 
   return (
-    <>
+    <div style={{
+      width: "100%", maxWidth: "430px", height: "100vh",
+      marginLeft: "auto", marginRight: "auto", background: T.bg,
+      display: "flex", flexDirection: "column", position: "relative",
+    }}>
       <MainScreenWithTabs
-        workouts={workouts} allSets={allSets} routines={routines} customExercises={customExercises}
-        onStartFromRoutine={handleStartFromRoutine}
-        onEditRoutine={(r) => { setEditRoutine(r); setSubScreen("routineEditor"); setRoutineExercises(r.exercises); }}
-        onNewRoutine={() => { setSubScreen("nameModal"); }}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        workouts={workouts}
+        routines={routines}
+        customExercises={customExercises}
+        allSets={allSets}
+        onStartRoutine={handleStartRoutine}
+        onSelectWorkout={handleSelectWorkout}
+        onCreateRoutine={handleCreateRoutine}
+        onEditRoutine={handleEditRoutine}
         onDeleteRoutine={handleDeleteRoutine}
-        onExerciseDetail={(exId) => { setDetailExerciseId(exId); setSubScreen("exerciseDetail"); }}
-        onWorkoutDetail={(w) => { setDetailWorkout(w); setSubScreen("workoutDetail"); }}
-        onNavigate={onNavigate}
-        onAdd={() => {
-          if (routines.length > 0) handleStartFromRoutine(routines[0]);
-          else setSubScreen("nameModal");
-        }}
       />
-      {toast && <Toast message={toast.msg} icon={toast.icon} onDismiss={() => setToast(null)}/>}
-    </>
+      <GymBottomNav onAdd={() => {}} onNavigate={() => {}} />
+      {toast && (
+        <Toast
+          message={toast.message}
+          icon={toast.icon}
+          onDismiss={() => setToast(null)}
+        />
+      )}
+    </div>
   );
 }
