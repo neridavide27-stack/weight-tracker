@@ -763,4 +763,17 @@ export const saveGymRestTimer = async (seconds) => {
   return await foodDb.appSettings.put({ key: 'gymRestTimer', value: seconds });
 };
 
+export const getAllGymSets = async () => {
+  return await foodDb.gymSets.toArray();
+};
+
+export const getGymPrecMode = async () => {
+  const row = await foodDb.appSettings.get('gymPrecMode');
+  return row ? row.value : 'routine';
+};
+
+export const saveGymPrecMode = async (mode) => {
+  return await foodDb.appSettings.put({ key: 'gymPrecMode', value: mode });
+};
+
 export default foodDb;
