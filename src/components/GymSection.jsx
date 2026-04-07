@@ -1257,8 +1257,15 @@ const RoutineEditor = ({ routine, exercises, onSave, onClose, customExercises, d
    ROUTINE SUMMARY (POLISHED VERSION)
    ═══════════════════════════════════════════ */
 const RoutineSummary = ({ name, exercises, onSave, onBack, customExercises }) => {
+  const pageRef = useRef(null);
   const duration = estimateRoutineDuration(exercises);
   const totalSets = exercises.reduce((sum, ex) => sum + (ex.sets || []).length, 0);
+
+  // Always start at top regardless of previous scroll position
+  useEffect(() => {
+    if (pageRef.current) pageRef.current.scrollTop = 0;
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
 
   const muscleBreakdown = useMemo(() => {
     const counts = {};
@@ -1273,104 +1280,141 @@ const RoutineSummary = ({ name, exercises, onSave, onBack, customExercises }) =>
   }, [exercises, customExercises]);
 
   const maxSets = Math.max(...muscleBreakdown.map(m => m.sets), 1);
+  const totalMuscSets = muscleBreakdown.reduce((s, m) => s + m.sets, 0);
 
   return (
-    <div style={{ minHeight:"100vh",background:T.bg,paddingBottom:100 }}>
-      {/* Header card */}
+    <div ref={pageRef} style={{ minHeight:"100vh", background:T.bg, paddingBottom:100, overflowY:"auto" }}>
+      {/* Hero header */}
       <div style={{
-        background:T.gradient,padding:"24px 20px 20px",
-        borderRadius:"0 0 28px 28px",marginBottom:20,
+        background:T.gradient, padding:"56px 24px 32px",
+        borderRadius:"0 0 32px 32px", marginBottom:24,
+        position:"relative", overflow:"hidden",
       }}>
+        {/* Decorative circles */}
+        <div style={{
+          position:"absolute", top:-40, right:-40, width:160, height:160,
+          borderRadius:"50%", background:"rgba(255,255,255,0.08)",
+        }}/>
+        <div style={{
+          position:"absolute", bottom:-20, left:-20, width:100, height:100,
+          borderRadius:"50%", background:"rgba(255,255,255,0.06)",
+        }}/>
+
         <button onClick={onBack} style={{
-          background:"rgba(255,255,255,0.15)",border:"none",borderRadius:12,
-          width:36,height:36,display:"flex",alignItems:"center",justifyContent:"center",
-          cursor:"pointer",marginBottom:16,
+          background:"rgba(255,255,255,0.18)", border:"none", borderRadius:12,
+          width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center",
+          cursor:"pointer", marginBottom:24, position:"relative",
         }}><ChevronLeft size={18} color="#fff" /></button>
-        <div style={{ fontSize:22,fontWeight:900,color:"#fff",marginBottom:4 }}>{name}</div>
-        <div style={{ display:"flex",gap:16,marginTop:12 }}>
+
+        {/* Check icon */}
+        <div style={{
+          width:56, height:56, borderRadius:18,
+          background:"rgba(255,255,255,0.2)",
+          border:"2px solid rgba(255,255,255,0.4)",
+          display:"flex", alignItems:"center", justifyContent:"center",
+          marginBottom:14,
+        }}>
+          <Check size={28} color="#fff" strokeWidth={3} />
+        </div>
+
+        {/* Label */}
+        <div style={{
+          fontSize:11, fontWeight:800, color:"rgba(255,255,255,0.65)",
+          letterSpacing:1.2, textTransform:"uppercase", marginBottom:6,
+        }}>Routine pronta</div>
+
+        {/* Name — large, bold */}
+        <div style={{
+          fontSize:28, fontWeight:900, color:"#fff", lineHeight:1.15,
+          letterSpacing:-0.5, marginBottom:20,
+          textShadow:"0 2px 12px rgba(0,0,0,0.15)",
+        }}>{name}</div>
+
+        {/* Stats row */}
+        <div style={{ display:"flex", gap:0 }}>
           {[
-            { label:"Esercizi", value:exercises.length },
-            { label:"Serie totali", value:totalSets },
-            { label:"Durata stimata", value:`~${duration}min` },
-          ].map((s,i) => (
-            <div key={i}>
-              <div style={{ fontSize:20,fontWeight:900,color:"#fff" }}>{s.value}</div>
-              <div style={{ fontSize:10,color:"rgba(255,255,255,0.7)",fontWeight:600 }}>{s.label}</div>
+            { label:"Esercizi", value:exercises.length, icon:"🏋️" },
+            { label:"Serie totali", value:totalSets, icon:"🔢" },
+            { label:"Durata", value:`~${duration}min`, icon:"⏱️" },
+          ].map((s, i) => (
+            <div key={i} style={{
+              flex:1, textAlign:"center",
+              borderRight: i < 2 ? "1px solid rgba(255,255,255,0.2)" : "none",
+              padding:"0 8px",
+            }}>
+              <div style={{ fontSize:11, marginBottom:3 }}>{s.icon}</div>
+              <div style={{ fontSize:20, fontWeight:900, color:"#fff", lineHeight:1 }}>{s.value}</div>
+              <div style={{ fontSize:10, color:"rgba(255,255,255,0.65)", fontWeight:600, marginTop:2 }}>{s.label}</div>
             </div>
           ))}
         </div>
       </div>
 
       <div style={{ padding:"0 16px" }}>
-        {/* Muscle breakdown */}
-        <div style={{
-          background:T.card,borderRadius:16,padding:16,marginBottom:16,
-          border:`1px solid ${T.border}`,boxShadow:T.shadow,
-        }}>
-          <div style={{ fontSize:14,fontWeight:800,color:T.text,marginBottom:14 }}>Serie per gruppo muscolare</div>
-          {muscleBreakdown.map((m,i) => (
-            <div key={i} style={{ marginBottom:10 }}>
-              <div style={{ display:"flex",justifyContent:"space-between",marginBottom:4 }}>
-                <span style={{ fontSize:12,fontWeight:700,color:T.text }}>{m.muscle}</span>
-                <span style={{ fontSize:12,fontWeight:800,color:m.color }}>{m.sets} serie</span>
-              </div>
-              <div style={{ height:8,background:T.bg,borderRadius:4,overflow:"hidden" }}>
-                <div style={{
-                  height:"100%",width:`${(m.sets / maxSets) * 100}%`,
-                  background:m.color,borderRadius:4,
-                }}/>
-              </div>
-            </div>
-          ))}
+        {/* Muscle breakdown — visual grid */}
+        <div style={{ fontSize:12, fontWeight:800, color:T.textMuted, textTransform:"uppercase", letterSpacing:0.6, marginBottom:12 }}>
+          Gruppi muscolari
         </div>
-
-        {/* Exercise list */}
         <div style={{
-          background:T.card,borderRadius:16,padding:16,marginBottom:20,
-          border:`1px solid ${T.border}`,boxShadow:T.shadow,
+          background:T.card, borderRadius:18, padding:20, marginBottom:20,
+          border:`1px solid ${T.border}`, boxShadow:T.shadow,
         }}>
-          <div style={{ fontSize:14,fontWeight:800,color:T.text,marginBottom:12 }}>Esercizi</div>
-          {exercises.map((ex, i) => {
-            const info = getExerciseById(ex.exerciseId, customExercises);
-            return (
+          {/* Stacked horizontal bar showing distribution */}
+          <div style={{ display:"flex", height:12, borderRadius:8, overflow:"hidden", marginBottom:18, gap:2 }}>
+            {muscleBreakdown.map((m, i) => (
               <div key={i} style={{
-                display:"flex",alignItems:"center",gap:10,padding:"10px 0",
-                borderBottom:i < exercises.length - 1 ? `1px solid ${T.border}` : "none",
-              }}>
-                <div style={{
-                  width:32,height:32,borderRadius:10,
-                  background:`${MUSCLE_COLORS[info?.muscle] || T.teal}15`,
-                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900,
-                  color:MUSCLE_COLORS[info?.muscle] || T.teal,
-                }}>{i + 1}</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{info?.name}</div>
-                  <div style={{ fontSize:10,color:T.textMuted }}>{ex.sets?.length} serie · {info?.muscle}</div>
+                flex: m.sets,
+                background: m.color,
+                borderRadius: i === 0 ? "6px 0 0 6px" : i === muscleBreakdown.length - 1 ? "0 6px 6px 0" : 0,
+                transition:"flex 0.4s",
+              }} title={`${m.muscle}: ${m.sets} serie`} />
+            ))}
+          </div>
+
+          {/* Per-muscle rows */}
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            {muscleBreakdown.map((m, i) => {
+              const pct = Math.round((m.sets / totalMuscSets) * 100);
+              return (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:12 }}>
+                  {/* Color dot */}
+                  <div style={{
+                    width:10, height:10, borderRadius:"50%", background:m.color, flexShrink:0,
+                  }}/>
+                  {/* Name */}
+                  <div style={{ fontSize:13, fontWeight:700, color:T.text, flex:1 }}>{m.muscle}</div>
+                  {/* Progress bar */}
+                  <div style={{ flex:2, height:6, background:T.bg, borderRadius:4, overflow:"hidden" }}>
+                    <div style={{
+                      height:"100%", width:`${pct}%`,
+                      background:m.color, borderRadius:4,
+                    }}/>
+                  </div>
+                  {/* Sets count */}
+                  <div style={{
+                    fontSize:12, fontWeight:800, color:m.color,
+                    minWidth:50, textAlign:"right",
+                  }}>{m.sets} {m.sets === 1 ? "serie" : "serie"} · {pct}%</div>
                 </div>
-                <div style={{ display:"flex",gap:4 }}>
-                  {ex.unilateral && (
-                    <span style={{ fontSize:8,fontWeight:800,color:T.purple,background:`${T.purple}15`,padding:"3px 6px",borderRadius:6 }}>UNI</span>
-                  )}
-                  {ex.supersetWith != null && (
-                    <span style={{ fontSize:8,fontWeight:800,color:T.orange,background:`${T.orange}15`,padding:"3px 6px",borderRadius:6 }}>SS</span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
 
-        <button onClick={onSave} style={{
-          width:"100%",padding:"16px",borderRadius:16,border:"none",
-          background:T.gradient,color:"#fff",fontSize:16,fontWeight:800,
-          cursor:"pointer",boxShadow:"0 4px 20px rgba(2,128,144,0.3)",
-          marginBottom:12,
-        }}>Salva Routine</button>
+        {/* Action buttons */}
+        <button onClick={() => onSave(name, exercises)} style={{
+          width:"100%", padding:"17px", borderRadius:16, border:"none",
+          background:T.gradient, color:"#fff", fontSize:16, fontWeight:800,
+          cursor:"pointer", boxShadow:"0 4px 20px rgba(2,128,144,0.35)",
+          marginBottom:10, display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+        }}>
+          <Check size={20} color="#fff" strokeWidth={3} /> Salva Routine
+        </button>
 
         <button onClick={onBack} style={{
-          width:"100%",padding:"14px",borderRadius:14,
-          border:`1.5px solid ${T.border}`,background:T.card,
-          color:T.textSec,fontSize:14,fontWeight:700,cursor:"pointer",
+          width:"100%", padding:"14px", borderRadius:14,
+          border:`1.5px solid ${T.border}`, background:T.card,
+          color:T.textSec, fontSize:14, fontWeight:700, cursor:"pointer",
         }}>Torna a modificare</button>
       </div>
     </div>
@@ -2548,16 +2592,17 @@ export default function GymSection({ onNavigate }) {
     }
   };
 
-  const handleSaveRoutine = async (exercises) => {
+  const handleSaveRoutine = async (routineName, exercises) => {
     try {
-      if (!newRoutineName) {
+      const nameToUse = routineName || newRoutineName;
+      if (!nameToUse) {
         setToast({ message: "Nome routine richiesto", icon: <AlertTriangle size={16} color={T.red} /> });
         return;
       }
       if (editingRoutineId) {
-        await updateGymRoutine(editingRoutineId, { name: newRoutineName, exercises });
+        await updateGymRoutine(editingRoutineId, { name: nameToUse, exercises });
       } else {
-        await addGymRoutine({ name: newRoutineName, exercises });
+        await addGymRoutine({ name: nameToUse, exercises });
       }
 
       await loadData();
@@ -2681,7 +2726,7 @@ export default function GymSection({ onNavigate }) {
       <RoutineSummary
         name={newRoutineName}
         exercises={newRoutineExercises}
-        onSave={() => handleSaveRoutine(newRoutineExercises)}
+        onSave={(routineName, exs) => handleSaveRoutine(routineName, exs)}
         onBack={() => setSubScreen("routineEditor")}
         customExercises={customExercises}
       />
