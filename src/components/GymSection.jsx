@@ -657,27 +657,6 @@ const ExercisePicker = ({ onSelect, onClose, customExercises: initCustom, onAddC
                 })}
               </div>
             </div>
-            {/* Unilateral toggle */}
-            <div style={{
-              display:"flex", alignItems:"center", justifyContent:"space-between",
-              padding:"14px 16px", background:T.bg, borderRadius:14, marginBottom:20,
-            }}>
-              <div>
-                <div style={{ fontSize:14, fontWeight:700, color:T.text }}>Unilaterale</div>
-                <div style={{ fontSize:11, color:T.textSec }}>Esercizio su un lato alla volta</div>
-              </div>
-              <button onClick={() => setCustomForm(f => ({...f, uni: !f.uni}))} style={{
-                width:48, height:28, borderRadius:14, border:"none", cursor:"pointer",
-                background: customForm.uni ? T.teal : T.border,
-                transition:"background .2s", position:"relative",
-              }}>
-                <div style={{
-                  position:"absolute", top:3, left: customForm.uni ? 22 : 3,
-                  width:22, height:22, borderRadius:11, background:"#fff",
-                  transition:"left .2s", boxShadow:"0 1px 4px rgba(0,0,0,0.2)",
-                }} />
-              </button>
-            </div>
             {/* Save */}
             <button
               onClick={handleSaveCustom}
@@ -853,18 +832,20 @@ const NameModal = ({ onContinue, onClose, title = "Nome Routine" }) => {
 /* ═══════════════════════════════════════════
    ROUTINE EDITOR (POLISHED VERSION)
    ═══════════════════════════════════════════ */
-const RoutineEditor = ({ routine, exercises, onSave, onClose, customExercises, onAddCustomExercise, onAddExercises }) => {
+const RoutineEditor = ({ routine, exercises, onSave, onClose, customExercises, defaultTimers, onAddCustomExercise, onAddExercises }) => {
   const [exs, setExs] = useState(exercises || []);
   const [showPicker, setShowPicker] = useState(false);
   const [reorderIdx, setReorderIdx] = useState(null);
   const [numpad, setNumpad] = useState(null);
   const [drumPicker, setDrumPicker] = useState(null);
 
+  const dt = defaultTimers || { rest: 90, warmup: 60, side: 15 };
+
   const addExercises = (newExs) => {
     setExs(prev => [...prev, ...newExs.map(e => ({
       exerciseId: e.id,
       sets: [{ weight: 0, reps: 0, type: "N" }],
-      restTimer: 90, warmupTimer: 60, sideTimer: 15,
+      restTimer: dt.rest, warmupTimer: dt.warmup, sideTimer: dt.side,
       unilateral: e.uni || false, supersetWith: null, note: "",
     }))]);
     setShowPicker(false);
@@ -967,35 +948,56 @@ const RoutineEditor = ({ routine, exercises, onSave, onClose, customExercises, o
 
           return (
             <div key={exIdx} style={{ position:"relative" }}>
-              {/* Superset connector line */}
+              {/* Superset connector bar (between cards) */}
               {isSuperset && (
                 <div style={{
-                  position:"absolute",left:7,top:"50%",bottom:-14,width:3,
-                  background:`linear-gradient(to bottom, ${T.orange}, ${T.orange}88)`,
-                  borderRadius:2,zIndex:1,
-                }}/>
-              )}
-              {isPrevSuperset && (
-                <div style={{
-                  position:"absolute",left:7,top:-14,height:14,width:3,
-                  background:`${T.orange}88`,borderRadius:2,zIndex:1,
-                }}/>
+                  position:"absolute",left:16,right:16,bottom:-7,height:14,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  zIndex:2,pointerEvents:"none",
+                }}>
+                  <div style={{ flex:1,height:2,background:`${T.orange}50` }} />
+                  <div style={{
+                    padding:"2px 8px",background:T.orange,borderRadius:20,
+                    fontSize:9,fontWeight:900,color:"#fff",letterSpacing:0.5,
+                    margin:"0 6px",
+                  }}>SUPERSET</div>
+                  <div style={{ flex:1,height:2,background:`${T.orange}50` }} />
+                </div>
               )}
 
               <div style={{
-                background:T.card,borderRadius:16,marginBottom:isSuperset ? 6 : 14,
-                border: reorderIdx === exIdx ? `2px solid ${T.teal}` : `1px solid ${T.border}`,
-                boxShadow:T.shadow,overflow:"hidden",
+                background:T.card,borderRadius:16,marginBottom:isSuperset ? 20 : 14,
+                border: reorderIdx === exIdx
+                  ? `2px solid ${T.teal}`
+                  : (isSuperset || isPrevSuperset)
+                    ? `2px solid ${T.orange}60`
+                    : `1px solid ${T.border}`,
+                boxShadow: (isSuperset || isPrevSuperset)
+                  ? `0 2px 12px ${T.orange}20`
+                  : T.shadow,
+                overflow:"hidden",
               }}>
                 {/* Exercise Header */}
                 <div style={{
                   display:"flex",alignItems:"center",gap:8,
                   padding:"12px 10px 10px 12px",
                   borderBottom:`1px solid ${T.border}`,
-                  background:isPrevSuperset ? `${T.orange}08` : "transparent",
+                  background: isSuperset
+                    ? `${T.orange}08`
+                    : isPrevSuperset
+                      ? `${T.orange}08`
+                      : "transparent",
                 }}>
                   <div style={{ flex:1,minWidth:0 }}>
-                    <div style={{ fontSize:14,fontWeight:800,color:muscleColor }}>{info?.name || "Esercizio"}</div>
+                    <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+                      <div style={{ fontSize:14,fontWeight:800,color:muscleColor }}>{info?.name || "Esercizio"}</div>
+                      {(isSuperset || isPrevSuperset) && (
+                        <div style={{
+                          padding:"1px 6px",background:`${T.orange}20`,borderRadius:6,
+                          fontSize:9,fontWeight:900,color:T.orange,letterSpacing:0.3,
+                        }}>SS</div>
+                      )}
+                    </div>
                     <div style={{ fontSize:10,color:T.textMuted,fontWeight:500 }}>
                       {info?.muscle} · {info?.equipment}
                     </div>
@@ -1867,75 +1869,66 @@ const WorkoutDetailScreen = ({ workout, sets, customExercises, onBack, onExercis
    TAB: ALLENAMENTO
    ═══════════════════════════════════════════ */
 const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartRoutine, onSelectWorkout }) => {
+  const [showRoutinePicker, setShowRoutinePicker] = useState(false);
+
   return (
     <div style={{ padding: "16px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Routine rapide */}
-      {routines.length > 0 && (
-        <div>
-          <div style={{ fontSize:12, fontWeight:800, color:T.textMuted, textTransform:"uppercase", letterSpacing:0.6, marginBottom:10 }}>
-            Routine salvate
+
+      {/* Big CTA */}
+      <button
+        onClick={() => routines.length > 0 ? setShowRoutinePicker(true) : null}
+        style={{
+          width:"100%", padding:"18px 20px",
+          background: routines.length > 0 ? T.gradient : T.bg,
+          border: routines.length > 0 ? "none" : `1.5px dashed ${T.border}`,
+          borderRadius:18, cursor: routines.length > 0 ? "pointer" : "default",
+          display:"flex", alignItems:"center", justifyContent:"center", gap:12,
+          boxShadow: routines.length > 0 ? "0 4px 20px rgba(2,128,144,0.35)" : "none",
+        }}
+      >
+        <div style={{
+          width:44, height:44, borderRadius:14,
+          background: routines.length > 0 ? "rgba(255,255,255,0.2)" : T.border,
+          display:"flex", alignItems:"center", justifyContent:"center",
+        }}>
+          <Play size={22} color={routines.length > 0 ? "#fff" : T.textMuted} fill={routines.length > 0 ? "#fff" : "none"} />
+        </div>
+        <div style={{ textAlign:"left" }}>
+          <div style={{ fontSize:17, fontWeight:900, color: routines.length > 0 ? "#fff" : T.textMuted }}>
+            {routines.length > 0 ? "Inizia Allenamento" : "Nessuna routine salvata"}
           </div>
-          <div style={{ display:"flex", gap:10, overflowX:"auto", paddingBottom:4 }}>
-            {routines.map(r => {
-              const muscles = [...new Set((r.exercises || []).map(e => getExerciseById(e.exerciseId, customExercises)?.muscle).filter(Boolean))];
-              const estDur = estimateRoutineDuration(r.exercises || []);
-              return (
-                <button key={r.id} onClick={() => onStartRoutine(r.id)} style={{
-                  background:T.card, border:`1.5px solid ${T.border}`,
-                  borderRadius:14, padding:"12px 14px", cursor:"pointer",
-                  boxShadow:T.shadow, flexShrink:0, minWidth:130, textAlign:"left",
-                }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
-                    <div style={{
-                      width:28, height:28, borderRadius:8, background:T.tealLight,
-                      display:"flex", alignItems:"center", justifyContent:"center",
-                    }}>
-                      <Play size={12} color={T.teal} />
-                    </div>
-                    <div style={{ fontSize:12, fontWeight:800, color:T.teal }}>Inizia</div>
-                  </div>
-                  <div style={{ fontSize:13, fontWeight:800, color:T.text, marginBottom:3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:110 }}>{r.name}</div>
-                  <div style={{ fontSize:10, color:T.textMuted }}>{(r.exercises||[]).length} es. · ~{estDur}min</div>
-                  {muscles.length > 0 && (
-                    <div style={{ display:"flex", gap:3, marginTop:5, flexWrap:"wrap" }}>
-                      {muscles.slice(0,3).map(m => (
-                        <div key={m} style={{ width:7, height:7, borderRadius:"50%", background:MUSCLE_COLORS[m]||T.teal }} />
-                      ))}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+          <div style={{ fontSize:12, color: routines.length > 0 ? "rgba(255,255,255,0.75)" : T.textMuted, marginTop:2 }}>
+            {routines.length > 0
+              ? `${routines.length} routine disponibil${routines.length === 1 ? "e" : "i"}`
+              : "Crea prima una routine nella tab Routine"}
           </div>
         </div>
-      )}
+      </button>
 
       {/* Allenamenti recenti */}
       <div>
         <div style={{ fontSize:12, fontWeight:800, color:T.textMuted, textTransform:"uppercase", letterSpacing:0.6, marginBottom:10 }}>
-          Allenamenti recenti
+          Ultimi allenamenti
         </div>
         {workouts.length === 0 ? (
           <div style={{
-            background:T.card, borderRadius:16, padding:"40px 20px",
-            boxShadow:T.shadow, border:`1px solid ${T.border}`,
-            textAlign:"center",
+            background:T.card, borderRadius:16, padding:"36px 20px",
+            boxShadow:T.shadow, border:`1px solid ${T.border}`, textAlign:"center",
           }}>
             <div style={{
-              width:64, height:64, borderRadius:20, background:T.tealLight,
-              display:"flex", alignItems:"center", justifyContent:"center",
-              margin:"0 auto 16px",
+              width:56, height:56, borderRadius:18, background:T.tealLight,
+              display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 14px",
             }}>
-              <Dumbbell size={28} color={T.teal} />
+              <Dumbbell size={24} color={T.teal} />
             </div>
-            <div style={{ fontSize:16, fontWeight:800, color:T.text, marginBottom:6 }}>Nessun allenamento ancora</div>
-            <div style={{ fontSize:13, color:T.textSec, lineHeight:1.5 }}>
-              Inizia una routine o crea la tua prima sessione!
+            <div style={{ fontSize:15, fontWeight:800, color:T.text, marginBottom:5 }}>Nessun allenamento ancora</div>
+            <div style={{ fontSize:12, color:T.textSec, lineHeight:1.5 }}>
+              Completa il tuo primo allenamento per vederlo qui
             </div>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {workouts.slice(0, 10).map((w, idx) => {
+            {workouts.slice(0, 3).map((w, idx) => {
               const sets = allSets.filter(s => s.workoutId === w.id);
               return (
                 <WorkoutCard key={idx} workout={w} sets={sets} customExercises={customExercises} onTap={() => onSelectWorkout(w.id)} />
@@ -1944,6 +1937,68 @@ const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartR
           </div>
         )}
       </div>
+
+      {/* Routine picker bottom sheet */}
+      {showRoutinePicker && (
+        <div style={{
+          position:"fixed", inset:0, zIndex:400, background:"rgba(0,0,0,0.5)",
+          display:"flex", alignItems:"flex-end", justifyContent:"center",
+        }} onClick={() => setShowRoutinePicker(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background:T.card, borderRadius:"24px 24px 0 0", width:"100%", maxWidth:430,
+            paddingBottom:34, maxHeight:"70vh",
+          }}>
+            <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 4px" }}>
+              <div style={{ width:36, height:4, borderRadius:2, background:T.border }} />
+            </div>
+            <div style={{ padding:"8px 20px 14px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ fontSize:17, fontWeight:900, color:T.text }}>Scegli Routine</div>
+              <button onClick={() => setShowRoutinePicker(false)} style={{
+                width:32, height:32, borderRadius:10, background:T.bg, border:"none",
+                display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer",
+              }}><X size={16} color={T.textSec} /></button>
+            </div>
+            <div style={{ overflowY:"auto", padding:"0 16px" }}>
+              {routines.map(r => {
+                const muscles = [...new Set((r.exercises||[]).map(e => getExerciseById(e.exerciseId, customExercises)?.muscle).filter(Boolean))];
+                const estDur = estimateRoutineDuration(r.exercises || []);
+                return (
+                  <button key={r.id} onClick={() => { onStartRoutine(r.id); setShowRoutinePicker(false); }} style={{
+                    width:"100%", padding:"14px 16px", marginBottom:8,
+                    background:T.bg, border:`1.5px solid ${T.border}`,
+                    borderRadius:14, cursor:"pointer", display:"flex", alignItems:"center", gap:12, textAlign:"left",
+                  }}>
+                    <div style={{
+                      width:42, height:42, borderRadius:12, background:T.tealLight,
+                      display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                    }}>
+                      <Play size={18} color={T.teal} fill={T.teal} />
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:800, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.name}</div>
+                      <div style={{ fontSize:11, color:T.textSec, marginTop:2 }}>
+                        {(r.exercises||[]).length} esercizi · ~{estDur}min
+                      </div>
+                      {muscles.length > 0 && (
+                        <div style={{ display:"flex", gap:4, marginTop:5 }}>
+                          {muscles.slice(0,4).map(m => (
+                            <div key={m} style={{
+                              padding:"2px 7px", borderRadius:10, fontSize:9, fontWeight:700,
+                              background:`${MUSCLE_COLORS[m]||T.teal}20`,
+                              color: MUSCLE_COLORS[m]||T.teal,
+                            }}>{m}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <ChevronRight size={16} color={T.textMuted} />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2205,6 +2260,111 @@ const TabStatistiche = ({ workouts, allSets, customExercises }) => {
 };
 
 /* ═══════════════════════════════════════════
+   SETTINGS SCREEN
+   ═══════════════════════════════════════════ */
+const SettingsScreen = ({ defaultTimers, onSave, onBack }) => {
+  const [timers, setTimers] = useState(defaultTimers);
+  const [drumPicker, setDrumPicker] = useState(null);
+
+  const timerRow = (label, sublabel, field, color, icon) => (
+    <div style={{
+      background:T.card, borderRadius:16, padding:"16px",
+      border:`1px solid ${T.border}`, boxShadow:T.shadow,
+      display:"flex", alignItems:"center", gap:14, marginBottom:10,
+    }}>
+      <div style={{
+        width:44, height:44, borderRadius:13, background:`${color}18`,
+        display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+      }}>
+        {icon}
+      </div>
+      <div style={{ flex:1 }}>
+        <div style={{ fontSize:14, fontWeight:800, color:T.text }}>{label}</div>
+        <div style={{ fontSize:11, color:T.textSec, marginTop:2 }}>{sublabel}</div>
+      </div>
+      <button onClick={() => setDrumPicker({ field, title:label })} style={{
+        display:"flex", alignItems:"center", gap:6,
+        background:`${color}15`, border:`1.5px solid ${color}30`,
+        borderRadius:12, padding:"8px 14px", cursor:"pointer",
+      }}>
+        <Timer size={14} color={color} />
+        <span style={{ fontSize:15, fontWeight:900, color }}>{fmtTimer(timers[field])}</span>
+      </button>
+    </div>
+  );
+
+  return (
+    <div style={{ minHeight:"100vh", background:T.bg }}>
+      {/* Header */}
+      <div style={{
+        background:T.card, padding:"16px 20px",
+        borderBottom:`1px solid ${T.border}`,
+        display:"flex", alignItems:"center", gap:12,
+      }}>
+        <button onClick={onBack} style={{
+          width:36, height:36, borderRadius:12, background:T.tealLight, border:"none",
+          display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", flexShrink:0,
+        }}><ChevronLeft size={18} color={T.teal} /></button>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:17, fontWeight:900, color:T.text }}>Impostazioni</div>
+          <div style={{ fontSize:11, color:T.textSec }}>Timer predefiniti per gli esercizi</div>
+        </div>
+        <button onClick={() => onSave(timers)} style={{
+          background:T.gradient, border:"none", borderRadius:12, padding:"9px 20px",
+          color:"#fff", fontSize:13, fontWeight:800, cursor:"pointer",
+          boxShadow:"0 2px 10px rgba(2,128,144,0.25)",
+        }}>Salva</button>
+      </div>
+
+      <div style={{ padding:20 }}>
+        <div style={{
+          fontSize:11, fontWeight:700, color:T.textMuted, textTransform:"uppercase",
+          letterSpacing:0.6, marginBottom:14,
+        }}>Timer di default per nuovi esercizi</div>
+
+        {timerRow(
+          "Timer riposo",
+          "Pausa tra una serie e l'altra",
+          "rest", T.teal,
+          <Timer size={20} color={T.teal} />,
+        )}
+        {timerRow(
+          "Timer warmup",
+          "Pausa dopo le serie di riscaldamento",
+          "warmup", "#EAB308",
+          <Flame size={20} color="#EAB308" />,
+        )}
+        {timerRow(
+          "Timer unilaterale",
+          "Pausa tra lato destro e sinistro",
+          "side", T.purple,
+          <ArrowLeftRight size={20} color={T.purple} />,
+        )}
+
+        <div style={{
+          background:T.tealLight, borderRadius:14, padding:"14px 16px", marginTop:6,
+          border:`1px solid ${T.teal}30`,
+        }}>
+          <div style={{ fontSize:12, fontWeight:700, color:T.teal, marginBottom:3 }}>💡 Come funziona</div>
+          <div style={{ fontSize:12, color:T.textSec, lineHeight:1.6 }}>
+            Questi timer vengono applicati automaticamente quando aggiungi esercizi a una nuova routine. Puoi sempre cambiarli singolarmente nell'editor della routine.
+          </div>
+        </div>
+      </div>
+
+      {drumPicker && (
+        <DrumPicker
+          value={timers[drumPicker.field]}
+          title={drumPicker.title}
+          onChange={(v) => setTimers(t => ({ ...t, [drumPicker.field]: v }))}
+          onClose={() => setDrumPicker(null)}
+        />
+      )}
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
    TABS & MAIN SCREEN
    ═══════════════════════════════════════════ */
 const TABS = [
@@ -2217,7 +2377,7 @@ const MainScreenWithTabs = (props) => {
   const {
     activeTab, setActiveTab, workouts, routines, customExercises,
     allSets, onStartRoutine, onSelectWorkout, onCreateRoutine,
-    onEditRoutine, onDeleteRoutine,
+    onEditRoutine, onDeleteRoutine, onOpenSettings,
   } = props;
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: T.bg }}>
@@ -2227,19 +2387,15 @@ const MainScreenWithTabs = (props) => {
         borderBottom: `1px solid ${T.border}`,
       }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div>
-            <div style={{ fontSize:22, fontWeight:900, color:T.text, lineHeight:1.1 }}>Palestra</div>
-            <div style={{ fontSize:12, color:T.textSec, marginTop:3, fontWeight:500 }}>
-              {workouts.length} allenamenti · {routines.length} routine
-            </div>
-          </div>
-          <div style={{
-            width:42, height:42, borderRadius:14, background:T.gradient,
+          <div style={{ fontSize:22, fontWeight:900, color:T.text, lineHeight:1.1 }}>Palestra</div>
+          <button onClick={onOpenSettings} style={{
+            width:42, height:42, borderRadius:14, background:T.bg,
+            border:`1.5px solid ${T.border}`,
             display:"flex", alignItems:"center", justifyContent:"center",
-            boxShadow:"0 2px 10px rgba(2,128,144,0.3)",
+            cursor:"pointer", boxShadow:"none",
           }}>
-            <Dumbbell size={20} color="#fff" />
-          </div>
+            <Settings size={20} color={T.textSec} />
+          </button>
         </div>
 
         {/* Tab bar */}
@@ -2309,6 +2465,8 @@ const MainScreenWithTabs = (props) => {
 /* ═══════════════════════════════════════════
    GYM SECTION (ROOT COMPONENT)
    ═══════════════════════════════════════════ */
+const DEFAULT_TIMERS = { rest: 90, warmup: 60, side: 15 };
+
 export default function GymSection({ onNavigate }) {
   const [subScreen, setSubScreen] = useState("main");
   const [activeTab, setActiveTab] = useState("allenamento");
@@ -2323,10 +2481,21 @@ export default function GymSection({ onNavigate }) {
   const [editingRoutineId, setEditingRoutineId] = useState(null);
   const [newRoutineName, setNewRoutineName] = useState(null);
   const [newRoutineExercises, setNewRoutineExercises] = useState([]);
+  const [defaultTimers, setDefaultTimers] = useState(DEFAULT_TIMERS);
 
   useEffect(() => {
     loadData();
+    loadTimers();
   }, []);
+
+  const loadTimers = async () => {
+    try {
+      const saved = await getGymRestTimer();
+      if (saved && typeof saved === "object" && "rest" in saved) {
+        setDefaultTimers(saved);
+      }
+    } catch (e) { /* use defaults */ }
+  };
 
   const loadData = async () => {
     try {
@@ -2343,6 +2512,15 @@ export default function GymSection({ onNavigate }) {
     } catch (err) {
       console.error("Error loading gym data:", err);
     }
+  };
+
+  const handleSaveSettings = async (timers) => {
+    try {
+      await saveGymRestTimer(timers);
+      setDefaultTimers(timers);
+    } catch (e) { console.error("Error saving timers:", e); }
+    setSubScreen("main");
+    setToast({ message: "Timer aggiornati!", icon: <Check size={16} color={T.green} /> });
   };
 
   const handleStartRoutine = (routineId) => {
@@ -2384,6 +2562,7 @@ export default function GymSection({ onNavigate }) {
 
       await loadData();
       setSubScreen("main");
+      setActiveTab("routine");
       setNewRoutineName(null);
       setNewRoutineExercises([]);
       setEditingRoutineId(null);
@@ -2435,6 +2614,16 @@ export default function GymSection({ onNavigate }) {
     }
   };
 
+  if (subScreen === "settings") {
+    return (
+      <SettingsScreen
+        defaultTimers={defaultTimers}
+        onSave={handleSaveSettings}
+        onBack={() => setSubScreen("main")}
+      />
+    );
+  }
+
   if (subScreen === "nameModal") {
     return (
       <NameModal
@@ -2460,7 +2649,7 @@ export default function GymSection({ onNavigate }) {
           setNewRoutineExercises(selected.map(e => ({
             exerciseId: e.id,
             sets: [{ weight: 0, reps: 0, type: "N" }],
-            restTimer: 90, warmupTimer: 60, sideTimer: 15,
+            restTimer: defaultTimers.rest, warmupTimer: defaultTimers.warmup, sideTimer: defaultTimers.side,
             unilateral: e.uni || false, supersetWith: null, note: "",
           })));
           setSubScreen("routineEditor");
@@ -2480,6 +2669,7 @@ export default function GymSection({ onNavigate }) {
         }}
         onClose={() => setSubScreen("main")}
         customExercises={customExercises}
+        defaultTimers={defaultTimers}
         onAddCustomExercise={() => {}}
         onAddExercises={() => {}}
       />
@@ -2562,6 +2752,7 @@ export default function GymSection({ onNavigate }) {
         onCreateRoutine={handleCreateRoutine}
         onEditRoutine={handleEditRoutine}
         onDeleteRoutine={handleDeleteRoutine}
+        onOpenSettings={() => setSubScreen("settings")}
       />
       {toast && (
         <Toast
