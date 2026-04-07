@@ -505,7 +505,7 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multi
         {/* Footer */}
         <div style={{ padding:"12px 16px 28px", borderTop:`1px solid ${T.border}`, display:"flex", gap:8 }}>
           {multiSelect && (
-            <button onClick={() => { onMultiSelect(selected); onClose(); }} style={{
+            <button onClick={() => onMultiSelect(selected)} style={{
               flex: 2, padding: "14px 0",
               background: selected.length > 0 ? T.gradient : T.bg,
               color: selected.length > 0 ? "white" : T.textMuted,
