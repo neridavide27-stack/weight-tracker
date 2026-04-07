@@ -18,7 +18,7 @@ import {
   getAllGymRoutines, addGymRoutine, updateGymRoutine, deleteGymRoutine,
   getAllGymCustomExercises, addGymCustomExercise,
   getGymRestTimer, saveGymRestTimer,
-  getGymPrecMode, saveGymPrecMode,
+  getGymPrecMode, saveGymPrecMode, resetAllGymData,
 } from "../lib/food-db";
 
 /* ═══════════════════════════════════════════
@@ -190,95 +190,105 @@ const Toast = ({ message, icon, action, onAction, onDismiss }) => {
 /* ═══════════════════════════════════════════
    REST TIMER OVERLAY
    ═══════════════════════════════════════════ */
+const playTimerSound = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.15, 0.3].forEach(delay => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine"; osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.12);
+      osc.start(ctx.currentTime + delay); osc.stop(ctx.currentTime + delay + 0.12);
+    });
+  } catch (e) {}
+};
+
 const RestTimerBar = ({ seconds, exerciseName, isSideTimer, isWarmup, onSkip }) => {
-  const [total, setTotal] = useState(seconds);
+  const [totalRef] = useState({ current: seconds });
   const [remaining, setRemaining] = useState(seconds);
-  const [expanded, setExpanded] = useState(false);
+  const endTimeRef = useRef(Date.now() + seconds * 1000);
+  const rafRef = useRef(null);
+  const onSkipRef = useRef(onSkip);
+  const soundPlayedRef = useRef(false);
+  onSkipRef.current = onSkip;
 
   useEffect(() => {
-    if (remaining <= 0) { onSkip(); return; }
-    const interval = setInterval(() => setRemaining(r => r - 1), 1000);
-    return () => clearInterval(interval);
-  }, [remaining, onSkip]);
+    soundPlayedRef.current = false;
+    const tick = () => {
+      const now = Date.now();
+      const left = Math.max(0, Math.round((endTimeRef.current - now) / 1000));
+      setRemaining(left);
+      if (left <= 0) {
+        if (!soundPlayedRef.current) { soundPlayedRef.current = true; playTimerSound(); }
+        setTimeout(() => onSkipRef.current(), 600);
+        return;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, []);
 
   const adjust = (delta) => {
+    endTimeRef.current += delta * 1000;
+    totalRef.current = Math.max(1, totalRef.current + delta);
     setRemaining(r => Math.max(1, r + delta));
-    setTotal(t => Math.max(1, t + delta));
   };
 
+  const total = totalRef.current;
   const pct = total > 0 ? (remaining / total) * 100 : 0;
-  const accentColor = isSideTimer ? T.purple : isWarmup ? "#EAB308" : (remaining <= 10 ? T.red : T.teal);
-  const label = isSideTimer ? "CAMBIA LATO" : isWarmup ? "WARMUP" : "RIPOSO";
+  const isLow = remaining <= 10;
+  const accentColor = isSideTimer ? T.purple : isWarmup ? "#EAB308" : (isLow ? T.red : T.teal);
+  const timerLabel = isSideTimer ? "CAMBIA LATO" : isWarmup ? "WARMUP" : "RIPOSO";
+  const mins = Math.floor(remaining / 60);
+  const secs2 = remaining % 60;
+  const adjBtn = (neg) => ({
+    width: 44, height: 38, borderRadius: 10, border: `1.5px solid ${T.border}`,
+    background: T.bg, cursor: "pointer", fontSize: 12, fontWeight: 700,
+    color: neg ? T.red : accentColor, display: "flex", alignItems: "center",
+    justifyContent: "center", flexShrink: 0, padding: 0,
+  });
 
   return (
     <div style={{
       position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 80,
-      background: T.card, borderTop: `2px solid ${accentColor}`,
-      boxShadow: "0 -4px 20px rgba(0,0,0,0.12)",
-      borderRadius: "20px 20px 0 0",
-      transition: "all 0.3s ease",
+      background: T.card, borderRadius: "20px 20px 0 0",
+      boxShadow: "0 -6px 30px rgba(0,0,0,0.25)", overflow: "hidden",
     }}>
-      {/* Progress bar at top */}
-      <div style={{ height: 3, background: `${accentColor}20`, overflow: "hidden" }}>
-        <div style={{
-          height: "100%", background: accentColor,
-          width: `${pct}%`, transition: "width 1s linear",
-        }} />
+      {/* Glow strip */}
+      <div style={{ height: 3, background: `${accentColor}10`, overflow: "hidden" }}>
+        <div style={{ height: "100%", background: accentColor, width: `${pct}%`, transition: "width 0.3s linear", boxShadow: `0 0 12px ${accentColor}` }} />
       </div>
 
-      {/* Compact bar — always visible */}
-      <div
-        onClick={() => setExpanded(!expanded)}
-        style={{
-          display: "flex", alignItems: "center", gap: 12,
-          padding: "12px 16px", cursor: "pointer",
-        }}
-      >
-        <div style={{
-          width: 38, height: 38, borderRadius: 12, background: `${accentColor}15`,
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}>
-          {isSideTimer ? <ArrowLeftRight size={18} color={accentColor} />
-            : isWarmup ? <Flame size={18} color={accentColor} />
-            : <Timer size={18} color={accentColor} />}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10, fontWeight: 800, color: accentColor, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            {label}
+      <div style={{ padding: "12px 16px 14px" }}>
+        {/* Top: badge + exercise + skip */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <div style={{ padding: "3px 8px", borderRadius: 6, fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.6, background: `${accentColor}15`, color: accentColor, flexShrink: 0 }}>
+            {isSideTimer ? "↔ " : isWarmup ? "🔥 " : "⏱ "}{timerLabel}
           </div>
-          <div style={{ fontSize: 12, color: T.textSec, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {exerciseName}
+          <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.textSec, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{exerciseName}</div>
+          <button onClick={onSkip} style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 800, background: `${accentColor}12`, color: accentColor, flexShrink: 0 }}>Salta ›</button>
+        </div>
+
+        {/* Bottom: adjust buttons + time centered */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <button onClick={() => adjust(-30)} style={adjBtn(true)}>-30</button>
+          <button onClick={() => adjust(-15)} style={adjBtn(true)}>-15</button>
+          <div style={{
+            fontSize: 38, fontWeight: 900, color: accentColor, fontVariantNumeric: "tabular-nums",
+            textAlign: "center", lineHeight: 1, minWidth: 110, padding: "0 8px",
+            animation: isLow ? "timerPulse 1s ease-in-out infinite" : "none",
+          }}>
+            {mins}<span style={{ fontSize: 28, fontWeight: 700, opacity: 0.5, margin: "0 1px" }}>:</span>{String(secs2).padStart(2, "0")}
           </div>
+          <button onClick={() => adjust(15)} style={adjBtn(false)}>+15</button>
+          <button onClick={() => adjust(30)} style={adjBtn(false)}>+30</button>
         </div>
-        <div style={{
-          fontSize: 28, fontWeight: 900, color: accentColor, fontVariantNumeric: "tabular-nums",
-          minWidth: 72, textAlign: "right",
-        }}>
-          {formatTimer(remaining)}
-        </div>
-        <button onClick={(e) => { e.stopPropagation(); onSkip(); }} style={{
-          padding: "8px 14px", background: `${accentColor}15`, border: `1.5px solid ${accentColor}30`,
-          borderRadius: 10, cursor: "pointer", fontSize: 12, fontWeight: 800, color: accentColor,
-          flexShrink: 0,
-        }}>Salta</button>
       </div>
 
-      {/* Expanded area — adjustment buttons */}
-      {expanded && (
-        <div style={{
-          padding: "4px 16px 20px",
-          borderTop: `1px solid ${T.border}`,
-          display: "flex", gap: 8, justifyContent: "center",
-        }}>
-          {[{ label: "-30s", delta: -30 }, { label: "-15s", delta: -15 }, { label: "+15s", delta: 15 }, { label: "+30s", delta: 30 }].map(b => (
-            <button key={b.label} onClick={() => adjust(b.delta)} style={{
-              flex: 1, padding: "10px 0", borderRadius: 10, border: `1.5px solid ${T.border}`,
-              background: T.bg, cursor: "pointer", fontSize: 13, fontWeight: 700,
-              color: b.delta < 0 ? T.red : T.teal,
-            }}>{b.label}</button>
-          ))}
-        </div>
-      )}
+      <div style={{ height: "env(safe-area-inset-bottom, 6px)" }} />
+      <style>{`@keyframes timerPulse { 0%,100%{opacity:1} 50%{opacity:0.5} } @keyframes trophyPop { 0%{transform:scale(0) rotate(-20deg);opacity:0} 60%{transform:scale(1.3) rotate(10deg);opacity:1} 100%{transform:scale(1) rotate(0deg);opacity:1} } @keyframes sparkle { 0%{opacity:0;transform:scale(0)} 50%{opacity:1;transform:scale(1)} 100%{opacity:0;transform:scale(0) translateY(-10px)} }`}</style>
     </div>
   );
 };
@@ -1620,6 +1630,28 @@ const ActiveWorkoutScreen = ({
 
   const hasWarmup = (ex) => ex.sets && ex.sets.some(s => s.type === "W");
 
+  // Detect record: compare with same exercise (filtered by precMode)
+  const allTimeRecords = useMemo(() => {
+    const records = {};
+    const routineWorkoutIds = precMode === "routine" && workout.routineId
+      ? new Set((allWorkouts || []).filter(w => w.routineId === workout.routineId).map(w => w.id))
+      : null;
+    exs.forEach(ex => {
+      const allPrev = (allSets || []).filter(s => {
+        if (s.exerciseId !== ex.exerciseId) return false;
+        if (routineWorkoutIds) return routineWorkoutIds.has(s.workoutId);
+        return true;
+      });
+      records[ex.exerciseId] = {
+        maxWeight: allPrev.length > 0 ? Math.max(...allPrev.map(s => s.weight || 0)) : 0,
+        maxReps: allPrev.length > 0 ? Math.max(...allPrev.map(s => s.reps || 0)) : 0,
+      };
+    });
+    return records;
+  }, [exs, allSets, allWorkouts, precMode, workout.routineId]);
+
+  const [newRecords, setNewRecords] = useState({});
+
   const toggleComplete = (exIdx, setIdx) => {
     const ex = exs[exIdx]; const set = ex.sets[setIdx];
     const info = getExerciseById(ex.exerciseId, customExercises);
@@ -1628,6 +1660,7 @@ const ActiveWorkoutScreen = ({
       if (ex.unilateral) {
         setExs(prev => { const n = JSON.parse(JSON.stringify(prev)); n[exIdx].sets[setIdx].completed = false; n[exIdx].sets[setIdx].sideCompleted = false; return n; });
       } else { updateSet(exIdx, setIdx, "completed", false); }
+      setNewRecords(prev => { const n = { ...prev }; delete n[`${exIdx}-${setIdx}`]; return n; });
       return;
     }
     if (ex.unilateral && !set.sideCompleted) {
@@ -1637,6 +1670,18 @@ const ActiveWorkoutScreen = ({
       return;
     }
     updateSet(exIdx, setIdx, "completed", true);
+
+    // Check for record
+    const rec = allTimeRecords[ex.exerciseId];
+    if (rec) {
+      const isWeightRecord = (set.weight || 0) > rec.maxWeight && rec.maxWeight > 0;
+      const isRepsRecord = (set.reps || 0) > rec.maxReps && rec.maxReps > 0;
+      if (isWeightRecord || isRepsRecord) {
+        setNewRecords(prev => ({ ...prev, [`${exIdx}-${setIdx}`]: { weight: isWeightRecord, reps: isRepsRecord } }));
+      }
+    }
+
+    // Start timer (override any running timer)
     if (set.type === "W") {
       const warmSecs = ex.warmupTimer || defaultTimers?.warmup || 60;
       if (warmSecs > 0) setRestTimer({ seconds: warmSecs, exerciseName: exName, isSideTimer: false, isWarmup: true });
@@ -1769,17 +1814,17 @@ const ActiveWorkoutScreen = ({
               )}
               <div style={{
                 background: T.card, borderRadius: 16, marginBottom: isSuperset ? 20 : 14,
-                border: reorderIdx === exIdx ? `2px solid ${T.teal}` : allDone ? `1.5px solid ${T.green}50` : (isSuperset || isPrevSuperset) ? `2px solid ${T.orange}60` : `1px solid ${T.border}`,
-                boxShadow: allDone ? `0 2px 12px ${T.green}15` : (isSuperset || isPrevSuperset) ? `0 2px 12px ${T.orange}20` : T.shadow,
+                border: reorderIdx === exIdx ? `2px solid ${T.teal}` : (isSuperset || isPrevSuperset) ? `2px solid ${T.orange}60` : `1px solid ${T.border}`,
+                boxShadow: (isSuperset || isPrevSuperset) ? `0 2px 12px ${T.orange}20` : T.shadow,
                 overflow: "hidden",
               }}>
                 {/* Exercise header */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 10px 10px 12px", borderBottom: `1px solid ${T.border}`, background: allDone ? `${T.green}06` : (isSuperset || isPrevSuperset) ? `${T.orange}08` : "transparent" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 10px 10px 12px", borderBottom: `1px solid ${T.border}`, background: (isSuperset || isPrevSuperset) ? `${T.orange}08` : "transparent" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <div style={{ fontSize: 14, fontWeight: 900, color: allDone ? T.green : muscleColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{info?.name || ex.exerciseId}</div>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: muscleColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{info?.name || ex.exerciseId}</div>
                       {(isSuperset || isPrevSuperset) && <div style={{ padding: "1px 6px", background: `${T.orange}20`, borderRadius: 6, fontSize: 9, fontWeight: 900, color: T.orange }}>SS</div>}
-                      {allDone && <div style={{ padding: "2px 8px", background: `${T.green}15`, borderRadius: 20, fontSize: 9, fontWeight: 800, color: T.green }}>✓</div>}
+                      {allDone && <div style={{ padding: "2px 8px", background: `${T.green}15`, borderRadius: 20, fontSize: 9, fontWeight: 800, color: T.green }}>✓ Fatto</div>}
                     </div>
                     <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 500 }}>{info?.muscle} · {info?.equipment}</div>
                   </div>
@@ -1800,7 +1845,14 @@ const ActiveWorkoutScreen = ({
                   </div>
                   <ExerciseMenu isUnilateral={ex.unilateral} isSupersetted={ex.supersetWith !== null} isLastExercise={exIdx === exs.length - 1} exerciseName={info?.name}
                     onUnilateral={() => updateExercise(exIdx, { unilateral: !ex.unilateral })}
-                    onSuperset={() => updateExercise(exIdx, { supersetWith: ex.supersetWith !== null ? null : exIdx + 1 })}
+                    onSuperset={() => {
+                      if (ex.supersetWith !== null) {
+                        updateExercise(exIdx, { supersetWith: null });
+                      } else {
+                        updateExercise(exIdx, { supersetWith: exIdx + 1 });
+                        if (exs[exIdx + 1]) updateExercise(exIdx + 1, { restTimer: 0, warmupTimer: 0, sideTimer: 0 });
+                      }
+                    }}
                     onMove={() => setReorderIdx(reorderIdx === exIdx ? null : exIdx)}
                     onDelete={() => deleteExercise(exIdx)} />
                 </div>
@@ -1819,19 +1871,28 @@ const ActiveWorkoutScreen = ({
                     const prevLabel = prevSet ? `${prevSet.weight > 0 ? prevSet.weight + "kg" : "BW"} × ${prevSet.reps}` : "—";
                     const done = set.completed; const sideOnly = ex.unilateral && set.sideCompleted && !done;
                     const normalSetNum = ex.sets.slice(0, setIdx + 1).filter(s => s.type !== "W").length;
+                    const recordKey = `${exIdx}-${setIdx}`;
+                    const record = newRecords[recordKey];
                     return (
-                      <div key={setIdx} style={{ display: "grid", gridTemplateColumns: "28px 1fr 1fr 1fr 36px", gap: 6, alignItems: "center", marginBottom: 6, background: done ? `${T.green}08` : sideOnly ? `${T.purple}08` : "transparent", borderRadius: 10, padding: "4px 0" }}>
-                        <div style={{ width: 26, height: 26, borderRadius: 7, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", background: done ? `${T.green}20` : set.type === "W" ? "#EAB30820" : `${T.text}08`, color: done ? T.green : set.type === "W" ? "#EAB308" : T.textSec }}>{set.type === "W" ? "W" : normalSetNum}</div>
+                      <div key={setIdx} style={{ position: "relative", display: "grid", gridTemplateColumns: "28px 1fr 1fr 1fr 36px", gap: 6, alignItems: "center", marginBottom: 6, background: done ? `${T.green}18` : sideOnly ? `${T.purple}08` : "transparent", borderRadius: 10, padding: "4px 0", border: done ? `1.5px solid ${T.green}30` : "1.5px solid transparent" }}>
+                        <div style={{ width: 26, height: 26, borderRadius: 7, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", background: done ? T.green : set.type === "W" ? "#EAB30820" : `${T.text}08`, color: done ? "#fff" : set.type === "W" ? "#EAB308" : T.textSec }}>{set.type === "W" ? "W" : normalSetNum}</div>
                         <div style={{ textAlign: "center", fontSize: 11, color: prevSet ? T.textSec : T.textMuted, fontWeight: 600 }}>{prevLabel}</div>
-                        <button onClick={() => setNumpad({ exIdx, setIdx, field: "weight", label: "Peso (kg)", decimal: true })} style={{ height: 38, borderRadius: 10, cursor: "pointer", border: `1.5px solid ${done ? `${T.green}30` : T.border}`, background: done ? `${T.green}06` : "#fff", fontSize: 15, fontWeight: 800, color: set.weight ? (done ? T.green : T.text) : T.textMuted, display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
-                          {set.weight || "—"}<span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600 }}>kg</span>
+                        <button onClick={() => setNumpad({ exIdx, setIdx, field: "weight", label: "Peso (kg)", decimal: true })} style={{ height: 38, borderRadius: 10, cursor: "pointer", border: `1.5px solid ${done ? `${T.green}40` : T.border}`, background: done ? `${T.green}10` : "#fff", fontSize: 15, fontWeight: 800, color: set.weight ? (done ? T.green : T.text) : T.textMuted, display: "flex", alignItems: "center", justifyContent: "center", gap: 2 }}>
+                          {set.weight || "—"}<span style={{ fontSize: 9, color: done ? `${T.green}80` : T.textMuted, fontWeight: 600 }}>kg</span>
                         </button>
-                        <button onClick={() => setNumpad({ exIdx, setIdx, field: "reps", label: "Ripetizioni", decimal: false })} style={{ height: 38, borderRadius: 10, cursor: "pointer", border: `1.5px solid ${done ? `${T.green}30` : T.border}`, background: done ? `${T.green}06` : "#fff", fontSize: 15, fontWeight: 800, color: set.reps ? (done ? T.green : T.text) : T.textMuted, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <button onClick={() => setNumpad({ exIdx, setIdx, field: "reps", label: "Ripetizioni", decimal: false })} style={{ height: 38, borderRadius: 10, cursor: "pointer", border: `1.5px solid ${done ? `${T.green}40` : T.border}`, background: done ? `${T.green}10` : "#fff", fontSize: 15, fontWeight: 800, color: set.reps ? (done ? T.green : T.text) : T.textMuted, display: "flex", alignItems: "center", justifyContent: "center" }}>
                           {set.reps || "—"}
                         </button>
-                        <button onClick={() => toggleComplete(exIdx, setIdx)} style={{ width: 34, height: 34, borderRadius: 10, border: "none", background: done ? `${T.green}25` : sideOnly ? `${T.purple}25` : T.tealLight, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
-                          {sideOnly ? <ArrowLeftRight size={14} color={T.purple} strokeWidth={2.5} /> : <Check size={15} color={done ? T.green : T.teal} strokeWidth={done ? 3 : 2} />}
+                        <button onClick={() => toggleComplete(exIdx, setIdx)} style={{ width: 34, height: 34, borderRadius: 10, border: "none", background: done ? T.green : sideOnly ? `${T.purple}25` : T.tealLight, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                          {sideOnly ? <ArrowLeftRight size={14} color={T.purple} strokeWidth={2.5} /> : <Check size={15} color={done ? "#fff" : T.teal} strokeWidth={done ? 3 : 2} />}
                         </button>
+                        {/* Trophy for record */}
+                        {record && (
+                          <div style={{ position: "absolute", top: -8, right: -4, zIndex: 5, animation: "trophyPop 0.5s ease-out forwards", display: "flex", alignItems: "center", gap: 3, background: "#fbbf24", borderRadius: 10, padding: "2px 7px", boxShadow: "0 2px 8px rgba(251,191,36,0.4)" }}>
+                            <Trophy size={11} color="#92400e" />
+                            <span style={{ fontSize: 9, fontWeight: 900, color: "#92400e" }}>{record.weight ? "PR kg" : "PR rep"}</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1935,6 +1996,49 @@ const ActiveWorkoutScreen = ({
                   ))}
                 </div>
               )}
+
+              {/* Records section */}
+              {(() => {
+                const volumeRecord = prevVolume > 0 && currentVolume > prevVolume;
+                const exRecords = Object.entries(newRecords).map(([key, rec]) => {
+                  const [eIdx] = key.split("-").map(Number);
+                  const ex = exs[eIdx];
+                  if (!ex) return null;
+                  const info = getExerciseById(ex.exerciseId, customExercises);
+                  return { name: info?.name || ex.exerciseId, ...rec };
+                }).filter(Boolean);
+                // Deduplicate by exercise name
+                const uniqueRecords = [];
+                const seen = new Set();
+                exRecords.forEach(r => { if (!seen.has(r.name)) { seen.add(r.name); uniqueRecords.push(r); } });
+                if (!volumeRecord && uniqueRecords.length === 0) return null;
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#d97706", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+                      🏆 Record personali
+                    </div>
+                    {volumeRecord && (
+                      <div style={{ background: "linear-gradient(135deg, #fbbf2420, #f59e0b15)", border: "1.5px solid #fbbf2440", borderRadius: 12, padding: "10px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 10 }}>
+                        <Trophy size={18} color="#d97706" />
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: "#d97706" }}>Nuovo record volume!</div>
+                          <div style={{ fontSize: 11, color: T.textSec }}>{Math.round(currentVolume)} kg (precedente: {Math.round(prevVolume)} kg)</div>
+                        </div>
+                      </div>
+                    )}
+                    {uniqueRecords.map((r, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: i < uniqueRecords.length - 1 ? `1px solid ${T.border}` : "none" }}>
+                        <Trophy size={14} color="#fbbf24" />
+                        <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{r.name}</div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {r.weight && <span style={{ fontSize: 11, fontWeight: 800, color: "#d97706", background: "#fbbf2415", padding: "2px 8px", borderRadius: 8 }}>PR peso</span>}
+                          {r.reps && <span style={{ fontSize: 11, fontWeight: 800, color: "#92400e", background: "#fbbf2415", padding: "2px 8px", borderRadius: 8 }}>PR rep</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* BPM input */}
               <div style={{ background: T.bg, borderRadius: 14, padding: "12px 14px", marginBottom: 20, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 12 }}>
@@ -2196,8 +2300,10 @@ const WorkoutDetailScreen = ({ workout, sets, customExercises, onBack, onExercis
 /* ═══════════════════════════════════════════
    TAB: ALLENAMENTO
    ═══════════════════════════════════════════ */
-const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartRoutine, onSelectWorkout, suspendedWorkout, onResumeWorkout }) => {
+const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartRoutine, onSelectWorkout, suspendedWorkout, onResumeWorkout, onDeleteWorkout }) => {
   const [showRoutinePicker, setShowRoutinePicker] = useState(false);
+  const [showAllWorkouts, setShowAllWorkouts] = useState(false);
+  const [confirmDeleteWk, setConfirmDeleteWk] = useState(null);
 
   return (
     <div style={{ padding: "16px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
@@ -2212,7 +2318,6 @@ const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartR
             border: "none", borderRadius:18, cursor:"pointer",
             display:"flex", alignItems:"center", justifyContent:"center", gap:12,
             boxShadow: "0 4px 20px rgba(245,158,11,0.35)",
-            animation: "pulse 2s infinite",
           }}
         >
           <div style={{
@@ -2234,36 +2339,38 @@ const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartR
         </button>
       )}
 
-      {/* Big CTA */}
-      <button
-        onClick={() => routines.length > 0 ? setShowRoutinePicker(true) : null}
-        style={{
-          width:"100%", padding:"18px 20px",
-          background: routines.length > 0 ? T.gradient : T.bg,
-          border: routines.length > 0 ? "none" : `1.5px dashed ${T.border}`,
-          borderRadius:18, cursor: routines.length > 0 ? "pointer" : "default",
-          display:"flex", alignItems:"center", justifyContent:"center", gap:12,
-          boxShadow: routines.length > 0 ? "0 4px 20px rgba(2,128,144,0.35)" : "none",
-        }}
-      >
-        <div style={{
-          width:44, height:44, borderRadius:14,
-          background: routines.length > 0 ? "rgba(255,255,255,0.2)" : T.border,
-          display:"flex", alignItems:"center", justifyContent:"center",
-        }}>
-          <Play size={22} color={routines.length > 0 ? "#fff" : T.textMuted} fill={routines.length > 0 ? "#fff" : "none"} />
-        </div>
-        <div style={{ textAlign:"left" }}>
-          <div style={{ fontSize:17, fontWeight:900, color: routines.length > 0 ? "#fff" : T.textMuted }}>
-            {routines.length > 0 ? "Inizia Allenamento" : "Nessuna routine salvata"}
+      {/* Big CTA — hidden when suspended */}
+      {!suspendedWorkout && (
+        <button
+          onClick={() => routines.length > 0 ? setShowRoutinePicker(true) : null}
+          style={{
+            width:"100%", padding:"18px 20px",
+            background: routines.length > 0 ? T.gradient : T.bg,
+            border: routines.length > 0 ? "none" : `1.5px dashed ${T.border}`,
+            borderRadius:18, cursor: routines.length > 0 ? "pointer" : "default",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:12,
+            boxShadow: routines.length > 0 ? "0 4px 20px rgba(2,128,144,0.35)" : "none",
+          }}
+        >
+          <div style={{
+            width:44, height:44, borderRadius:14,
+            background: routines.length > 0 ? "rgba(255,255,255,0.2)" : T.border,
+            display:"flex", alignItems:"center", justifyContent:"center",
+          }}>
+            <Play size={22} color={routines.length > 0 ? "#fff" : T.textMuted} fill={routines.length > 0 ? "#fff" : "none"} />
           </div>
-          <div style={{ fontSize:12, color: routines.length > 0 ? "rgba(255,255,255,0.75)" : T.textMuted, marginTop:2 }}>
-            {routines.length > 0
-              ? `${routines.length} routine disponibil${routines.length === 1 ? "e" : "i"}`
-              : "Crea prima una routine nella tab Routine"}
+          <div style={{ textAlign:"left" }}>
+            <div style={{ fontSize:17, fontWeight:900, color: routines.length > 0 ? "#fff" : T.textMuted }}>
+              {routines.length > 0 ? "Inizia Allenamento" : "Nessuna routine salvata"}
+            </div>
+            <div style={{ fontSize:12, color: routines.length > 0 ? "rgba(255,255,255,0.75)" : T.textMuted, marginTop:2 }}>
+              {routines.length > 0
+                ? `${routines.length} routine disponibil${routines.length === 1 ? "e" : "i"}`
+                : "Crea prima una routine nella tab Routine"}
+            </div>
           </div>
-        </div>
-      </button>
+        </button>
+      )}
 
       {/* Allenamenti recenti */}
       <div>
@@ -2287,16 +2394,76 @@ const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartR
             </div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {workouts.slice(0, 3).map((w, idx) => {
-              const sets = allSets.filter(s => s.workoutId === w.id);
-              return (
-                <WorkoutCard key={idx} workout={w} sets={sets} customExercises={customExercises} onTap={() => onSelectWorkout(w.id)} />
-              );
-            })}
-          </div>
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {(showAllWorkouts ? workouts : workouts.slice(0, 3)).map((w, idx) => {
+                const sets = allSets.filter(s => s.workoutId === w.id);
+                return (
+                  <div key={w.id || idx} style={{ position: "relative" }}>
+                    <WorkoutCard workout={w} sets={sets} customExercises={customExercises} onTap={() => onSelectWorkout(w.id)} />
+                    {/* Delete button on workout card */}
+                    <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteWk(w); }} style={{
+                      position: "absolute", top: 10, right: 10, width: 30, height: 30, borderRadius: 8,
+                      background: `${T.red}10`, border: "none", cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2,
+                    }}>
+                      <Trash2 size={13} color={T.red} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {workouts.length > 3 && !showAllWorkouts && (
+              <button onClick={() => setShowAllWorkouts(true)} style={{
+                width: "100%", padding: "11px", marginTop: 4,
+                background: T.card, border: `1.5px solid ${T.border}`, borderRadius: 12,
+                cursor: "pointer", fontSize: 13, fontWeight: 700, color: T.teal,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                <FolderOpen size={14} color={T.teal} /> Vedi tutti ({workouts.length})
+              </button>
+            )}
+            {showAllWorkouts && (
+              <button onClick={() => setShowAllWorkouts(false)} style={{
+                width: "100%", padding: "11px", marginTop: 4,
+                background: T.card, border: `1.5px solid ${T.border}`, borderRadius: 12,
+                cursor: "pointer", fontSize: 13, fontWeight: 700, color: T.textSec,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                <ChevronUp size={14} color={T.textSec} /> Mostra meno
+              </button>
+            )}
+          </>
         )}
       </div>
+
+      {/* Delete workout confirmation modal */}
+      {confirmDeleteWk && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.5)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+        }} onClick={() => setConfirmDeleteWk(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: T.card, borderRadius: 20, padding: "24px 20px", width: "100%", maxWidth: 340,
+            boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 900, color: T.text, marginBottom: 8 }}>Eliminare allenamento?</div>
+            <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5, marginBottom: 20 }}>
+              Stai per eliminare l'allenamento "{confirmDeleteWk.routineName || "Senza nome"}" e tutti i dati associati. Questa azione è irreversibile.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConfirmDeleteWk(null)} style={{
+                flex: 1, padding: "12px 0", background: T.bg, border: `1.5px solid ${T.border}`,
+                borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, color: T.text,
+              }}>Annulla</button>
+              <button onClick={() => { if (onDeleteWorkout) onDeleteWorkout(confirmDeleteWk.id); setConfirmDeleteWk(null); }} style={{
+                flex: 1, padding: "12px 0", background: T.red, border: "none",
+                borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#fff",
+              }}>Elimina</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Routine picker bottom sheet */}
       {showRoutinePicker && (
@@ -2367,10 +2534,9 @@ const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartR
    TAB: ROUTINE
    ═══════════════════════════════════════════ */
 const TabRoutine = ({ routines, customExercises, onCreateRoutine, onEditRoutine, onDeleteRoutine }) => {
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmDeleteRoutine, setConfirmDeleteRoutine] = useState(null);
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* CTA crea routine */}
       <button onClick={onCreateRoutine} style={{
         width: "100%", padding: "15px", background: T.gradient, color: "white", border: "none",
         borderRadius: 14, cursor: "pointer", fontWeight: 800, fontSize: 15,
@@ -2402,29 +2568,18 @@ const TabRoutine = ({ routines, customExercises, onCreateRoutine, onEditRoutine,
         const estDur = estimateRoutineDuration(r.exercises || []);
         const muscles = [...new Set((r.exercises || []).map(e => getExerciseById(e.exerciseId, customExercises)?.muscle).filter(Boolean))];
         const totalSets = (r.exercises || []).reduce((sum, e) => sum + (e.sets?.length || 0), 0);
-        const isConfirming = confirmDeleteId === r.id;
         return (
           <div key={r.id} style={{
             background: T.card, borderRadius: 16, padding: "16px",
-            boxShadow: T.shadow, border: isConfirming ? `1.5px solid ${T.red}60` : `1px solid ${T.border}`,
+            boxShadow: T.shadow, border: `1px solid ${T.border}`,
           }}>
-            {/* Top row */}
-            <div style={{ display:"flex", alignItems:"flex-start", gap:12, marginBottom:12 }}>
-              <div style={{
-                width:44, height:44, borderRadius:12, background:T.purpleLight,
-                display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
-              }}>
-                <Bookmark size={20} color={T.purple} />
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:15, fontWeight:900, color:T.text, marginBottom:2 }}>{r.name}</div>
-                <div style={{ fontSize:12, color:T.textSec }}>
-                  {(r.exercises||[]).length} esercizi · {totalSets} serie · ~{estDur}min
-                </div>
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:15, fontWeight:900, color:T.text, marginBottom:2 }}>{r.name}</div>
+              <div style={{ fontSize:12, color:T.textSec }}>
+                {(r.exercises||[]).length} esercizi · {totalSets} serie · ~{estDur}min
               </div>
             </div>
 
-            {/* Muscle dots */}
             {muscles.length > 0 && (
               <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:14 }}>
                 {muscles.map(m => (
@@ -2437,29 +2592,6 @@ const TabRoutine = ({ routines, customExercises, onCreateRoutine, onEditRoutine,
               </div>
             )}
 
-            {/* Delete confirmation bar */}
-            {isConfirming && (
-              <div style={{
-                background:`${T.red}08`, borderRadius:12, padding:"12px 14px", marginBottom:10,
-                border:`1px solid ${T.red}20`,
-              }}>
-                <div style={{ fontSize:13, fontWeight:700, color:T.red, marginBottom:10 }}>
-                  Eliminare "{r.name}"?
-                </div>
-                <div style={{ display:"flex", gap:8 }}>
-                  <button onClick={() => setConfirmDeleteId(null)} style={{
-                    flex:1, padding:"9px 0", background:T.bg, border:`1.5px solid ${T.border}`,
-                    borderRadius:10, cursor:"pointer", color:T.textSec, fontWeight:700, fontSize:13,
-                  }}>Annulla</button>
-                  <button onClick={() => { onDeleteRoutine(r.id); setConfirmDeleteId(null); }} style={{
-                    flex:1, padding:"9px 0", background:T.red, border:"none",
-                    borderRadius:10, cursor:"pointer", color:"white", fontWeight:800, fontSize:13,
-                  }}>Elimina</button>
-                </div>
-              </div>
-            )}
-
-            {/* Action buttons — no "Inizia" */}
             <div style={{ display:"flex", gap:8 }}>
               {onEditRoutine && (
                 <button onClick={() => onEditRoutine(r.id)} style={{
@@ -2470,8 +2602,8 @@ const TabRoutine = ({ routines, customExercises, onCreateRoutine, onEditRoutine,
                   <Edit3 size={13} /> Modifica
                 </button>
               )}
-              {onDeleteRoutine && !isConfirming && (
-                <button onClick={() => setConfirmDeleteId(r.id)} style={{
+              {onDeleteRoutine && (
+                <button onClick={() => setConfirmDeleteRoutine(r)} style={{
                   width:40, height:40, background:`${T.red}10`, border:"none",
                   borderRadius:12, cursor:"pointer",
                   display:"flex", alignItems:"center", justifyContent:"center",
@@ -2483,6 +2615,39 @@ const TabRoutine = ({ routines, customExercises, onCreateRoutine, onEditRoutine,
           </div>
         );
       })}
+
+      {/* Delete confirmation modal */}
+      {confirmDeleteRoutine && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.5)",
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+        }} onClick={() => setConfirmDeleteRoutine(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: T.card, borderRadius: 20, padding: "24px 20px", width: "100%", maxWidth: 340,
+            boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: `${T.red}12`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Trash2 size={20} color={T.red} />
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: T.text }}>Eliminare routine?</div>
+            </div>
+            <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5, marginBottom: 20 }}>
+              Stai per eliminare "{confirmDeleteRoutine.name}". I dati degli allenamenti svolti con questa routine rimarranno salvati.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConfirmDeleteRoutine(null)} style={{
+                flex: 1, padding: "12px 0", background: T.bg, border: `1.5px solid ${T.border}`,
+                borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, color: T.text,
+              }}>Annulla</button>
+              <button onClick={() => { onDeleteRoutine(confirmDeleteRoutine.id); setConfirmDeleteRoutine(null); }} style={{
+                flex: 1, padding: "12px 0", background: T.red, border: "none",
+                borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#fff",
+              }}>Elimina</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2638,10 +2803,11 @@ const TabStatistiche = ({ workouts, allSets, customExercises }) => {
 /* ═══════════════════════════════════════════
    SETTINGS SCREEN
    ═══════════════════════════════════════════ */
-const SettingsScreen = ({ defaultTimers, precMode: initialPrecMode, onSave, onBack }) => {
+const SettingsScreen = ({ defaultTimers, precMode: initialPrecMode, onSave, onBack, onResetAll }) => {
   const [timers, setTimers] = useState(defaultTimers);
   const [drumPicker, setDrumPicker] = useState(null);
   const [localPrecMode, setLocalPrecMode] = useState(initialPrecMode || "routine");
+  const [resetStep, setResetStep] = useState(0); // 0=none, 1=first confirm, 2=second confirm
 
   const timerRow = (label, sublabel, field, color, icon) => (
     <div style={{
@@ -2757,6 +2923,64 @@ const SettingsScreen = ({ defaultTimers, precMode: initialPrecMode, onSave, onBa
             })}
           </div>
         </div>
+
+        {/* Danger zone: reset all data */}
+        <div style={{
+          fontSize:11, fontWeight:700, color:T.red, textTransform:"uppercase",
+          letterSpacing:0.6, marginTop:28, marginBottom:14,
+        }}>Zona pericolosa</div>
+
+        <div style={{
+          background:T.card, borderRadius:16, padding:16,
+          border:`1.5px solid ${T.red}30`, boxShadow:T.shadow,
+        }}>
+          <div style={{ fontSize:14, fontWeight:800, color:T.text, marginBottom:4 }}>Resetta tutti i dati</div>
+          <div style={{ fontSize:12, color:T.textSec, marginBottom:14, lineHeight:1.5 }}>
+            Elimina tutti gli allenamenti, serie, routine, esercizi personalizzati e impostazioni. Questa azione è irreversibile.
+          </div>
+
+          {resetStep === 0 && (
+            <button onClick={() => setResetStep(1)} style={{
+              width:"100%", padding:"12px 0", background:`${T.red}10`, border:`1.5px solid ${T.red}30`,
+              borderRadius:12, cursor:"pointer", fontSize:13, fontWeight:800, color:T.red,
+            }}>Resetta tutti i dati</button>
+          )}
+
+          {resetStep === 1 && (
+            <div style={{ background:`${T.red}08`, borderRadius:12, padding:"14px", border:`1px solid ${T.red}20` }}>
+              <div style={{ fontSize:13, fontWeight:800, color:T.red, marginBottom:4 }}>⚠️ Sei sicuro?</div>
+              <div style={{ fontSize:12, color:T.textSec, marginBottom:12 }}>Tutti i tuoi progressi verranno cancellati permanentemente.</div>
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={() => setResetStep(0)} style={{
+                  flex:1, padding:"10px 0", background:T.bg, border:`1.5px solid ${T.border}`,
+                  borderRadius:10, cursor:"pointer", color:T.textSec, fontWeight:700, fontSize:13,
+                }}>Annulla</button>
+                <button onClick={() => setResetStep(2)} style={{
+                  flex:1, padding:"10px 0", background:T.red, border:"none",
+                  borderRadius:10, cursor:"pointer", color:"white", fontWeight:800, fontSize:13,
+                }}>Sì, continua</button>
+              </div>
+            </div>
+          )}
+
+          {resetStep === 2 && (
+            <div style={{ background:`${T.red}12`, borderRadius:12, padding:"14px", border:`1.5px solid ${T.red}40` }}>
+              <div style={{ fontSize:13, fontWeight:800, color:T.red, marginBottom:4 }}>🚨 Ultima conferma</div>
+              <div style={{ fontSize:12, color:T.textSec, marginBottom:12 }}>Scrivi "elimina" mentalmente e premi il tasto. Non c'è ritorno.</div>
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={() => setResetStep(0)} style={{
+                  flex:1, padding:"10px 0", background:T.bg, border:`1.5px solid ${T.border}`,
+                  borderRadius:10, cursor:"pointer", color:T.textSec, fontWeight:700, fontSize:13,
+                }}>Annulla</button>
+                <button onClick={() => { if (onResetAll) onResetAll(); setResetStep(0); }} style={{
+                  flex:1, padding:"10px 0", background:"linear-gradient(135deg, #ef4444, #dc2626)", border:"none",
+                  borderRadius:10, cursor:"pointer", color:"white", fontWeight:900, fontSize:13,
+                  boxShadow:"0 2px 10px rgba(239,68,68,0.3)",
+                }}>ELIMINA TUTTO</button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {drumPicker && (
@@ -2785,7 +3009,7 @@ const MainScreenWithTabs = (props) => {
     activeTab, setActiveTab, workouts, routines, customExercises,
     allSets, onStartRoutine, onSelectWorkout, onCreateRoutine,
     onEditRoutine, onDeleteRoutine, onOpenSettings,
-    suspendedWorkout, onResumeWorkout,
+    suspendedWorkout, onResumeWorkout, onDeleteWorkout,
   } = props;
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: T.bg }}>
@@ -2848,6 +3072,7 @@ const MainScreenWithTabs = (props) => {
             onSelectWorkout={onSelectWorkout}
             suspendedWorkout={suspendedWorkout}
             onResumeWorkout={onResumeWorkout}
+            onDeleteWorkout={onDeleteWorkout}
           />
         )}
         {activeTab === "routine" && (
@@ -3081,6 +3306,19 @@ export default function GymSection({ onNavigate }) {
     }
   };
 
+  const handleResetAll = async () => {
+    try {
+      await resetAllGymData();
+      setWorkouts([]); setRoutines([]); setCustomExercises([]); setAllSets([]);
+      setDefaultTimers(DEFAULT_TIMERS); setPrecMode("routine"); setSuspendedWorkout(null);
+      setSubScreen("main");
+      setToast({ message: "Tutti i dati sono stati eliminati", icon: <Trash2 size={16} color={T.red} /> });
+    } catch (e) {
+      console.error("Error resetting data:", e);
+      setToast({ message: "Errore durante il reset", icon: <AlertTriangle size={16} color={T.red} /> });
+    }
+  };
+
   if (subScreen === "settings") {
     return (
       <SettingsScreen
@@ -3088,6 +3326,7 @@ export default function GymSection({ onNavigate }) {
         precMode={precMode}
         onSave={handleSaveSettings}
         onBack={() => setSubScreen("main")}
+        onResetAll={handleResetAll}
       />
     );
   }
@@ -3231,6 +3470,7 @@ export default function GymSection({ onNavigate }) {
         onOpenSettings={() => setSubScreen("settings")}
         suspendedWorkout={suspendedWorkout}
         onResumeWorkout={handleResumeWorkout}
+        onDeleteWorkout={handleDeleteWorkout}
       />
       {toast && (
         <Toast
