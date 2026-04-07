@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import {
   addGymWorkout, updateGymWorkout, deleteGymWorkout, getAllGymWorkouts,
-  getGymSetsByWorkout, addGymSets, getGymSetsByExercise,
+  getGymSetsByWorkout, addGymSets, getGymSetsByExercise, getAllGymSets,
   getAllGymRoutines, addGymRoutine, updateGymRoutine, deleteGymRoutine,
   getAllGymCustomExercises, addGymCustomExercise,
   getGymRestTimer, saveGymRestTimer,
@@ -159,47 +159,7 @@ const estimateWithHistory = (exerciseId, allSets = [], customExercises = []) => 
   return { duration: avgTime, avgReps };
 };
 
-/* ═══════════════════════════════════════════
-   GYM BOTTOM NAV
-   ═══════════════════════════════════════════ */
-const GymBottomNav = ({ onAdd, onNavigate }) => (
-  <div style={{
-    position: "fixed", bottom: 0, left: 0, right: 0,
-    maxWidth: "430px", marginLeft: "auto", marginRight: "auto",
-    background: T.card, borderTop: `1px solid ${T.border}`,
-    display: "flex", justifyContent: "space-around", padding: "10px 0 20px",
-    gap: 20, zIndex: 50,
-  }}>
-    <button onClick={() => onNavigate("home")} style={{
-      flex: 1, background: "none", border: "none", cursor: "pointer",
-      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-    }}>
-      <Home size={24} color={T.teal} />
-      <span style={{ fontSize: 11, color: T.textSec }}>Home</span>
-    </button>
-    <button onClick={() => onNavigate("gym")} style={{
-      flex: 1, background: "none", border: "none", cursor: "pointer",
-      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-    }}>
-      <Dumbbell size={24} color={T.teal} />
-      <span style={{ fontSize: 11, color: T.textSec }}>Palestra</span>
-    </button>
-    <button onClick={() => onNavigate("food")} style={{
-      flex: 1, background: "none", border: "none", cursor: "pointer",
-      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-    }}>
-      <Utensils size={24} color={T.teal} />
-      <span style={{ fontSize: 11, color: T.textSec }}>Cibo</span>
-    </button>
-    <button onClick={() => onNavigate("profile")} style={{
-      flex: 1, background: "none", border: "none", cursor: "pointer",
-      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-    }}>
-      <User size={24} color={T.teal} />
-      <span style={{ fontSize: 11, color: T.textSec }}>Profilo</span>
-    </button>
-  </div>
-);
+/* GymBottomNav removed — the main app (WeightTrackerApp) already provides a BottomNav */
 
 /* ═══════════════════════════════════════════
    TOAST
@@ -1147,36 +1107,58 @@ const RoutineSummary = ({ name, exercises, onSave, onBack, customExercises }) =>
    ACTIVE WORKOUT SCREEN
    ═══════════════════════════════════════════ */
 const ActiveWorkoutScreen = ({
-  workout, exercises, customExercises, onComplete, onCancel, allSets, onExerciseDetail,
+  workout, exercises: initialExercises, customExercises, onComplete, onCancel, allSets, onExerciseDetail,
 }) => {
+  const [exs, setExs] = useState(() => JSON.parse(JSON.stringify(initialExercises)));
   const [currentExIdx, setCurrentExIdx] = useState(0);
   const [currentSetIdx, setCurrentSetIdx] = useState(0);
   const [workoutSets, setWorkoutSets] = useState([]);
   const [restTimer, setRestTimer] = useState(null);
   const [numpad, setNumpad] = useState(null);
 
-  const currentEx = exercises[currentExIdx];
+  const currentEx = exs[currentExIdx];
   const currentSet = currentEx?.sets[currentSetIdx];
   const exInfo = getExerciseById(currentEx?.exerciseId, customExercises);
 
-  const handleCompleteSet = async (weight, reps, duration = 1.5) => {
+  const updateCurrentSet = (field, value) => {
+    setExs(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      next[currentExIdx].sets[currentSetIdx][field] = value;
+      return next;
+    });
+  };
+
+  const handleCompleteSet = async () => {
+    const w = currentSet?.weight || 0;
+    const r = currentSet?.reps || 0;
     const setData = {
       workoutId: workout.id,
       exerciseId: currentEx.exerciseId,
       setNumber: currentSetIdx + 1,
-      weight, reps, type: currentSet.type,
-      duration, timestamp: new Date().toISOString(),
+      weight: w, reps: r, type: currentSet.type,
+      duration: 1.5, timestamp: new Date().toISOString(),
     };
     setWorkoutSets(prev => [...prev, setData]);
+
+    if (currentEx.unilateral && !currentSet.sideCompleted && !currentSet.completed) {
+      updateCurrentSet("sideCompleted", true);
+      if (currentEx.sideTimer > 0) {
+        setRestTimer({ seconds: currentEx.sideTimer, exerciseName: exInfo?.name, isSideTimer: true });
+      }
+      return;
+    }
+    if (currentEx.unilateral && currentSet.sideCompleted && !currentSet.completed) {
+      updateCurrentSet("completed", true);
+    }
 
     if (currentSetIdx < currentEx.sets.length - 1) {
       setCurrentSetIdx(prev => prev + 1);
       const rest = getRestForSet(currentEx, currentSet.type);
-      setRestTimer({ seconds: rest, isSideTimer: false });
-    } else if (currentExIdx < exercises.length - 1) {
+      setRestTimer({ seconds: rest, exerciseName: exInfo?.name, isSideTimer: false });
+    } else if (currentExIdx < exs.length - 1) {
       setCurrentExIdx(prev => prev + 1);
       setCurrentSetIdx(0);
-      setRestTimer({ seconds: 60, isSideTimer: false });
+      setRestTimer({ seconds: 60, exerciseName: exInfo?.name, isSideTimer: false });
     } else {
       await saveWorkout();
     }
@@ -1203,7 +1185,7 @@ const ActiveWorkoutScreen = ({
     return (
       <RestTimerOverlay
         seconds={restTimer.seconds}
-        exerciseName={exInfo?.name || "Esercizio"}
+        exerciseName={restTimer.exerciseName || "Esercizio"}
         isSideTimer={restTimer.isSideTimer}
         onSkip={() => setRestTimer(null)}
       />
@@ -1213,10 +1195,11 @@ const ActiveWorkoutScreen = ({
   if (!currentEx) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg }}>
-        <p style={{ fontSize: 18, fontWeight: "bold", color: T.text }}>Allenamento Completato!</p>
+        <CheckCircle2 size={48} color={T.green} />
+        <p style={{ fontSize: 18, fontWeight: "bold", color: T.text, marginTop: 16 }}>Allenamento Completato!</p>
         <button onClick={onComplete} style={{
           marginTop: 16, padding: "12px 24px", background: T.teal, color: "white",
-          border: "none", borderRadius: 8, cursor: "pointer",
+          border: "none", borderRadius: 8, cursor: "pointer", fontWeight: "bold",
         }}>Chiudi</button>
       </div>
     );
@@ -1224,62 +1207,131 @@ const ActiveWorkoutScreen = ({
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, paddingBottom: 100 }}>
+      {/* Header */}
       <div style={{
-        background: T.card, padding: 16, borderBottom: `1px solid ${T.border}`,
-        display: "flex", justifyContent: "space-between", alignItems: "center",
+        background: T.card, padding: "12px 16px", borderBottom: `1px solid ${T.border}`,
+        display: "flex", alignItems: "center", gap: 8,
       }}>
+        <button onClick={onCancel} style={{
+          background: "none", border: "none", cursor: "pointer", padding: 4,
+        }}>
+          <ChevronLeft size={22} color={T.text} />
+        </button>
         <div style={{ flex: 1 }}>
-          <p style={{ margin: 0, color: T.text, fontSize: 16, fontWeight: "bold" }}>
-            {currentExIdx + 1} / {exercises.length}
-          </p>
-          <p style={{ margin: "4px 0 0 0", color: T.textSec, fontSize: 12 }}>
+          <p style={{ margin: 0, color: T.text, fontSize: 15, fontWeight: "bold" }}>
             {exInfo?.name}
+          </p>
+          <p style={{ margin: "2px 0 0", color: T.textSec, fontSize: 11 }}>
+            Esercizio {currentExIdx + 1} di {exs.length} · {exInfo?.muscle}
           </p>
         </div>
         <button onClick={onCancel} style={{
-          background: "none", border: "none", cursor: "pointer", color: T.textSec,
+          background: T.red + "15", border: "none", borderRadius: 8,
+          padding: "6px 12px", cursor: "pointer",
         }}>
-          <X size={24} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: T.red }}>Annulla</span>
         </button>
       </div>
 
-      <div style={{ padding: 16 }}>
+      {/* Progress bar */}
+      <div style={{ height: 3, background: T.border }}>
         <div style={{
-          background: T.card, borderRadius: 12, padding: 20, border: `1px solid ${T.border}`,
+          height: "100%", background: T.teal,
+          width: `${((currentExIdx * 10 + currentSetIdx) / (exs.length * 3)) * 100}%`,
+          transition: "width 0.3s",
+        }}/>
+      </div>
+
+      <div style={{ padding: 16 }}>
+        {/* Current set card */}
+        <div style={{
+          background: T.card, borderRadius: 12, padding: 20,
+          border: `1px solid ${T.border}`, boxShadow: T.shadow,
         }}>
-          <div style={{ marginBottom: 20, textAlign: "center" }}>
-            <p style={{ margin: 0, color: T.textSec, fontSize: 13, fontWeight: 600 }}>
+          <div style={{ marginBottom: 16, textAlign: "center" }}>
+            <p style={{ margin: 0, color: T.textSec, fontSize: 12, fontWeight: 600 }}>
               Serie {currentSetIdx + 1} di {currentEx.sets.length}
-            </p>
-            <p style={{ margin: "8px 0 0 0", color: T.text, fontSize: 24, fontWeight: "bold" }}>
-              {currentSet?.weight}kg × {currentSet?.reps} reps
+              {currentSet?.type === "W" && <span style={{ color: "#EAB308", marginLeft: 8 }}>Warmup</span>}
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: 12 }}>
+          {/* Kg / Reps buttons */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
             <button onClick={() => setNumpad({ type: "weight" })} style={{
-              flex: 1, padding: 12, background: T.tealLight, border: "none",
-              borderRadius: 8, cursor: "pointer", color: T.teal, fontWeight: "bold",
-              fontSize: 13,
+              padding: "16px 12px", background: T.bg, border: `1.5px solid ${T.border}`,
+              borderRadius: 12, cursor: "pointer", textAlign: "center",
             }}>
-              Peso: {currentSet?.weight || 0}kg
+              <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: "uppercase" }}>Peso</p>
+              <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: T.text }}>
+                {currentSet?.weight || 0}<span style={{ fontSize: 13, color: T.textSec }}>kg</span>
+              </p>
             </button>
             <button onClick={() => setNumpad({ type: "reps" })} style={{
-              flex: 1, padding: 12, background: T.tealLight, border: "none",
-              borderRadius: 8, cursor: "pointer", color: T.teal, fontWeight: "bold",
-              fontSize: 13,
+              padding: "16px 12px", background: T.bg, border: `1.5px solid ${T.border}`,
+              borderRadius: 12, cursor: "pointer", textAlign: "center",
             }}>
-              Reps: {currentSet?.reps || 0}
+              <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: T.textMuted, textTransform: "uppercase" }}>Ripetizioni</p>
+              <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 800, color: T.text }}>
+                {currentSet?.reps || 0}
+              </p>
             </button>
           </div>
 
-          <button onClick={() => handleCompleteSet(currentSet?.weight || 0, currentSet?.reps || 0)} style={{
-            width: "100%", marginTop: 12, padding: 14, background: T.teal, color: "white",
-            border: "none", borderRadius: 8, cursor: "pointer", fontWeight: "bold", fontSize: 14,
+          {/* Complete set button */}
+          <button onClick={handleCompleteSet} style={{
+            width: "100%", padding: 14, background: T.teal, color: "white",
+            border: "none", borderRadius: 10, cursor: "pointer", fontWeight: "bold", fontSize: 14,
           }}>
-            Completa Serie
+            {currentEx.unilateral && !currentSet?.sideCompleted ? "Completa Lato 1" :
+             currentEx.unilateral && currentSet?.sideCompleted ? "Completa Lato 2" :
+             "Completa Serie"}
           </button>
         </div>
+
+        {/* All sets overview */}
+        <div style={{ marginTop: 16 }}>
+          <p style={{ margin: "0 0 8px", color: T.textSec, fontSize: 12, fontWeight: 600 }}>Tutte le serie</p>
+          {currentEx.sets.map((set, idx) => (
+            <div key={idx} style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+              background: idx === currentSetIdx ? T.tealLight : T.card,
+              borderRadius: 8, marginBottom: 4,
+              border: idx === currentSetIdx ? `1px solid ${T.teal}40` : `1px solid ${T.border}`,
+            }}>
+              <span style={{
+                width: 24, height: 24, borderRadius: 6, fontSize: 11, fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: set.type === "W" ? "#EAB30815" : T.bg,
+                color: set.type === "W" ? "#EAB308" : T.textSec,
+              }}>{set.type}</span>
+              <span style={{ flex: 1, fontSize: 13, color: T.text }}>
+                {set.weight || "—"}kg × {set.reps || "—"}
+              </span>
+              {idx < currentSetIdx && <Check size={14} color={T.green} />}
+              {idx === currentSetIdx && <span style={{ fontSize: 10, fontWeight: 700, color: T.teal }}>ORA</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Bottom: navigation between exercises */}
+      <div style={{
+        position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: "430px",
+        marginLeft: "auto", marginRight: "auto",
+        display: "flex", gap: 8, padding: "12px 16px 28px", background: T.bg,
+        borderTop: `1px solid ${T.border}`,
+      }}>
+        <button onClick={() => { setCurrentExIdx(Math.max(0, currentExIdx - 1)); setCurrentSetIdx(0); }} disabled={currentExIdx === 0} style={{
+          flex: 1, padding: 10, background: T.card, border: `1px solid ${T.border}`,
+          borderRadius: 8, cursor: currentExIdx === 0 ? "default" : "pointer",
+          color: T.text, fontWeight: 600, fontSize: 13, opacity: currentExIdx === 0 ? 0.4 : 1,
+        }}>← Precedente</button>
+        <button onClick={async () => { if (currentExIdx === exs.length - 1) { await saveWorkout(); } else { setCurrentExIdx(prev => prev + 1); setCurrentSetIdx(0); }}} style={{
+          flex: 1, padding: 10,
+          background: currentExIdx === exs.length - 1 ? T.green : T.teal,
+          color: "white", border: "none", borderRadius: 8, cursor: "pointer",
+          fontWeight: "bold", fontSize: 13,
+        }}>{currentExIdx === exs.length - 1 ? "Fine Allenamento" : "Prossimo →"}</button>
       </div>
 
       {numpad && (
@@ -1288,11 +1340,7 @@ const ActiveWorkoutScreen = ({
           value={numpad.type === "weight" ? currentSet?.weight : currentSet?.reps}
           decimal={numpad.type === "weight"}
           onConfirm={(v) => {
-            if (numpad.type === "weight") {
-              exercises[currentExIdx].sets[currentSetIdx].weight = v;
-            } else {
-              exercises[currentExIdx].sets[currentSetIdx].reps = v;
-            }
+            updateCurrentSet(numpad.type === "weight" ? "weight" : "reps", v);
             setNumpad(null);
           }}
           onClose={() => setNumpad(null)}
@@ -1677,7 +1725,7 @@ const MainScreenWithTabs = (props) => {
 /* ═══════════════════════════════════════════
    GYM SECTION (ROOT COMPONENT)
    ═══════════════════════════════════════════ */
-export default function GymSection() {
+export default function GymSection({ onNavigate }) {
   const [subScreen, setSubScreen] = useState("main");
   const [activeTab, setActiveTab] = useState("allenamento");
   const [workouts, setWorkouts] = useState([]);
@@ -1702,7 +1750,7 @@ export default function GymSection() {
         getAllGymWorkouts(),
         getAllGymRoutines(),
         getAllGymCustomExercises(),
-        typeof getAllGymSets === 'function' ? getAllGymSets() : Promise.resolve([]),
+        getAllGymSets(),
       ]);
       setWorkouts(wks || []);
       setRoutines(routs || []);
@@ -1744,13 +1792,10 @@ export default function GymSection() {
         setToast({ message: "Nome routine richiesto", icon: <AlertTriangle size={16} color={T.red} /> });
         return;
       }
-      const routine = editingRoutineId ? routines.find(r => r.id === editingRoutineId) : { name: newRoutineName, exercises: [], id: Date.now().toString() };
-      const updated = { ...routine, name: newRoutineName, exercises };
-
-      if (editingRoutineId && routine.id) {
-        await updateGymRoutine(updated);
+      if (editingRoutineId) {
+        await updateGymRoutine(editingRoutineId, { name: newRoutineName, exercises });
       } else {
-        await addGymRoutine(updated);
+        await addGymRoutine({ name: newRoutineName, exercises });
       }
 
       await loadData();
@@ -1918,8 +1963,7 @@ export default function GymSection() {
 
   return (
     <div style={{
-      width: "100%", maxWidth: "430px", height: "100vh",
-      marginLeft: "auto", marginRight: "auto", background: T.bg,
+      width: "100%", minHeight: "100vh", background: T.bg,
       display: "flex", flexDirection: "column", position: "relative",
     }}>
       <MainScreenWithTabs
@@ -1935,7 +1979,6 @@ export default function GymSection() {
         onEditRoutine={handleEditRoutine}
         onDeleteRoutine={handleDeleteRoutine}
       />
-      <GymBottomNav onAdd={() => {}} onNavigate={() => {}} />
       {toast && (
         <Toast
           message={toast.message}
