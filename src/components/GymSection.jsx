@@ -2593,28 +2593,36 @@ export default function GymSection({ onNavigate }) {
   };
 
   const handleSaveRoutine = async (routineName, exercises) => {
+    const nameToUse = routineName || newRoutineName;
+    if (!nameToUse) {
+      setToast({ message: "Nome routine richiesto", icon: <AlertTriangle size={16} color={T.red} /> });
+      return;
+    }
     try {
-      const nameToUse = routineName || newRoutineName;
-      if (!nameToUse) {
-        setToast({ message: "Nome routine richiesto", icon: <AlertTriangle size={16} color={T.red} /> });
-        return;
-      }
+      const now = Date.now();
       if (editingRoutineId) {
         await updateGymRoutine(editingRoutineId, { name: nameToUse, exercises });
+        // Aggiorna lo state direttamente (senza aspettare loadData)
+        setRoutines(prev => prev.map(r =>
+          r.id === editingRoutineId ? { ...r, name: nameToUse, exercises } : r
+        ));
       } else {
-        await addGymRoutine({ name: nameToUse, exercises });
+        const newId = await addGymRoutine({ name: nameToUse, exercises });
+        // Aggiunge la routine allo state direttamente
+        setRoutines(prev => [...prev, { id: newId, name: nameToUse, exercises, createdAt: now }]);
       }
-
-      await loadData();
+      // Naviga subito, poi ricarica in background per consistenza
       setSubScreen("main");
       setActiveTab("routine");
       setNewRoutineName(null);
       setNewRoutineExercises([]);
       setEditingRoutineId(null);
       setToast({ message: "Routine salvata!", icon: <Check size={16} color={T.green} /> });
+      loadData(); // background refresh, non-blocking
     } catch (err) {
       console.error("Error saving routine:", err);
-      setToast({ message: "Errore salvataggio", icon: <AlertTriangle size={16} color={T.red} /> });
+      setSubScreen("main");
+      setToast({ message: "Errore salvataggio: " + (err?.message || err), icon: <AlertTriangle size={16} color={T.red} /> });
     }
   };
 
