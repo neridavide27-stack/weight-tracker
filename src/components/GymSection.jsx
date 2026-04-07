@@ -355,7 +355,7 @@ const NumpadOverlay = ({ onValue, onClose, decimal = false }) => {
 /* ═══════════════════════════════════════════
    EXERCISE PICKER (multi-select for routine creation)
    ═══════════════════════════════════════════ */
-const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multiSelect = false }) => {
+const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multiSelect = false, onMultiSelect }) => {
   const [search, setSearch] = useState("");
   const [filterMuscle, setFilterMuscle] = useState(null);
   const [showAddCustom, setShowAddCustom] = useState(false);
@@ -441,7 +441,13 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multi
           width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
           display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
         }}><X size={18} color={T.teal}/></button>
-        <div style={{ fontSize:18,fontWeight:800,color:T.text }}>Aggiungi Esercizio</div>
+        <div style={{ flex:1,fontSize:18,fontWeight:800,color:T.text }}>{multiSelect ? "Aggiungi Esercizi" : "Aggiungi Esercizio"}</div>
+        {multiSelect && selected.length > 0 && (
+          <button onClick={() => onMultiSelect && onMultiSelect(selected)} style={{
+            background:T.teal,border:"none",borderRadius:10,padding:"8px 16px",
+            color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",
+          }}>Aggiungi ({selected.length})</button>
+        )}
       </div>
 
       <div style={{ padding:"0 16px 8px" }}>
@@ -1827,19 +1833,10 @@ export default function GymSection({ onNavigate }) {
 
   if (subScreen === "nameModal") {
     return (
-      <MainScreenWithTabs
-        workouts={workouts} allSets={allSets} routines={routines} customExercises={customExercises}
-        onStartFromRoutine={handleStartFromRoutine}
-        onEditRoutine={(r) => { setEditRoutine(r); setSubScreen("routineEditor"); }}
-        onNewRoutine={() => {}}
-        onDeleteRoutine={handleDeleteRoutine}
-        onExerciseDetail={(exId) => { setDetailExerciseId(exId); setSubScreen("exerciseDetail"); }}
-        onWorkoutDetail={(w) => { setDetailWorkout(w); setSubScreen("workoutDetail"); }}
-        onNavigate={onNavigate}
-        onAdd={() => {}}
-      >
-        <NameModal onContinue={(name) => { setRoutineName(name); setSubScreen("pickExercises"); }} onClose={() => setSubScreen("main")}/>
-      </MainScreenWithTabs>
+      <NameModal
+        onContinue={(name) => { setRoutineName(name); setSubScreen("pickExercises"); }}
+        onClose={() => setSubScreen("main")}
+      />
     );
   }
 
