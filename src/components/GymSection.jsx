@@ -1,6 +1,6 @@
 "use client";
 // GymSection.jsx — Gym workout tracker (Hevy-style)
-// v2 — Tab navigation, routine-first flow, per-exercise timer, auto-fill, timer overrides
+// v3 — Routine creation flow, exercise database with uni field, reordering, superset linking, notes, timers
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
@@ -10,6 +10,7 @@ import {
   Edit3, Copy, ChevronRight, ChevronDown, Clock, Award, Trophy,
   BarChart3, Target, Zap, Minus, MoreVertical, Pause, Footprints,
   AlertTriangle, CheckCircle2, Bookmark, FolderOpen,
+  ChevronUp, Link2, ArrowLeftRight, FileText, GripVertical,
 } from "lucide-react";
 import {
   addGymWorkout, updateGymWorkout, deleteGymWorkout, getAllGymWorkouts,
@@ -49,75 +50,75 @@ const formatTimer = (secs) => {
 };
 
 /* ═══════════════════════════════════════════
-   EXERCISE DATABASE (~54 exercises)
+   EXERCISE DATABASE (~54 exercises with uni field)
    ═══════════════════════════════════════════ */
 const MUSCLE_GROUPS = ["Petto", "Schiena", "Spalle", "Bicipiti", "Tricipiti", "Gambe", "Core"];
 const EQUIPMENT = ["Bilanciere", "Manubri", "Macchina", "Cavi", "Corpo libero"];
 
 const EXERCISES = [
   // Petto
-  { id: "bench_press",       name: "Panca Piana",          muscle: "Petto",    secondary: "Tricipiti",  equipment: "Bilanciere" },
-  { id: "incline_bench",     name: "Panca Inclinata",      muscle: "Petto",    secondary: "Spalle",     equipment: "Bilanciere" },
-  { id: "decline_bench",     name: "Panca Declinata",      muscle: "Petto",    secondary: "Tricipiti",  equipment: "Bilanciere" },
-  { id: "db_bench",          name: "Panca Manubri",        muscle: "Petto",    secondary: "Tricipiti",  equipment: "Manubri" },
-  { id: "db_incline",        name: "Inclinata Manubri",    muscle: "Petto",    secondary: "Spalle",     equipment: "Manubri" },
-  { id: "chest_fly",         name: "Croci Manubri",        muscle: "Petto",    secondary: "",           equipment: "Manubri" },
-  { id: "cable_fly",         name: "Croci ai Cavi",        muscle: "Petto",    secondary: "",           equipment: "Cavi" },
-  { id: "chest_press",       name: "Chest Press",          muscle: "Petto",    secondary: "Tricipiti",  equipment: "Macchina" },
-  { id: "pec_deck",          name: "Pec Deck",             muscle: "Petto",    secondary: "",           equipment: "Macchina" },
+  { id: "bench_press",       name: "Panca Piana",          muscle: "Petto",    secondary: "Tricipiti",  equipment: "Bilanciere", uni: false },
+  { id: "incline_bench",     name: "Panca Inclinata",      muscle: "Petto",    secondary: "Spalle",     equipment: "Bilanciere", uni: false },
+  { id: "decline_bench",     name: "Panca Declinata",      muscle: "Petto",    secondary: "Tricipiti",  equipment: "Bilanciere", uni: false },
+  { id: "db_bench",          name: "Panca Manubri",        muscle: "Petto",    secondary: "Tricipiti",  equipment: "Manubri", uni: false },
+  { id: "db_incline",        name: "Inclinata Manubri",    muscle: "Petto",    secondary: "Spalle",     equipment: "Manubri", uni: false },
+  { id: "chest_fly",         name: "Croci Manubri",        muscle: "Petto",    secondary: "",           equipment: "Manubri", uni: false },
+  { id: "cable_fly",         name: "Croci ai Cavi",        muscle: "Petto",    secondary: "",           equipment: "Cavi", uni: false },
+  { id: "chest_press",       name: "Chest Press",          muscle: "Petto",    secondary: "Tricipiti",  equipment: "Macchina", uni: false },
+  { id: "pec_deck",          name: "Pec Deck",             muscle: "Petto",    secondary: "",           equipment: "Macchina", uni: false },
   // Schiena
-  { id: "deadlift",          name: "Stacco da Terra",      muscle: "Schiena",  secondary: "Gambe",      equipment: "Bilanciere" },
-  { id: "barbell_row",       name: "Rematore Bilanciere",  muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Bilanciere" },
-  { id: "db_row",            name: "Rematore Manubrio",    muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Manubri" },
-  { id: "lat_pulldown",      name: "Lat Machine",          muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Macchina" },
-  { id: "seated_row",        name: "Pulley Basso",         muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Cavi" },
-  { id: "cable_row",         name: "Rematore ai Cavi",     muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Cavi" },
-  { id: "tbar_row",          name: "T-Bar Row",            muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Bilanciere" },
-  { id: "pullup",            name: "Trazioni",             muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Corpo libero" },
-  { id: "hyperextension",    name: "Hyperextension",       muscle: "Schiena",  secondary: "Gambe",      equipment: "Corpo libero" },
+  { id: "deadlift",          name: "Stacco da Terra",      muscle: "Schiena",  secondary: "Gambe",      equipment: "Bilanciere", uni: false },
+  { id: "barbell_row",       name: "Rematore Bilanciere",  muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Bilanciere", uni: false },
+  { id: "db_row",            name: "Rematore Manubrio",    muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Manubri", uni: true },
+  { id: "lat_pulldown",      name: "Lat Machine",          muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Macchina", uni: false },
+  { id: "seated_row",        name: "Pulley Basso",         muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Cavi", uni: false },
+  { id: "cable_row",         name: "Rematore ai Cavi",     muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Cavi", uni: false },
+  { id: "tbar_row",          name: "T-Bar Row",            muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Bilanciere", uni: false },
+  { id: "pullup",            name: "Trazioni",             muscle: "Schiena",  secondary: "Bicipiti",   equipment: "Corpo libero", uni: false },
+  { id: "hyperextension",    name: "Hyperextension",       muscle: "Schiena",  secondary: "Gambe",      equipment: "Corpo libero", uni: false },
   // Spalle
-  { id: "ohp",               name: "Military Press",       muscle: "Spalle",   secondary: "Tricipiti",  equipment: "Bilanciere" },
-  { id: "db_shoulder_press", name: "Lento Manubri",        muscle: "Spalle",   secondary: "Tricipiti",  equipment: "Manubri" },
-  { id: "lateral_raise",     name: "Alzate Laterali",      muscle: "Spalle",   secondary: "",           equipment: "Manubri" },
-  { id: "front_raise",       name: "Alzate Frontali",      muscle: "Spalle",   secondary: "",           equipment: "Manubri" },
-  { id: "rear_delt_fly",     name: "Rear Delt Fly",        muscle: "Spalle",   secondary: "Schiena",    equipment: "Manubri" },
-  { id: "face_pull",         name: "Face Pull",            muscle: "Spalle",   secondary: "Schiena",    equipment: "Cavi" },
-  { id: "shrug",             name: "Scrollate",            muscle: "Spalle",   secondary: "",           equipment: "Manubri" },
-  { id: "shoulder_press_m",  name: "Shoulder Press",       muscle: "Spalle",   secondary: "Tricipiti",  equipment: "Macchina" },
+  { id: "ohp",               name: "Military Press",       muscle: "Spalle",   secondary: "Tricipiti",  equipment: "Bilanciere", uni: false },
+  { id: "db_shoulder_press", name: "Lento Manubri",        muscle: "Spalle",   secondary: "Tricipiti",  equipment: "Manubri", uni: false },
+  { id: "lateral_raise",     name: "Alzate Laterali",      muscle: "Spalle",   secondary: "",           equipment: "Manubri", uni: false },
+  { id: "front_raise",       name: "Alzate Frontali",      muscle: "Spalle",   secondary: "",           equipment: "Manubri", uni: false },
+  { id: "rear_delt_fly",     name: "Rear Delt Fly",        muscle: "Spalle",   secondary: "Schiena",    equipment: "Manubri", uni: false },
+  { id: "face_pull",         name: "Face Pull",            muscle: "Spalle",   secondary: "Schiena",    equipment: "Cavi", uni: false },
+  { id: "shrug",             name: "Scrollate",            muscle: "Spalle",   secondary: "",           equipment: "Manubri", uni: false },
+  { id: "shoulder_press_m",  name: "Shoulder Press",       muscle: "Spalle",   secondary: "Tricipiti",  equipment: "Macchina", uni: false },
   // Bicipiti
-  { id: "barbell_curl",      name: "Curl Bilanciere",      muscle: "Bicipiti", secondary: "",           equipment: "Bilanciere" },
-  { id: "db_curl",           name: "Curl Manubri",         muscle: "Bicipiti", secondary: "",           equipment: "Manubri" },
-  { id: "hammer_curl",       name: "Hammer Curl",          muscle: "Bicipiti", secondary: "",           equipment: "Manubri" },
-  { id: "preacher_curl",     name: "Panca Scott",          muscle: "Bicipiti", secondary: "",           equipment: "Bilanciere" },
-  { id: "cable_curl",        name: "Curl ai Cavi",         muscle: "Bicipiti", secondary: "",           equipment: "Cavi" },
-  { id: "concentration_curl",name: "Curl Concentrato",     muscle: "Bicipiti", secondary: "",           equipment: "Manubri" },
+  { id: "barbell_curl",      name: "Curl Bilanciere",      muscle: "Bicipiti", secondary: "",           equipment: "Bilanciere", uni: false },
+  { id: "db_curl",           name: "Curl Manubri",         muscle: "Bicipiti", secondary: "",           equipment: "Manubri", uni: false },
+  { id: "hammer_curl",       name: "Hammer Curl",          muscle: "Bicipiti", secondary: "",           equipment: "Manubri", uni: false },
+  { id: "preacher_curl",     name: "Panca Scott",          muscle: "Bicipiti", secondary: "",           equipment: "Bilanciere", uni: false },
+  { id: "cable_curl",        name: "Curl ai Cavi",         muscle: "Bicipiti", secondary: "",           equipment: "Cavi", uni: false },
+  { id: "concentration_curl",name: "Curl Concentrato",     muscle: "Bicipiti", secondary: "",           equipment: "Manubri", uni: true },
   // Tricipiti
-  { id: "close_grip_bench",  name: "Panca Presa Stretta",  muscle: "Tricipiti",secondary: "Petto",      equipment: "Bilanciere" },
-  { id: "french_press",      name: "French Press",         muscle: "Tricipiti",secondary: "",           equipment: "Bilanciere" },
-  { id: "tricep_pushdown",   name: "Push Down Cavi",       muscle: "Tricipiti",secondary: "",           equipment: "Cavi" },
-  { id: "overhead_ext",      name: "Estensioni Sopra Testa",muscle:"Tricipiti",secondary: "",           equipment: "Manubri" },
-  { id: "skull_crusher",     name: "Skull Crusher",        muscle: "Tricipiti",secondary: "",           equipment: "Bilanciere" },
-  { id: "dip",               name: "Dip",                  muscle: "Tricipiti",secondary: "Petto",      equipment: "Corpo libero" },
-  { id: "kickback",          name: "Kickback",             muscle: "Tricipiti",secondary: "",           equipment: "Manubri" },
+  { id: "close_grip_bench",  name: "Panca Presa Stretta",  muscle: "Tricipiti",secondary: "Petto",      equipment: "Bilanciere", uni: false },
+  { id: "french_press",      name: "French Press",         muscle: "Tricipiti",secondary: "",           equipment: "Bilanciere", uni: false },
+  { id: "tricep_pushdown",   name: "Push Down Cavi",       muscle: "Tricipiti",secondary: "",           equipment: "Cavi", uni: false },
+  { id: "overhead_ext",      name: "Estensioni Sopra Testa",muscle:"Tricipiti",secondary: "",           equipment: "Manubri", uni: true },
+  { id: "skull_crusher",     name: "Skull Crusher",        muscle: "Tricipiti",secondary: "",           equipment: "Bilanciere", uni: false },
+  { id: "dip",               name: "Dip",                  muscle: "Tricipiti",secondary: "Petto",      equipment: "Corpo libero", uni: false },
+  { id: "kickback",          name: "Kickback",             muscle: "Tricipiti",secondary: "",           equipment: "Manubri", uni: true },
   // Gambe
-  { id: "squat",             name: "Squat",                muscle: "Gambe",    secondary: "Core",       equipment: "Bilanciere" },
-  { id: "front_squat",       name: "Front Squat",          muscle: "Gambe",    secondary: "Core",       equipment: "Bilanciere" },
-  { id: "leg_press",         name: "Leg Press",            muscle: "Gambe",    secondary: "",           equipment: "Macchina" },
-  { id: "leg_extension",     name: "Leg Extension",        muscle: "Gambe",    secondary: "",           equipment: "Macchina" },
-  { id: "leg_curl",          name: "Leg Curl",             muscle: "Gambe",    secondary: "",           equipment: "Macchina" },
-  { id: "romanian_dl",       name: "Stacco Rumeno",        muscle: "Gambe",    secondary: "Schiena",    equipment: "Bilanciere" },
-  { id: "lunges",            name: "Affondi",              muscle: "Gambe",    secondary: "",           equipment: "Manubri" },
-  { id: "hack_squat",        name: "Hack Squat",           muscle: "Gambe",    secondary: "",           equipment: "Macchina" },
-  { id: "calf_raise",        name: "Calf Raise",           muscle: "Gambe",    secondary: "",           equipment: "Macchina" },
-  { id: "hip_thrust",        name: "Hip Thrust",           muscle: "Gambe",    secondary: "",           equipment: "Bilanciere" },
-  { id: "adductor",          name: "Adductor Machine",     muscle: "Gambe",    secondary: "",           equipment: "Macchina" },
-  { id: "abductor",          name: "Abductor Machine",     muscle: "Gambe",    secondary: "",           equipment: "Macchina" },
+  { id: "squat",             name: "Squat",                muscle: "Gambe",    secondary: "Core",       equipment: "Bilanciere", uni: false },
+  { id: "front_squat",       name: "Front Squat",          muscle: "Gambe",    secondary: "Core",       equipment: "Bilanciere", uni: false },
+  { id: "leg_press",         name: "Leg Press",            muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
+  { id: "leg_extension",     name: "Leg Extension",        muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
+  { id: "leg_curl",          name: "Leg Curl",             muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
+  { id: "romanian_dl",       name: "Stacco Rumeno",        muscle: "Gambe",    secondary: "Schiena",    equipment: "Bilanciere", uni: false },
+  { id: "lunges",            name: "Affondi",              muscle: "Gambe",    secondary: "",           equipment: "Manubri", uni: true },
+  { id: "hack_squat",        name: "Hack Squat",           muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
+  { id: "calf_raise",        name: "Calf Raise",           muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
+  { id: "hip_thrust",        name: "Hip Thrust",           muscle: "Gambe",    secondary: "",           equipment: "Bilanciere", uni: false },
+  { id: "adductor",          name: "Adductor Machine",     muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
+  { id: "abductor",          name: "Abductor Machine",     muscle: "Gambe",    secondary: "",           equipment: "Macchina", uni: false },
   // Core
-  { id: "crunch",            name: "Crunch",               muscle: "Core",     secondary: "",           equipment: "Corpo libero" },
-  { id: "plank",             name: "Plank",                muscle: "Core",     secondary: "",           equipment: "Corpo libero" },
-  { id: "cable_crunch",      name: "Crunch ai Cavi",       muscle: "Core",     secondary: "",           equipment: "Cavi" },
-  { id: "leg_raise",         name: "Leg Raise",            muscle: "Core",     secondary: "",           equipment: "Corpo libero" },
-  { id: "ab_wheel",          name: "Ab Wheel",             muscle: "Core",     secondary: "",           equipment: "Corpo libero" },
+  { id: "crunch",            name: "Crunch",               muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
+  { id: "plank",             name: "Plank",                muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
+  { id: "cable_crunch",      name: "Crunch ai Cavi",       muscle: "Core",     secondary: "",           equipment: "Cavi", uni: false },
+  { id: "leg_raise",         name: "Leg Raise",            muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
+  { id: "ab_wheel",          name: "Ab Wheel",             muscle: "Core",     secondary: "",           equipment: "Corpo libero", uni: false },
 ];
 
 const MUSCLE_COLORS = {
@@ -141,13 +142,34 @@ const calcVolume = (sets) => sets.reduce((s, set) => s + (set.weight || 0) * (se
 const calc1RM = (w, r) => r === 1 ? w : Math.round(w * (1 + r / 30));
 
 const getExerciseById = (id, customExercises = []) => {
-  return EXERCISES.find(e => e.id === id) || customExercises.find(e => e.id === id) || { id, name: id, muscle: "Altro", secondary: "", equipment: "" };
+  return EXERCISES.find(e => e.id === id) || customExercises.find(e => e.id === id) || { id, name: id, muscle: "Altro", secondary: "", equipment: "", uni: false };
 };
 
-/* Resolve rest timer for a given set: exercise override > set-type default */
-const getRestForSet = (exerciseRestTimer, setType) => {
-  if (exerciseRestTimer && exerciseRestTimer > 0) return exerciseRestTimer;
-  return SET_TYPE_TIMERS[setType] || 90;
+const getRestForSet = (ex, setType) => {
+  if (setType === "W" && ex.warmupTimer > 0) return ex.warmupTimer;
+  if (ex.restTimer > 0) return ex.restTimer;
+  return setType === "W" ? 60 : 90;
+};
+
+const estimateWithHistory = (theoretical, realDurations) => {
+  if (!realDurations || realDurations.length === 0) return theoretical;
+  const weighted = realDurations.map((d, i) => ({ d, w: 1 / (i + 1) }));
+  const sum = weighted.reduce((s, x) => s + x.d * x.w, 0);
+  const wSum = weighted.reduce((s, x) => s + x.w, 0);
+  return Math.round(sum / wSum);
+};
+
+const estimateRoutineDuration = (exercises) => {
+  let theoretical = 0;
+  exercises.forEach(ex => {
+    const nSets = ex.sets ? ex.sets.length : 3;
+    const rest = ex.restTimer || 90;
+    const warmup = ex.warmupTimer || 60;
+    const hasWarmup = ex.sets && ex.sets.some(s => s.type === "W");
+    theoretical += nSets * (40 + rest) + (hasWarmup ? warmup : 0);
+    if (ex.unilateral) theoretical += nSets * (ex.sideTimer || 30);
+  });
+  return Math.round(theoretical / 60);
 };
 
 /* ═══════════════════════════════════════════
@@ -199,22 +221,22 @@ const GymBottomNav = ({ onAdd, onNavigate }) => {
    TOAST
    ═══════════════════════════════════════════ */
 const Toast = ({ message, icon, action, onAction, onDismiss }) => {
-  useEffect(() => { const t = setTimeout(onDismiss, action ? 5000 : 3000); return () => clearTimeout(t); }, [onDismiss, action]);
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 3500);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
   return (
     <div style={{
-      position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",zIndex:100,
-      background:T.text,color:"#fff",borderRadius:14,padding:"10px 18px",
-      display:"flex",alignItems:"center",gap:10,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",
-      animation:"slideDown .3s ease-out",maxWidth:"90vw",
+      position:"fixed",bottom:100,left:16,right:16,background:T.card,
+      borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"center",gap:10,
+      boxShadow:"0 8px 24px rgba(0,0,0,0.12)",zIndex:50,
     }}>
-      {icon && <span style={{ fontSize:18 }}>{icon}</span>}
-      <span style={{ fontSize:13,fontWeight:600 }}>{message}</span>
-      {action && (
-        <button onClick={onAction} style={{
-          background:"rgba(255,255,255,0.15)",border:"none",borderRadius:8,
-          padding:"4px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",marginLeft:4,
-        }}>{action}</button>
-      )}
+      <span style={{ fontSize:16 }}>{icon}</span>
+      <span style={{ flex:1,fontSize:13,fontWeight:600,color:T.text }}>{message}</span>
+      {action && <button onClick={onAction} style={{
+        background:"none",border:"none",cursor:"pointer",color:T.teal,
+        fontSize:12,fontWeight:700,padding:0,
+      }}>{action}</button>}
     </div>
   );
 };
@@ -222,75 +244,125 @@ const Toast = ({ message, icon, action, onAction, onDismiss }) => {
 /* ═══════════════════════════════════════════
    REST TIMER OVERLAY
    ═══════════════════════════════════════════ */
-const RestTimerOverlay = ({ seconds, exerciseName, onSkip }) => {
+const RestTimerOverlay = ({ seconds, exerciseName, isSideTimer, onSkip }) => {
   const [remaining, setRemaining] = useState(seconds);
-  const [isPaused, setIsPaused] = useState(false);
-  const totalRef = useRef(seconds);
-
   useEffect(() => {
-    if (isPaused) return;
     if (remaining <= 0) { onSkip(); return; }
-    const t = setInterval(() => setRemaining(r => r - 1), 1000);
+    const t = setInterval(() => setRemaining(r => Math.max(0, r - 1)), 1000);
     return () => clearInterval(t);
-  }, [remaining, isPaused, onSkip]);
-
-  const pct = ((totalRef.current - remaining) / totalRef.current) * 100;
-
+  }, [remaining, onSkip]);
   return (
     <div style={{
-      position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",zIndex:50,
-      background:"linear-gradient(135deg, #1A1A2E, #2D2D44)",borderRadius:20,
-      padding:"16px 24px",display:"flex",alignItems:"center",gap:16,
-      boxShadow:"0 8px 40px rgba(0,0,0,0.4)",minWidth:300,maxWidth:"92vw",
-      animation:"slideUp .3s ease-out",
+      position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      zIndex:100,
     }}>
-      <div style={{ position:"relative",width:56,height:56,flexShrink:0 }}>
-        <svg width={56} height={56} style={{ transform:"rotate(-90deg)" }}>
-          <circle cx={28} cy={28} r={24} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={4}/>
-          <circle cx={28} cy={28} r={24} fill="none" stroke={remaining<=10?T.orange:T.teal} strokeWidth={4}
-            strokeDasharray={150.8} strokeDashoffset={150.8 * (1 - pct / 100)}
-            strokeLinecap="round" style={{ transition:"stroke-dashoffset .5s linear" }}/>
-        </svg>
-        <div style={{ position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center" }}>
-          <span style={{ fontSize:16,fontWeight:800,color:"#fff" }}>{formatTimer(remaining)}</span>
-        </div>
+      <div style={{ fontSize:48,fontWeight:900,color:"#fff",marginBottom:16,fontVariantNumeric:"tabular-nums" }}>
+        {formatTimer(remaining)}
       </div>
-      <div style={{ flex:1,minWidth:0 }}>
-        <div style={{ fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:2 }}>RIPOSO</div>
-        {exerciseName && <div style={{ fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.7)",marginBottom:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{exerciseName}</div>}
-        <div style={{ display:"flex",gap:6 }}>
-          <button onClick={() => setIsPaused(p => !p)} style={{
-            background:"rgba(255,255,255,0.1)",border:"none",borderRadius:8,
-            padding:"5px 10px",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer",
-            display:"flex",alignItems:"center",gap:3,
-          }}>
-            {isPaused ? <Play size={10}/> : <Pause size={10}/>}
-            {isPaused ? "Riprendi" : "Pausa"}
-          </button>
-          <button onClick={() => { totalRef.current += 30; setRemaining(r => r + 30); }} style={{
-            background:"rgba(255,255,255,0.1)",border:"none",borderRadius:8,
-            padding:"5px 10px",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer",
-          }}>+30s</button>
-          <button onClick={onSkip} style={{
-            background:T.teal,border:"none",borderRadius:8,
-            padding:"5px 10px",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer",
-          }}>Salta</button>
-        </div>
+      <div style={{ fontSize:16,fontWeight:700,color:"#fff",marginBottom:8 }}>
+        {isSideTimer ? "CAMBIA LATO" : "RIPOSO"}
+      </div>
+      <div style={{ fontSize:14,color:"#fff",marginBottom:24,opacity:0.8 }}>{exerciseName}</div>
+      <button onClick={onSkip} style={{
+        background:"#fff",border:"none",borderRadius:12,padding:"12px 28px",
+        fontSize:14,fontWeight:700,color:T.text,cursor:"pointer",
+      }}>Salta</button>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   DRUM PICKER (for timers)
+   ═══════════════════════════════════════════ */
+const DrumPicker = ({ value, onSelect, min = 0, max = 300, step = 15 }) => {
+  const ref = useRef(null);
+  const items = Array.from({ length: (max - min) / step + 1 }, (_, i) => min + i * step);
+  const handleScroll = () => {
+    if (ref.current) {
+      const idx = Math.round(ref.current.scrollLeft / 50);
+      onSelect(items[idx] || min);
+    }
+  };
+  return (
+    <div style={{
+      background:T.card,borderRadius:14,padding:"12px",marginBottom:16,
+      border:`1px solid ${T.border}`,
+    }}>
+      <div style={{ fontSize:11,fontWeight:700,color:T.textMuted,marginBottom:8 }}>Secondi</div>
+      <div ref={ref} onScroll={handleScroll} style={{
+        display:"flex",gap:8,overflowX:"auto",overflowY:"hidden",scrollSnapType:"x mandatory",
+        scrollBehavior:"smooth",WebkitOverflowScrolling:"touch",paddingBottom:8,
+      }}>
+        {items.map(v => (
+          <div key={v} style={{
+            minWidth:50,height:50,borderRadius:10,
+            background:value===v?T.teal:T.bg,
+            display:"flex",alignItems:"center",justifyContent:"center",
+            fontSize:13,fontWeight:700,color:value===v?"#fff":T.text,
+            scrollSnapAlign:"center",cursor:"pointer",
+          }} onClick={() => onSelect(v)}>
+            {v}s
+          </div>
+        ))}
       </div>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   EXERCISE PICKER SHEET
+   NUMPAD OVERLAY
    ═══════════════════════════════════════════ */
-const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom }) => {
+const NumpadOverlay = ({ onValue, onClose, decimal = false }) => {
+  const [display, setDisplay] = useState("0");
+  const handleKey = (k) => {
+    if (k === "⌫") setDisplay(d => d.length === 1 ? "0" : d.slice(0, -1));
+    else if (k === ".") { if (!display.includes(".")) setDisplay(d => d + "."); }
+    else setDisplay(d => d === "0" && k !== "." ? k : d + k);
+  };
+  const handleSubmit = () => {
+    onValue(parseFloat(display) || 0);
+    onClose();
+  };
+  const buttons = decimal ? ["1","2","3","4","5","6","7","8","9",".","0","⌫"] : ["1","2","3","4","5","6","7","8","9","","0","⌫"];
+  return (
+    <div style={{
+      position:"fixed",bottom:0,left:0,right:0,background:T.card,
+      borderTopLeftRadius:20,borderTopRightRadius:20,padding:"16px",zIndex:100,
+      boxShadow:"0 -4px 20px rgba(0,0,0,0.1)",
+    }}>
+      <div style={{
+        fontSize:28,fontWeight:800,color:T.text,textAlign:"right",marginBottom:16,
+        minHeight:40,paddingRight:16,
+      }}>{display}</div>
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12 }}>
+        {buttons.map((b, i) => (
+          <button key={i} onClick={() => b && handleKey(b)} disabled={!b} style={{
+            padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,
+            background:T.bg,fontSize:16,fontWeight:700,cursor:b?"pointer":"default",
+            color:T.text,opacity:b?1:0,
+          }}>{b}</button>
+        ))}
+      </div>
+      <button onClick={handleSubmit} style={{
+        width:"100%",padding:"14px",background:T.gradient,border:"none",
+        borderRadius:12,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",
+      }}>Conferma</button>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   EXERCISE PICKER (multi-select for routine creation)
+   ═══════════════════════════════════════════ */
+const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multiSelect = false }) => {
   const [search, setSearch] = useState("");
   const [filterMuscle, setFilterMuscle] = useState(null);
   const [showAddCustom, setShowAddCustom] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customMuscle, setCustomMuscle] = useState("Petto");
   const [customEquip, setCustomEquip] = useState("Bilanciere");
+  const [selected, setSelected] = useState([]);
 
   const allExercises = useMemo(() => [...EXERCISES, ...customExercises], [customExercises]);
   const filtered = useMemo(() => {
@@ -305,10 +377,59 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom }) => 
 
   const handleAddCustom = () => {
     if (!customName.trim()) return;
-    const ex = { id: "custom_" + Date.now(), name: customName.trim(), muscle: customMuscle, secondary: "", equipment: customEquip };
+    const ex = { id: "custom_" + Date.now(), name: customName.trim(), muscle: customMuscle, secondary: "", equipment: customEquip, uni: false };
     onAddCustom(ex);
-    onSelect(ex);
+    if (multiSelect) setSelected(p => [...p, ex]);
+    else onSelect(ex);
+    setCustomName("");
+    setShowAddCustom(false);
   };
+
+  const toggleSelect = (ex) => {
+    if (multiSelect) {
+      if (selected.find(s => s.id === ex.id)) setSelected(p => p.filter(s => s.id !== ex.id));
+      else setSelected(p => [...p, ex]);
+    } else {
+      onSelect(ex);
+    }
+  };
+
+  if (showAddCustom) {
+    return (
+      <div style={{
+        position:"fixed",inset:0,zIndex:60,background:T.bg,
+        animation:"slideUp .3s ease-out",display:"flex",flexDirection:"column",
+      }}>
+        <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 8px" }}>
+          <button onClick={() => setShowAddCustom(false)} style={{
+            width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
+            display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
+          }}><ChevronLeft size={18} color={T.teal}/></button>
+          <div style={{ fontSize:18,fontWeight:800,color:T.text }}>Nuovo esercizio</div>
+        </div>
+        <div style={{ padding:"16px",flex:1,display:"flex",flexDirection:"column" }}>
+          <input value={customName} onChange={e => setCustomName(e.target.value)} placeholder="Nome esercizio"
+            style={{
+              width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${T.border}`,
+              fontSize:13,color:T.text,marginBottom:12,fontFamily:"inherit",boxSizing:"border-box",
+            }}/>
+          <select value={customMuscle} onChange={e => setCustomMuscle(e.target.value)}
+            style={{ flex:1,padding:"8px 10px",borderRadius:10,border:`1px solid ${T.border}`,fontSize:12,color:T.text,fontFamily:"inherit",marginBottom:8 }}>
+            {MUSCLE_GROUPS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <select value={customEquip} onChange={e => setCustomEquip(e.target.value)}
+            style={{ flex:1,padding:"8px 10px",borderRadius:10,border:`1px solid ${T.border}`,fontSize:12,color:T.text,fontFamily:"inherit",marginBottom:16 }}>
+            {EQUIPMENT.map(eq => <option key={eq} value={eq}>{eq}</option>)}
+          </select>
+          <button onClick={handleAddCustom} style={{
+            padding:"12px",borderRadius:10,border:"none",background:T.teal,
+            fontSize:12,fontWeight:700,color:"#fff",cursor:"pointer",
+          }}>Aggiungi</button>
+        </div>
+        <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
+      </div>
+    );
+  }
 
   return (
     <div style={{
@@ -350,13 +471,40 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom }) => 
         ))}
       </div>
 
+      {multiSelect && selected.length > 0 && (
+        <div style={{ padding:"0 16px 8px",display:"flex",gap:6,flexWrap:"wrap" }}>
+          {selected.map(s => (
+            <div key={s.id} style={{
+              background:T.teal,color:"#fff",borderRadius:20,padding:"6px 12px",
+              fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:6,
+            }}>
+              {s.name}
+              <button onClick={() => setSelected(p => p.filter(x => x.id !== s.id))}
+                style={{ background:"none",border:"none",cursor:"pointer",color:"#fff",padding:0 }}>
+                <X size={12}/>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ flex:1,overflowY:"auto",padding:"0 16px" }}>
         {filtered.map(ex => (
-          <button key={ex.id} onClick={() => onSelect(ex)} style={{
+          <button key={ex.id} onClick={() => toggleSelect(ex)} style={{
             width:"100%",display:"flex",alignItems:"center",gap:12,padding:"12px 14px",
-            background:T.card,border:`1px solid ${T.border}`,borderRadius:14,marginBottom:8,
+            background:multiSelect && selected.find(s => s.id === ex.id) ? T.tealLight : T.card,
+            border:`1px solid ${T.border}`,borderRadius:14,marginBottom:8,
             cursor:"pointer",textAlign:"left",
           }}>
+            {multiSelect && (
+              <div style={{
+                width:20,height:20,borderRadius:6,border:`2px solid ${T.teal}`,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                background:selected.find(s => s.id === ex.id) ? T.teal : "transparent",
+              }}>
+                {selected.find(s => s.id === ex.id) && <Check size={12} color="#fff"/>}
+              </div>
+            )}
             <div style={{
               width:38,height:38,borderRadius:10,background:`${MUSCLE_COLORS[ex.muscle]||T.teal}18`,
               display:"flex",alignItems:"center",justifyContent:"center",
@@ -367,50 +515,392 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom }) => 
               <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{ex.name}</div>
               <div style={{ fontSize:10,color:T.textMuted }}>{ex.muscle}{ex.secondary?` • ${ex.secondary}`:""} • {ex.equipment}</div>
             </div>
-            <Plus size={16} color={T.teal}/>
+            {!multiSelect && <Plus size={16} color={T.teal}/>}
           </button>
         ))}
 
-        {!showAddCustom ? (
-          <button onClick={() => setShowAddCustom(true)} style={{
-            width:"100%",padding:"12px",background:T.tealLight,border:`1px dashed ${T.teal}`,
-            borderRadius:14,cursor:"pointer",fontSize:12,fontWeight:700,color:T.teal,
-            display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:20,
-          }}>
-            <Plus size={14}/> Crea esercizio personalizzato
-          </button>
-        ) : (
-          <div style={{ background:T.card,borderRadius:14,padding:16,border:`1px solid ${T.border}`,marginBottom:20 }}>
-            <div style={{ fontSize:12,fontWeight:700,color:T.text,marginBottom:10 }}>Nuovo esercizio</div>
-            <input value={customName} onChange={e => setCustomName(e.target.value)} placeholder="Nome esercizio"
-              style={{
-                width:"100%",padding:"10px 12px",borderRadius:10,border:`1px solid ${T.border}`,
-                fontSize:13,color:T.text,marginBottom:8,fontFamily:"inherit",boxSizing:"border-box",
-              }}/>
-            <div style={{ display:"flex",gap:8,marginBottom:10 }}>
-              <select value={customMuscle} onChange={e => setCustomMuscle(e.target.value)}
-                style={{ flex:1,padding:"8px 10px",borderRadius:10,border:`1px solid ${T.border}`,fontSize:12,color:T.text,fontFamily:"inherit" }}>
-                {MUSCLE_GROUPS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <select value={customEquip} onChange={e => setCustomEquip(e.target.value)}
-                style={{ flex:1,padding:"8px 10px",borderRadius:10,border:`1px solid ${T.border}`,fontSize:12,color:T.text,fontFamily:"inherit" }}>
-                {EQUIPMENT.map(eq => <option key={eq} value={eq}>{eq}</option>)}
-              </select>
-            </div>
-            <div style={{ display:"flex",gap:8 }}>
-              <button onClick={() => setShowAddCustom(false)} style={{
-                flex:1,padding:"10px",borderRadius:10,border:`1px solid ${T.border}`,background:T.card,
-                fontSize:12,fontWeight:700,color:T.textSec,cursor:"pointer",
-              }}>Annulla</button>
-              <button onClick={handleAddCustom} style={{
-                flex:1,padding:"10px",borderRadius:10,border:"none",background:T.teal,
-                fontSize:12,fontWeight:700,color:"#fff",cursor:"pointer",
-              }}>Aggiungi</button>
-            </div>
-          </div>
-        )}
+        <button onClick={() => setShowAddCustom(true)} style={{
+          width:"100%",padding:"12px",background:T.tealLight,border:`1px dashed ${T.teal}`,
+          borderRadius:14,cursor:"pointer",fontSize:12,fontWeight:700,color:T.teal,
+          display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:20,
+        }}>
+          <Plus size={14}/> Crea esercizio personalizzato
+        </button>
       </div>
       <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   ROUTINE NAME MODAL
+   ═══════════════════════════════════════════ */
+const NameModal = ({ onContinue, onClose, title = "Nome Routine" }) => {
+  const [name, setName] = useState("");
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  return (
+    <div style={{
+      position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",
+      display:"flex",alignItems:"flex-end",zIndex:70,
+    }}>
+      <div style={{
+        width:"100%",background:T.card,borderTopLeftRadius:20,borderTopRightRadius:20,
+        padding:"20px 16px 28px",
+      }}>
+        <div style={{ fontSize:16,fontWeight:800,color:T.text,marginBottom:16 }}>{title}</div>
+        <input ref={inputRef} value={name} onChange={e => setName(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && name.trim() && onContinue(name)}
+          placeholder="es. Push Day"
+          style={{
+            width:"100%",padding:"12px 14px",borderRadius:12,border:`1px solid ${T.border}`,
+            fontSize:15,fontWeight:600,color:T.text,marginBottom:16,fontFamily:"inherit",boxSizing:"border-box",
+          }}/>
+        <div style={{ display:"flex",gap:10 }}>
+          <button onClick={onClose} style={{
+            flex:1,padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,background:T.card,
+            fontSize:14,fontWeight:700,color:T.textSec,cursor:"pointer",
+          }}>Annulla</button>
+          <button onClick={() => name.trim() && onContinue(name)} disabled={!name.trim()} style={{
+            flex:1,padding:"12px",borderRadius:12,border:"none",background:T.gradient,
+            fontSize:14,fontWeight:700,color:"#fff",cursor:name.trim()?"pointer":"default",opacity:name.trim()?1:0.5,
+          }}>Continua</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   ROUTINE EDITOR (set creation and configuration)
+   ═══════════════════════════════════════════ */
+const RoutineEditor = ({ routine, exercises, onSave, onClose, customExercises, onAddCustomExercise, onAddExercises }) => {
+  const [exList, setExList] = useState(exercises || []);
+  const [editNoteIdx, setEditNoteIdx] = useState(null);
+  const [showAddMore, setShowAddMore] = useState(false);
+
+  const moveExercise = (idx, dir) => {
+    if ((dir === -1 && idx === 0) || (dir === 1 && idx === exList.length - 1)) return;
+    const next = [...exList];
+    [next[idx], next[idx + dir]] = [next[idx + dir], next[idx]];
+    setExList(next);
+  };
+
+  const toggleUnilateral = (idx) => {
+    const next = [...exList];
+    next[idx] = { ...next[idx], unilateral: !next[idx].unilateral };
+    setExList(next);
+  };
+
+  const toggleSuperset = (idx) => {
+    const next = [...exList];
+    if (next[idx].supersetWith === idx + 1) next[idx] = { ...next[idx], supersetWith: null };
+    else next[idx] = { ...next[idx], supersetWith: idx + 1 };
+    setExList(next);
+  };
+
+  const updateSet = (exIdx, setIdx, field, value) => {
+    const next = [...exList];
+    next[exIdx] = { ...next[exIdx], sets: [...next[exIdx].sets] };
+    next[exIdx].sets[setIdx] = { ...next[exIdx].sets[setIdx], [field]: value };
+    setExList(next);
+  };
+
+  const addSet = (exIdx) => {
+    const next = [...exList];
+    const ex = next[exIdx];
+    const lastSet = ex.sets[ex.sets.length - 1];
+    const newSet = { weight: lastSet?.weight || 0, reps: lastSet?.reps || 0, type: "N" };
+    next[exIdx] = { ...ex, sets: [...ex.sets, newSet] };
+    setExList(next);
+  };
+
+  const removeSet = (exIdx, setIdx) => {
+    const next = [...exList];
+    if (next[exIdx].sets.length <= 1) return;
+    next[exIdx] = { ...next[exIdx], sets: next[exIdx].sets.filter((_, i) => i !== setIdx) };
+    setExList(next);
+  };
+
+  const removeExercise = (idx) => {
+    setExList(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const cycleSetType = (exIdx, setIdx) => {
+    const types = ["N", "W"];
+    const cur = exList[exIdx].sets[setIdx].type;
+    updateSet(exIdx, setIdx, "type", types[(types.indexOf(cur) + 1) % types.length]);
+  };
+
+  const handleSave = () => {
+    onSave(exList);
+  };
+
+  const addMoreExercises = (exs) => {
+    setExList(prev => [...prev, ...exs.map(e => ({
+      exerciseId: e.id,
+      sets: [{ weight: 0, reps: 0, type: "N" }],
+      restTimer: 90,
+      warmupTimer: 60,
+      sideTimer: 30,
+      unilateral: e.uni || false,
+      supersetWith: null,
+      note: "",
+    }))]);
+    setShowAddMore(false);
+  };
+
+  if (showAddMore) {
+    return <ExercisePicker multiSelect onSelect={() => {}} onClose={() => setShowAddMore(false)}
+      customExercises={customExercises} onAddCustom={onAddCustomExercise}
+      onMultiSelect={addMoreExercises}/>;
+  }
+
+  return (
+    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
+      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
+        <button onClick={onClose} style={{
+          width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
+          display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
+        }}><ChevronLeft size={18} color={T.teal}/></button>
+        <div style={{ fontSize:18,fontWeight:800,color:T.text }}>Configura Esercizi</div>
+        <button onClick={handleSave} style={{
+          marginLeft:"auto",background:T.teal,border:"none",borderRadius:10,padding:"8px 16px",
+          color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",
+        }}>Avanti</button>
+      </div>
+
+      <div style={{ padding:"0 16px" }}>
+        {exList.map((ex, exIdx) => {
+          const info = getExerciseById(ex.exerciseId, customExercises);
+          return (
+            <div key={exIdx} style={{
+              background:T.card,borderRadius:14,padding:14,marginBottom:14,
+              border:`1px solid ${T.border}`,
+              borderLeft: ex.supersetWith === exIdx + 1 ? `4px solid ${T.orange}` : "none",
+            }}>
+              {/* Header row */}
+              <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:12 }}>
+                <div style={{ display:"flex",flexDirection:"column",gap:2 }}>
+                  <button onClick={() => moveExercise(exIdx, -1)} disabled={exIdx === 0} style={{
+                    background:"none",border:"none",cursor:exIdx===0?"default":"pointer",opacity:exIdx===0?0.4:1,
+                    padding:2,display:"flex",alignItems:"center",justifyContent:"center",
+                  }}><ChevronUp size={14} color={T.textMuted}/></button>
+                  <button onClick={() => moveExercise(exIdx, 1)} disabled={exIdx === exList.length - 1} style={{
+                    background:"none",border:"none",cursor:exIdx===exList.length-1?"default":"pointer",opacity:exIdx===exList.length-1?0.4:1,
+                    padding:2,display:"flex",alignItems:"center",justifyContent:"center",
+                  }}><ChevronDown size={14} color={T.textMuted}/></button>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{info.name}</div>
+                  <div style={{ fontSize:10,color:T.textMuted }}>{info.muscle}</div>
+                </div>
+                <button onClick={() => toggleUnilateral(exIdx)} style={{
+                  background:"none",border:"none",cursor:"pointer",padding:6,
+                  opacity:ex.unilateral?1:0.4,
+                }}><ArrowLeftRight size={14} color={T.textMuted}/></button>
+                {exIdx < exList.length - 1 && (
+                  <button onClick={() => toggleSuperset(exIdx)} style={{
+                    background:"none",border:"none",cursor:"pointer",padding:6,
+                    opacity:ex.supersetWith===exIdx+1?1:0.4,
+                  }}><Link2 size={14} color={ex.supersetWith===exIdx+1?T.orange:T.textMuted}/></button>
+                )}
+                <button onClick={() => removeExercise(exIdx)} style={{
+                  background:"none",border:"none",cursor:"pointer",padding:6,
+                }}><Trash2 size={14} color={T.textMuted}/></button>
+              </div>
+
+              {/* Timer row */}
+              <div style={{ display:"flex",gap:10,marginBottom:12,fontSize:11,fontWeight:700,color:T.textMuted,flexWrap:"wrap" }}>
+                <div style={{ display:"flex",alignItems:"center",gap:4 }}>
+                  <span>Riposo:</span>
+                  <button onClick={() => {}} style={{
+                    background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 8px",
+                    fontSize:10,fontWeight:700,color:T.text,cursor:"pointer",
+                  }}>{ex.restTimer}s</button>
+                </div>
+                {ex.sets && ex.sets.some(s => s.type === "W") && (
+                  <div style={{ display:"flex",alignItems:"center",gap:4 }}>
+                    <span>Warmup:</span>
+                    <button onClick={() => {}} style={{
+                      background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 8px",
+                      fontSize:10,fontWeight:700,color:T.text,cursor:"pointer",
+                    }}>{ex.warmupTimer}s</button>
+                  </div>
+                )}
+                {ex.unilateral && (
+                  <div style={{ display:"flex",alignItems:"center",gap:4 }}>
+                    <span>Lati:</span>
+                    <button onClick={() => {}} style={{
+                      background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 8px",
+                      fontSize:10,fontWeight:700,color:T.text,cursor:"pointer",
+                    }}>{ex.sideTimer}s</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Note section */}
+              {editNoteIdx === exIdx ? (
+                <textarea value={ex.note || ""} onChange={e => {
+                  const next = [...exList];
+                  next[exIdx] = { ...next[exIdx], note: e.target.value };
+                  setExList(next);
+                }} onBlur={() => setEditNoteIdx(null)}
+                  style={{
+                    width:"100%",padding:"8px 10px",borderRadius:10,border:`1px solid ${T.border}`,
+                    fontSize:12,color:T.text,marginBottom:12,fontFamily:"inherit",boxSizing:"border-box",
+                    minHeight:60,
+                  }} placeholder="Nota esercizio..."/>
+              ) : (
+                <button onClick={() => setEditNoteIdx(exIdx)} style={{
+                  background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:12,
+                  display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:T.textMuted,
+                }}>
+                  <FileText size={12}/> {ex.note ? "Modifica nota" : "Aggiungi nota"}
+                </button>
+              )}
+
+              {/* Sets table */}
+              <div style={{ marginBottom:12 }}>
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8,fontSize:10,fontWeight:700,color:T.textMuted,marginBottom:8 }}>
+                  <div>Tipo</div>
+                  <div>Kg</div>
+                  <div>Reps</div>
+                  <div></div>
+                </div>
+                {ex.sets && ex.sets.map((set, setIdx) => (
+                  <div key={setIdx} style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8,marginBottom:8 }}>
+                    <button onClick={() => cycleSetType(exIdx, setIdx)} style={{
+                      background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"6px",
+                      fontSize:12,fontWeight:700,color:T.text,cursor:"pointer",
+                    }}>{set.type}</button>
+                    <input type="number" value={set.weight || ""} onChange={e => updateSet(exIdx, setIdx, "weight", parseFloat(e.target.value) || 0)}
+                      style={{
+                        padding:"6px 8px",borderRadius:8,border:`1px solid ${T.border}`,
+                        fontSize:12,fontWeight:700,color:T.text,textAlign:"center",fontFamily:"inherit",
+                      }}/>
+                    <input type="number" value={set.reps || ""} onChange={e => updateSet(exIdx, setIdx, "reps", parseFloat(e.target.value) || 0)}
+                      style={{
+                        padding:"6px 8px",borderRadius:8,border:`1px solid ${T.border}`,
+                        fontSize:12,fontWeight:700,color:T.text,textAlign:"center",fontFamily:"inherit",
+                      }}/>
+                    <button onClick={() => removeSet(exIdx, setIdx)} disabled={ex.sets.length === 1} style={{
+                      background:"none",border:"none",cursor:ex.sets.length===1?"default":"pointer",
+                      opacity:ex.sets.length===1?0.4:1,padding:4,
+                    }}><Minus size={12} color={T.textMuted}/></button>
+                  </div>
+                ))}
+              </div>
+
+              <button onClick={() => addSet(exIdx)} style={{
+                width:"100%",padding:"10px",background:T.tealLight,border:`1px dashed ${T.teal}`,
+                borderRadius:10,cursor:"pointer",fontSize:11,fontWeight:700,color:T.teal,
+              }}>+ Aggiungi serie</button>
+            </div>
+          );
+        })}
+
+        <button onClick={() => setShowAddMore(true)} style={{
+          width:"100%",padding:"12px",background:T.tealLight,border:`1px dashed ${T.teal}`,
+          borderRadius:14,cursor:"pointer",fontSize:12,fontWeight:700,color:T.teal,
+          display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:20,
+        }}>
+          <Plus size={14}/> Aggiungi Esercizi
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   ROUTINE SUMMARY
+   ═══════════════════════════════════════════ */
+const RoutineSummary = ({ name, exercises, onSave, onBack, customExercises }) => {
+  const totalSets = exercises.reduce((s, ex) => s + (ex.sets ? ex.sets.length : 0), 0);
+  const estimatedDuration = estimateRoutineDuration(exercises);
+
+  const muscleGroups = {};
+  exercises.forEach(ex => {
+    const info = getExerciseById(ex.exerciseId, customExercises);
+    if (!muscleGroups[info.muscle]) muscleGroups[info.muscle] = 0;
+    muscleGroups[info.muscle] += ex.sets ? ex.sets.length : 0;
+  });
+
+  const sortedMuscles = Object.entries(muscleGroups).sort((a, b) => b[1] - a[1]);
+  const maxSets = Math.max(...Object.values(muscleGroups));
+
+  return (
+    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
+      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
+        <button onClick={onBack} style={{
+          width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
+          display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
+        }}><ChevronLeft size={18} color={T.teal}/></button>
+        <div style={{ fontSize:18,fontWeight:800,color:T.text }}>Riepilogo</div>
+      </div>
+
+      <div style={{ padding:"12px 16px" }}>
+        {/* Header card */}
+        <div style={{
+          background:T.gradient,borderRadius:16,padding:20,marginBottom:16,color:"#fff",
+        }}>
+          <div style={{ fontSize:28,fontWeight:900,marginBottom:4 }}>{exercises.length}</div>
+          <div style={{ fontSize:12,fontWeight:700,marginBottom:12 }}>Esercizi • {totalSets} serie</div>
+          <div style={{ fontSize:14,fontWeight:700 }}>~{estimatedDuration} minuti</div>
+        </div>
+
+        {/* Muscle groups */}
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Serie per gruppo muscolare</div>
+          {sortedMuscles.map(([muscle, count]) => (
+            <div key={muscle} style={{ marginBottom:12 }}>
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
+                <div style={{ fontSize:11,fontWeight:700,color:T.text }}>{muscle}</div>
+                <div style={{ fontSize:11,fontWeight:700,color:T.textMuted }}>{count} serie</div>
+              </div>
+              <div style={{
+                height:8,borderRadius:4,background:T.bg,overflow:"hidden",
+              }}>
+                <div style={{
+                  height:"100%",background:MUSCLE_COLORS[muscle]||T.teal,
+                  width:`${(count/maxSets)*100}%`,
+                }}/>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Exercise list */}
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Esercizi</div>
+          {exercises.map((ex, idx) => {
+            const info = getExerciseById(ex.exerciseId, customExercises);
+            return (
+              <div key={idx} style={{
+                background:T.card,borderRadius:12,padding:12,marginBottom:8,
+                border:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:10,
+              }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:12,fontWeight:700,color:T.text }}>{info.name}</div>
+                  <div style={{ fontSize:10,color:T.textMuted }}>{ex.sets ? ex.sets.length : 0} serie</div>
+                </div>
+                {ex.supersetWith === idx + 1 && <span style={{ fontSize:9,fontWeight:700,background:T.orange,color:"#fff",padding:"2px 8px",borderRadius:4 }}>SS</span>}
+                {ex.unilateral && <span style={{ fontSize:9,fontWeight:700,background:T.purple,color:"#fff",padding:"2px 8px",borderRadius:4 }}>UNI</span>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Buttons */}
+        <button onClick={onSave} style={{
+          width:"100%",padding:"14px",background:T.gradient,border:"none",borderRadius:12,
+          color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10,
+        }}>Salva Routine</button>
+        <button onClick={onBack} style={{
+          width:"100%",padding:"14px",background:T.card,border:`1px solid ${T.border}`,borderRadius:12,
+          color:T.text,fontSize:14,fontWeight:700,cursor:"pointer",
+        }}>Torna a modificare</button>
+      </div>
     </div>
   );
 };
@@ -419,28 +909,23 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom }) => 
    ACTIVE WORKOUT SCREEN
    ═══════════════════════════════════════════ */
 const ActiveWorkoutScreen = ({
-  initialExercises, routineName, routineTimers, onFinish, onDiscard, onNavigate,
+  initialExercises, routineName, onFinish, onDiscard, onNavigate,
   allWorkouts, allSets, customExercises, onAddCustomExercise,
 }) => {
   const [workoutName, setWorkoutName] = useState(routineName || "");
   const [exercises, setExercises] = useState(initialExercises || []);
-  // exercises: [{ exerciseId, restTimer, sets: [{ weight, reps, type, completed }] }]
   const [showPicker, setShowPicker] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
-  const [restTimer, setRestTimer] = useState(null); // { seconds, exerciseName } or null
+  const [restTimer, setRestTimer] = useState(null);
   const [showFinishConfirm, setShowFinishConfirm] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
-  const [editTimerExIdx, setEditTimerExIdx] = useState(null);
-  const [tempTimer, setTempTimer] = useState("");
   const startRef = useRef(Date.now());
 
-  // Workout elapsed timer
   useEffect(() => {
     const t = setInterval(() => setElapsedSec(Math.floor((Date.now() - startRef.current) / 1000)), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Get previous workout data for each exercise — used for auto-fill + "Prec." column
   const prevData = useMemo(() => {
     const map = {};
     if (!allWorkouts || !allSets) return map;
@@ -461,7 +946,6 @@ const ActiveWorkoutScreen = ({
   }, [exercises, allWorkouts, allSets]);
 
   const addExercise = (ex) => {
-    // Auto-fill sets from previous data
     const prev = allSets.filter(s => s.exerciseId === ex.id);
     let defaultSets = [{ weight: 0, reps: 0, type: "N", completed: false }];
     if (prev.length > 0) {
@@ -473,7 +957,7 @@ const ActiveWorkoutScreen = ({
         defaultSets = lastSets.map(s => ({ weight: s.weight || 0, reps: s.reps || 0, type: s.type || "N", completed: false }));
       }
     }
-    setExercises(p => [...p, { exerciseId: ex.id, restTimer: 0, sets: defaultSets }]);
+    setExercises(p => [...p, { exerciseId: ex.id, restTimer: 0, warmupTimer: 60, sideTimer: 30, unilateral: false, supersetWith: null, note: "", sets: defaultSets }]);
     setShowPicker(false);
   };
 
@@ -490,12 +974,31 @@ const ActiveWorkoutScreen = ({
   const toggleComplete = (exIdx, setIdx) => {
     const ex = exercises[exIdx];
     const set = ex.sets[setIdx];
-    const newCompleted = !set.completed;
-    updateSet(exIdx, setIdx, "completed", newCompleted);
-    if (newCompleted) {
-      const restSec = getRestForSet(ex.restTimer, set.type);
-      const info = getExerciseById(ex.exerciseId, customExercises);
-      setRestTimer({ seconds: restSec, exerciseName: info.name });
+    const info = getExerciseById(ex.exerciseId, customExercises);
+    if (ex.unilateral) {
+      if (!set.sideCompleted && !set.completed) {
+        // First side done → start side timer
+        updateSet(exIdx, setIdx, "sideCompleted", true);
+        if (ex.sideTimer > 0) {
+          setRestTimer({ seconds: ex.sideTimer, exerciseName: info.name, isSideTimer: true });
+        }
+      } else if (set.sideCompleted && !set.completed) {
+        // Second side done → mark complete, start rest timer
+        updateSet(exIdx, setIdx, "completed", true);
+        const restSec = getRestForSet(ex, set.type);
+        setRestTimer({ seconds: restSec, exerciseName: info.name, isSideTimer: false });
+      } else {
+        // Reset
+        updateSet(exIdx, setIdx, "completed", false);
+        updateSet(exIdx, setIdx, "sideCompleted", false);
+      }
+    } else {
+      const newCompleted = !set.completed;
+      updateSet(exIdx, setIdx, "completed", newCompleted);
+      if (newCompleted) {
+        const restSec = getRestForSet(ex, set.type);
+        setRestTimer({ seconds: restSec, exerciseName: info.name, isSideTimer: false });
+      }
     }
   };
 
@@ -529,15 +1032,6 @@ const ActiveWorkoutScreen = ({
     updateSet(exIdx, setIdx, "type", types[(types.indexOf(cur) + 1) % types.length]);
   };
 
-  const setExerciseTimer = (exIdx, seconds) => {
-    setExercises(prev => {
-      const next = [...prev];
-      next[exIdx] = { ...next[exIdx], restTimer: seconds };
-      return next;
-    });
-    setEditTimerExIdx(null);
-  };
-
   const totalVolume = useMemo(() =>
     exercises.reduce((sum, ex) => sum + ex.sets.filter(s => s.completed).reduce((ss, s) => ss + (s.weight||0)*(s.reps||0), 0), 0)
   , [exercises]);
@@ -558,323 +1052,111 @@ const ActiveWorkoutScreen = ({
       durationMin,
       exercises: completedExercises.map(ex => ({
         exerciseId: ex.exerciseId,
-        sets: ex.sets.filter(s => s.completed).map((s, i) => ({ order: i, weight: s.weight||0, reps: s.reps||0, type: s.type })),
+        sets: ex.sets.filter(s => s.completed).map((s, i) => ({ ...s, order: i })),
       })),
     });
   };
 
-  if (showPicker) {
-    return <ExercisePicker onSelect={addExercise} onClose={() => setShowPicker(false)}
-      customExercises={customExercises} onAddCustom={onAddCustomExercise}/>;
-  }
-
-  return (
-    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:110 }}>
-      {/* Header */}
-      <div style={{ position:"sticky",top:0,zIndex:10,background:T.bg,padding:"12px 16px",
-        display:"flex",alignItems:"center",justifyContent:"space-between",
-        borderBottom:`1px solid ${T.border}` }}>
-        <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-          <button onClick={() => setShowDiscardConfirm(true)} style={{
-            width:34,height:34,borderRadius:10,background:"#FEE2E2",border:"none",
-            display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-          }}><X size={16} color={T.red}/></button>
-          <div>
-            <input value={workoutName} onChange={e => setWorkoutName(e.target.value)}
-              placeholder="Nome allenamento" style={{
-                border:"none",outline:"none",fontSize:15,fontWeight:800,color:T.text,
-                background:"transparent",width:160,fontFamily:"inherit",
-              }}/>
-            <div style={{ fontSize:10,color:T.textMuted,fontWeight:600 }}>
-              <Clock size={9} style={{ marginRight:2,verticalAlign:"middle" }}/>{formatTimer(elapsedSec)}
-              {" • "}{totalSetsCompleted} serie • {Math.round(totalVolume).toLocaleString()} kg
-            </div>
-          </div>
-        </div>
-        <button onClick={() => setShowFinishConfirm(true)} style={{
-          background:T.teal,border:"none",borderRadius:10,padding:"8px 16px",
-          color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",
-        }}>Termina</button>
-      </div>
-
-      {/* Exercise blocks */}
-      <div style={{ padding:"12px 16px 0" }}>
-        {exercises.map((ex, exIdx) => {
-          const info = getExerciseById(ex.exerciseId, customExercises);
-          const prev = prevData[ex.exerciseId];
-          const timerLabel = ex.restTimer > 0 ? `${ex.restTimer}s` : "auto";
-          return (
-            <div key={exIdx} style={{
-              background:T.card,borderRadius:16,padding:14,marginBottom:10,
-              boxShadow:T.shadow,border:`1px solid ${T.border}`,
-            }}>
-              {/* Exercise header */}
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
-                <div style={{ flex:1,minWidth:0 }}>
-                  <div style={{ fontSize:14,fontWeight:800,color:MUSCLE_COLORS[info.muscle]||T.teal }}>{info.name}</div>
-                  <div style={{ fontSize:10,color:T.textMuted }}>{info.muscle} • {info.equipment}</div>
-                </div>
-                <div style={{ display:"flex",gap:4,alignItems:"center" }}>
-                  {/* Timer config button */}
-                  <button onClick={() => { setEditTimerExIdx(editTimerExIdx===exIdx?null:exIdx); setTempTimer(String(ex.restTimer||"")); }} style={{
-                    background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,
-                    padding:"4px 8px",fontSize:9,fontWeight:700,color:T.textSec,cursor:"pointer",
-                    display:"flex",alignItems:"center",gap:3,
-                  }}>
-                    <Timer size={10}/> {timerLabel}
-                  </button>
-                  <button onClick={() => removeExercise(exIdx)} style={{
-                    background:"none",border:"none",cursor:"pointer",padding:4,
-                  }}><Trash2 size={14} color={T.textMuted}/></button>
-                </div>
-              </div>
-
-              {/* Timer editor inline */}
-              {editTimerExIdx === exIdx && (
-                <div style={{
-                  display:"flex",gap:6,alignItems:"center",marginBottom:10,padding:"8px 10px",
-                  background:T.bg,borderRadius:10,border:`1px solid ${T.border}`,
-                }}>
-                  <Timer size={12} color={T.teal}/>
-                  <span style={{ fontSize:10,fontWeight:600,color:T.textSec }}>Riposo:</span>
-                  {[60,90,120,180].map(s => (
-                    <button key={s} onClick={() => setExerciseTimer(exIdx, s)} style={{
-                      padding:"4px 8px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",
-                      background:ex.restTimer===s?T.teal:T.card,color:ex.restTimer===s?"#fff":T.textSec,
-                      border:`1px solid ${ex.restTimer===s?T.teal:T.border}`,
-                    }}>{s}s</button>
-                  ))}
-                  <button onClick={() => setExerciseTimer(exIdx, 0)} style={{
-                    padding:"4px 8px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",
-                    background:!ex.restTimer?T.teal:T.card,color:!ex.restTimer?"#fff":T.textSec,
-                    border:`1px solid ${!ex.restTimer?T.teal:T.border}`,
-                  }}>Auto</button>
-                </div>
-              )}
-
-              {/* Sets table header */}
-              <div style={{ display:"grid",gridTemplateColumns:"30px 1fr 72px 72px 36px",gap:3,marginBottom:4,
-                fontSize:8,fontWeight:700,color:T.textMuted,textTransform:"uppercase",paddingLeft:2 }}>
-                <span>Serie</span><span>Prec.</span><span style={{textAlign:"center"}}>Kg</span>
-                <span style={{textAlign:"center"}}>Reps</span><span></span>
-              </div>
-
-              {/* Sets */}
-              {ex.sets.map((set, setIdx) => {
-                const typeObj = SET_TYPES.find(t => t.id === set.type) || SET_TYPES[0];
-                const prevSet = prev && prev[setIdx];
-                return (
-                  <div key={setIdx} style={{
-                    display:"grid",gridTemplateColumns:"30px 1fr 72px 72px 36px",gap:3,
-                    alignItems:"center",marginBottom:3,
-                    background: set.completed ? `${GREEN}08` : "transparent",
-                    borderRadius:8,padding:"3px 2px",
-                  }}>
-                    <button onClick={() => cycleSetType(exIdx, setIdx)} style={{
-                      width:22,height:22,borderRadius:6,border:"none",cursor:"pointer",
-                      background:typeObj.color+"18",color:typeObj.color,
-                      fontSize:9,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",
-                    }}>{typeObj.label}</button>
-
-                    <span style={{ fontSize:11,color:T.textMuted,fontWeight:500 }}>
-                      {prevSet ? `${prevSet.weight}×${prevSet.reps}` : "—"}
-                    </span>
-
-                    <input type="number" value={set.weight || ""} onChange={e => updateSet(exIdx, setIdx, "weight", parseFloat(e.target.value) || 0)}
-                      placeholder="0" style={{
-                        width:"100%",padding:"7px 4px",borderRadius:8,
-                        border:`1.5px solid ${set.completed?GREEN:T.border}`,
-                        fontSize:14,fontWeight:700,color:T.text,textAlign:"center",
-                        background:set.completed?"#F0FDF4":"#fff",fontFamily:"inherit",boxSizing:"border-box",
-                      }}/>
-
-                    <input type="number" value={set.reps || ""} onChange={e => updateSet(exIdx, setIdx, "reps", parseInt(e.target.value) || 0)}
-                      placeholder="0" style={{
-                        width:"100%",padding:"7px 4px",borderRadius:8,
-                        border:`1.5px solid ${set.completed?GREEN:T.border}`,
-                        fontSize:14,fontWeight:700,color:T.text,textAlign:"center",
-                        background:set.completed?"#F0FDF4":"#fff",fontFamily:"inherit",boxSizing:"border-box",
-                      }}/>
-
-                    <button onClick={() => toggleComplete(exIdx, setIdx)} style={{
-                      width:30,height:30,borderRadius:8,border:`2px solid ${set.completed?GREEN:T.border}`,
-                      background:set.completed?GREEN:"#fff",cursor:"pointer",
-                      display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s ease",
-                    }}>
-                      {set.completed && <Check size={15} color="#fff" strokeWidth={3}/>}
-                    </button>
-                  </div>
-                );
-              })}
-
-              {/* Add/remove set */}
-              <div style={{ display:"flex",gap:6,marginTop:6 }}>
-                <button onClick={() => addSet(exIdx)} style={{
-                  flex:1,padding:"6px",borderRadius:8,border:`1px solid ${T.border}`,
-                  background:T.card,cursor:"pointer",fontSize:10,fontWeight:700,color:T.teal,
-                  display:"flex",alignItems:"center",justifyContent:"center",gap:3,
-                }}>
-                  <Plus size={11}/> Serie
-                </button>
-                {ex.sets.length > 1 && (
-                  <button onClick={() => removeSet(exIdx, ex.sets.length - 1)} style={{
-                    padding:"6px 10px",borderRadius:8,border:`1px solid ${T.border}`,
-                    background:T.card,cursor:"pointer",
-                  }}><Minus size={11} color={T.textMuted}/></button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-
-        <button onClick={() => setShowPicker(true)} style={{
-          width:"100%",padding:"14px",background:T.tealLight,border:`1px dashed ${T.teal}`,
-          borderRadius:14,cursor:"pointer",fontSize:13,fontWeight:700,color:T.teal,
-          display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:16,
-        }}>
-          <Plus size={16}/> Aggiungi Esercizio
-        </button>
-      </div>
-
-      {/* Rest timer overlay */}
-      {restTimer && (
-        <RestTimerOverlay seconds={restTimer.seconds} exerciseName={restTimer.exerciseName}
-          onSkip={() => setRestTimer(null)}/>
-      )}
-
-      {/* Finish confirm */}
-      {showFinishConfirm && (
-        <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:70,
-          display:"flex",alignItems:"center",justifyContent:"center",padding:24 }}>
-          <div style={{ background:T.card,borderRadius:20,padding:24,maxWidth:340,width:"100%" }}>
-            <div style={{ fontSize:18,fontWeight:800,color:T.text,marginBottom:4 }}>Termina allenamento?</div>
-            <div style={{ fontSize:13,color:T.textMuted,marginBottom:16 }}>
-              {formatDuration(Math.round(elapsedSec/60))} • {totalSetsCompleted} serie • {Math.round(totalVolume).toLocaleString()} kg
-            </div>
-            <div style={{ display:"flex",gap:10 }}>
-              <button onClick={() => setShowFinishConfirm(false)} style={{
-                flex:1,padding:12,borderRadius:12,border:`1px solid ${T.border}`,background:T.card,
-                fontSize:13,fontWeight:700,color:T.textSec,cursor:"pointer",
-              }}>Continua</button>
-              <button onClick={handleFinish} style={{
-                flex:1,padding:12,borderRadius:12,border:"none",background:T.teal,
-                fontSize:13,fontWeight:700,color:"#fff",cursor:"pointer",
-              }}>Termina</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Discard confirm */}
-      {showDiscardConfirm && (
-        <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:70,
-          display:"flex",alignItems:"center",justifyContent:"center",padding:24 }}>
-          <div style={{ background:T.card,borderRadius:20,padding:24,maxWidth:340,width:"100%" }}>
-            <div style={{ fontSize:18,fontWeight:800,color:T.text,marginBottom:4 }}>Scartare allenamento?</div>
-            <div style={{ fontSize:13,color:T.textMuted,marginBottom:16 }}>Tutti i dati andranno persi.</div>
-            <div style={{ display:"flex",gap:10 }}>
-              <button onClick={() => setShowDiscardConfirm(false)} style={{
-                flex:1,padding:12,borderRadius:12,border:`1px solid ${T.border}`,background:T.card,
-                fontSize:13,fontWeight:700,color:T.textSec,cursor:"pointer",
-              }}>Annulla</button>
-              <button onClick={onDiscard} style={{
-                flex:1,padding:12,borderRadius:12,border:"none",background:T.red,
-                fontSize:13,fontWeight:700,color:"#fff",cursor:"pointer",
-              }}>Scarta</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        @keyframes slideDown { from { opacity:0; transform: translateX(-50%) translateY(-20px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
-      `}</style>
-    </div>
-  );
-};
-
-/* ═══════════════════════════════════════════
-   ROUTINE EDITOR
-   ═══════════════════════════════════════════ */
-const RoutineEditor = ({ routine, onSave, onClose, customExercises, onAddCustomExercise }) => {
-  const [name, setName] = useState(routine?.name || "");
-  const [exercises, setExercises] = useState(routine?.exercises || []);
-  const [showPicker, setShowPicker] = useState(false);
-
-  const addExercise = (ex) => {
-    setExercises(prev => [...prev, { exerciseId: ex.id, targetSets: 3, targetReps: 10, targetWeight: 0, restTimer: 0 }]);
-    setShowPicker(false);
-  };
-
-  const updateExField = (idx, field, value) => {
-    setExercises(prev => { const n = [...prev]; n[idx] = { ...n[idx], [field]: value }; return n; });
-  };
-
-  const removeExercise = (idx) => setExercises(prev => prev.filter((_, i) => i !== idx));
-
-  const handleSave = () => {
-    if (!name.trim() || exercises.length === 0) return;
-    onSave({ name: name.trim(), exercises });
-  };
-
-  if (showPicker) {
-    return <ExercisePicker onSelect={addExercise} onClose={() => setShowPicker(false)}
-      customExercises={customExercises} onAddCustom={onAddCustomExercise}/>;
+  if (restTimer) {
+    return <RestTimerOverlay seconds={restTimer.seconds} exerciseName={restTimer.exerciseName}
+      isSideTimer={restTimer.isSideTimer} onSkip={() => setRestTimer(null)}/>;
   }
 
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
-      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
-        <button onClick={onClose} style={{
+      <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 8px",background:T.card,borderBottom:`1px solid ${T.border}` }}>
+        <button onClick={() => setShowDiscardConfirm(true)} style={{
           width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
           display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
         }}><ChevronLeft size={18} color={T.teal}/></button>
-        <div style={{ fontSize:18,fontWeight:800,color:T.text }}>{routine ? "Modifica" : "Nuova"} Routine</div>
-        <button onClick={handleSave} style={{
-          marginLeft:"auto",background:T.teal,border:"none",borderRadius:10,padding:"8px 16px",
-          color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",opacity:(!name.trim()||exercises.length===0)?0.5:1,
-        }}>Salva</button>
+        <div style={{ flex:1 }}>
+          <input value={workoutName} onChange={e => setWorkoutName(e.target.value)}
+            placeholder="Nome allenamento"
+            style={{
+              width:"100%",padding:"8px 12px",borderRadius:10,border:`1px solid ${T.border}`,
+              fontSize:13,fontWeight:700,color:T.text,fontFamily:"inherit",boxSizing:"border-box",
+            }}/>
+        </div>
+        <button onClick={() => setShowFinishConfirm(true)} style={{
+          background:T.gradient,border:"none",borderRadius:10,padding:"8px 14px",
+          color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",
+        }}>Finisci</button>
+      </div>
+
+      <div style={{ display:"flex",gap:16,padding:"12px 16px",fontSize:12,fontWeight:700 }}>
+        <div style={{ display:"flex",alignItems:"center",gap:6,color:T.textMuted }}>
+          <Clock size={14} color={T.teal}/>
+          {formatTimer(elapsedSec)}
+        </div>
+        <div style={{ display:"flex",alignItems:"center",gap:6,color:T.textMuted }}>
+          <Flame size={14} color={T.orange}/>
+          {Math.round(totalVolume)} kg
+        </div>
+        <div style={{ display:"flex",alignItems:"center",gap:6,color:T.textMuted }}>
+          <Check size={14} color={T.green}/>
+          {totalSetsCompleted} serie
+        </div>
       </div>
 
       <div style={{ padding:"0 16px" }}>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Nome routine (es. Push Day)"
-          style={{
-            width:"100%",padding:"12px 14px",borderRadius:12,border:`1px solid ${T.border}`,
-            fontSize:15,fontWeight:600,color:T.text,marginBottom:16,fontFamily:"inherit",boxSizing:"border-box",
-          }}/>
-
-        {exercises.map((ex, idx) => {
+        {exercises.map((ex, exIdx) => {
           const info = getExerciseById(ex.exerciseId, customExercises);
           return (
-            <div key={idx} style={{
-              background:T.card,borderRadius:14,padding:14,marginBottom:10,
+            <div key={exIdx} style={{
+              background:T.card,borderRadius:14,padding:14,marginBottom:12,
               border:`1px solid ${T.border}`,
+              borderLeft: ex.supersetWith ? `4px solid ${T.orange}` : "none",
             }}>
-              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
-                <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{info.name}</div>
-                <button onClick={() => removeExercise(idx)} style={{
-                  background:"none",border:"none",cursor:"pointer",padding:4,
+              <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:12 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14,fontWeight:700,color:T.text }}>{info.name}</div>
+                  <div style={{ fontSize:10,color:T.textMuted }}>{ex.sets.filter(s => s.completed).length}/{ex.sets.length}</div>
+                </div>
+                <button onClick={() => removeExercise(exIdx)} style={{
+                  background:"none",border:"none",cursor:"pointer",padding:6,
                 }}><Trash2 size={14} color={T.textMuted}/></button>
               </div>
-              <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
-                {[
-                  { label:"Serie", field:"targetSets", val:ex.targetSets },
-                  { label:"Reps", field:"targetReps", val:ex.targetReps },
-                  { label:"Kg", field:"targetWeight", val:ex.targetWeight },
-                  { label:"Riposo (s)", field:"restTimer", val:ex.restTimer },
-                ].map(f => (
-                  <div key={f.field} style={{ display:"flex",alignItems:"center",gap:4 }}>
-                    <span style={{ fontSize:9,color:T.textMuted,fontWeight:600 }}>{f.label}</span>
-                    <input type="number" value={f.val || ""} onChange={e => updateExField(idx, f.field, parseFloat(e.target.value) || 0)}
-                      placeholder={f.field==="restTimer"?"auto":"0"}
-                      style={{
-                        width:f.field==="restTimer"?50:44,padding:"4px 6px",borderRadius:8,border:`1px solid ${T.border}`,
-                        fontSize:12,fontWeight:700,color:T.text,textAlign:"center",fontFamily:"inherit",
-                      }}/>
-                  </div>
-                ))}
-              </div>
+
+              {ex.sets.map((set, setIdx) => (
+                <div key={setIdx} style={{
+                  display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr auto",gap:8,alignItems:"center",
+                  padding:"10px 0",borderBottom:`1px solid ${T.border}`,marginBottom:8,
+                }}>
+                  <button onClick={() => toggleComplete(exIdx, setIdx)} style={{
+                    width:28,height:28,borderRadius:8,
+                    border:`2px solid ${set.completed ? GREEN : set.sideCompleted ? T.orange : T.border}`,
+                    background: set.completed ? GREEN : set.sideCompleted ? T.orange : "#fff",
+                    display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
+                    transition:"all .15s",
+                  }}>
+                    {set.completed && <Check size={14} color="#fff" strokeWidth={3}/>}
+                    {set.sideCompleted && !set.completed && <span style={{fontSize:10,fontWeight:900,color:"#fff"}}>½</span>}
+                  </button>
+                  <button onClick={() => cycleSetType(exIdx, setIdx)} style={{
+                    background:T.bg,border:`1px solid ${T.border}`,borderRadius:6,padding:"4px 8px",
+                    fontSize:11,fontWeight:700,color:T.text,cursor:"pointer",
+                  }}>{set.type}</button>
+                  <input type="number" value={set.weight || ""} onChange={e => updateSet(exIdx, setIdx, "weight", parseFloat(e.target.value) || 0)}
+                    style={{
+                      padding:"6px 8px",borderRadius:6,border:`1px solid ${T.border}`,
+                      fontSize:11,fontWeight:700,color:T.text,textAlign:"center",fontFamily:"inherit",
+                    }} placeholder="Kg"/>
+                  <input type="number" value={set.reps || ""} onChange={e => updateSet(exIdx, setIdx, "reps", parseFloat(e.target.value) || 0)}
+                    style={{
+                      padding:"6px 8px",borderRadius:6,border:`1px solid ${T.border}`,
+                      fontSize:11,fontWeight:700,color:T.text,textAlign:"center",fontFamily:"inherit",
+                    }} placeholder="Reps"/>
+                  <button onClick={() => removeSet(exIdx, setIdx)} disabled={ex.sets.length === 1} style={{
+                    background:"none",border:"none",cursor:ex.sets.length===1?"default":"pointer",
+                    opacity:ex.sets.length===1?0.4:1,padding:4,
+                  }}><Minus size={12} color={T.textMuted}/></button>
+                </div>
+              ))}
+
+              <button onClick={() => addSet(exIdx)} style={{
+                width:"100%",padding:"8px",background:T.tealLight,border:`1px dashed ${T.teal}`,
+                borderRadius:10,cursor:"pointer",fontSize:11,fontWeight:700,color:T.teal,
+              }}>+ Serie</button>
             </div>
           );
         })}
@@ -882,185 +1164,193 @@ const RoutineEditor = ({ routine, onSave, onClose, customExercises, onAddCustomE
         <button onClick={() => setShowPicker(true)} style={{
           width:"100%",padding:"12px",background:T.tealLight,border:`1px dashed ${T.teal}`,
           borderRadius:14,cursor:"pointer",fontSize:12,fontWeight:700,color:T.teal,
-          display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+          display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:20,
         }}>
           <Plus size={14}/> Aggiungi Esercizio
         </button>
       </div>
+
+      {showPicker && <ExercisePicker onSelect={addExercise} onClose={() => setShowPicker(false)}
+        customExercises={customExercises} onAddCustom={onAddCustomExercise}/>}
+
+      {showFinishConfirm && (
+        <div style={{
+          position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",
+          display:"flex",alignItems:"flex-end",zIndex:70,
+        }}>
+          <div style={{ width:"100%",background:T.card,borderTopLeftRadius:20,borderTopRightRadius:20,padding:"20px 16px 28px" }}>
+            <div style={{ fontSize:16,fontWeight:800,color:T.text,marginBottom:8 }}>Finisci allenamento?</div>
+            <div style={{ fontSize:12,color:T.textMuted,marginBottom:16 }}>Saranno salvate {totalSetsCompleted} serie</div>
+            <div style={{ display:"flex",gap:10 }}>
+              <button onClick={() => setShowFinishConfirm(false)} style={{
+                flex:1,padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,background:T.card,
+                fontSize:14,fontWeight:700,color:T.textSec,cursor:"pointer",
+              }}>Continua</button>
+              <button onClick={handleFinish} style={{
+                flex:1,padding:"12px",borderRadius:12,border:"none",background:T.gradient,
+                fontSize:14,fontWeight:700,color:"#fff",cursor:"pointer",
+              }}>Salva e finisci</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDiscardConfirm && (
+        <div style={{
+          position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",
+          display:"flex",alignItems:"flex-end",zIndex:70,
+        }}>
+          <div style={{ width:"100%",background:T.card,borderTopLeftRadius:20,borderTopRightRadius:20,padding:"20px 16px 28px" }}>
+            <div style={{ fontSize:16,fontWeight:800,color:T.text,marginBottom:8 }}>Scartare allenamento?</div>
+            <div style={{ fontSize:12,color:T.textMuted,marginBottom:16 }}>I dati non salvati saranno persi</div>
+            <div style={{ display:"flex",gap:10 }}>
+              <button onClick={() => setShowDiscardConfirm(false)} style={{
+                flex:1,padding:"12px",borderRadius:12,border:`1px solid ${T.border}`,background:T.card,
+                fontSize:14,fontWeight:700,color:T.textSec,cursor:"pointer",
+              }}>Continua</button>
+              <button onClick={onDiscard} style={{
+                flex:1,padding:"12px",borderRadius:12,border:"none",background:T.red,
+                fontSize:14,fontWeight:700,color:"#fff",cursor:"pointer",
+              }}>Scarta</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   EXERCISE DETAIL (progress + history)
+   EXERCISE DETAIL SCREEN
    ═══════════════════════════════════════════ */
 const ExerciseDetailScreen = ({ exerciseId, allWorkouts, allSets, customExercises, onBack }) => {
   const info = getExerciseById(exerciseId, customExercises);
+  const sets = useMemo(() => allSets.filter(s => s.exerciseId === exerciseId).sort((a, b) => b.workoutId - a.workoutId), [allSets, exerciseId]);
 
-  const history = useMemo(() => {
-    const exSets = allSets.filter(s => s.exerciseId === exerciseId);
-    const byWorkout = {};
-    exSets.forEach(s => { if (!byWorkout[s.workoutId]) byWorkout[s.workoutId] = []; byWorkout[s.workoutId].push(s); });
-    return Object.entries(byWorkout).map(([wId, sets]) => {
-      const workout = allWorkouts.find(w => w.id === parseInt(wId));
-      return {
-        workoutId: parseInt(wId), date: workout?.date || "",
-        sets: sets.sort((a, b) => a.order - b.order),
-        volume: sets.reduce((s, set) => s + (set.weight||0)*(set.reps||0), 0),
-        maxWeight: Math.max(...sets.map(s => s.weight||0)),
-        best1RM: Math.max(...sets.map(s => calc1RM(s.weight||0, s.reps||0))),
-      };
-    }).sort((a, b) => b.date.localeCompare(a.date));
-  }, [exerciseId, allWorkouts, allSets]);
+  const stats = useMemo(() => {
+    const completed = sets.length;
+    const totalVol = calcVolume(sets);
+    const maxWeight = Math.max(...sets.map(s => s.weight || 0), 0);
+    const maxReps = Math.max(...sets.map(s => s.reps || 0), 0);
+    const max1RM = sets.length > 0 ? calc1RM(maxWeight, maxReps) : 0;
+    const workoutDates = {};
+    sets.forEach(s => { if (!workoutDates[s.workoutId]) workoutDates[s.workoutId] = true; });
+    return { completed, totalVol: Math.round(totalVol), maxWeight, maxReps, max1RM, numWorkouts: Object.keys(workoutDates).length };
+  }, [sets]);
 
-  const chartData = useMemo(() =>
-    [...history].reverse().slice(-20).map(h => ({ date: formatDate(h.date), volume: h.volume, max1RM: h.best1RM }))
-  , [history]);
-
-  const prs = useMemo(() => {
-    if (history.length === 0) return null;
-    return {
-      maxWeight: Math.max(...history.map(h => h.maxWeight)),
-      maxVolume: Math.max(...history.map(h => h.volume)),
-      max1RM: Math.max(...history.map(h => h.best1RM)),
-    };
-  }, [history]);
+  const chartData = useMemo(() => {
+    const byDay = {};
+    sets.forEach(s => {
+      const w = allWorkouts.find(wk => wk.id === s.workoutId);
+      if (w) {
+        const d = new Date(w.date).toLocaleDateString("it-IT", { month: "short", day: "numeric" });
+        if (!byDay[d]) byDay[d] = 0;
+        byDay[d] += (s.weight || 0) * (s.reps || 0);
+      }
+    });
+    return Object.entries(byDay).slice(-7).map(([d, v]) => ({ name: d, volume: v }));
+  }, [sets, allWorkouts]);
 
   return (
-    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
+    <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:60 }}>
       <div style={{ display:"flex",alignItems:"center",gap:12,padding:"16px 16px 12px" }}>
         <button onClick={onBack} style={{
           width:36,height:36,borderRadius:12,background:T.tealLight,border:"none",
           display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
         }}><ChevronLeft size={18} color={T.teal}/></button>
-        <div>
-          <div style={{ fontSize:18,fontWeight:800,color:T.text }}>{info.name}</div>
-          <div style={{ fontSize:11,color:T.textMuted }}>{info.muscle} • {info.equipment}</div>
-        </div>
+        <div style={{ fontSize:18,fontWeight:800,color:T.text }}>{info.name}</div>
       </div>
 
       <div style={{ padding:"0 16px" }}>
-        {prs && (
-          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16 }}>
-            {[
-              { label:"Peso Max", value:`${prs.maxWeight} kg`, icon:"🏋️" },
-              { label:"1RM Stimato", value:`${prs.max1RM} kg`, icon:"💪" },
-              { label:"Volume Max", value:`${prs.maxVolume.toLocaleString()} kg`, icon:"📊" },
-            ].map((pr, i) => (
-              <div key={i} style={{
-                background:T.card,borderRadius:14,padding:12,textAlign:"center",
-                border:`1px solid ${T.border}`,boxShadow:T.shadow,
-              }}>
-                <div style={{ fontSize:18,marginBottom:4 }}>{pr.icon}</div>
-                <div style={{ fontSize:14,fontWeight:800,color:T.text }}>{pr.value}</div>
-                <div style={{ fontSize:9,color:T.textMuted,fontWeight:600 }}>{pr.label}</div>
-              </div>
-            ))}
+        <div style={{ background:T.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${T.border}`,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12 }}>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:20,fontWeight:900,color:T.teal }}>{stats.completed}</div>
+            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Set</div>
           </div>
-        )}
-
-        {chartData.length > 1 && (
-          <div style={{ background:T.card,borderRadius:16,padding:16,marginBottom:16,border:`1px solid ${T.border}` }}>
-            <div style={{ fontSize:12,fontWeight:700,color:T.text,marginBottom:12 }}>Volume nel tempo</div>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={chartData}>
-                <XAxis dataKey="date" tick={{ fontSize:9 }} tickLine={false} axisLine={false}/>
-                <Tooltip formatter={(v) => [`${v.toLocaleString()} kg`, "Volume"]}
-                  contentStyle={{ borderRadius:10,fontSize:11,border:`1px solid ${T.border}` }}/>
-                <Bar dataKey="volume" fill={T.teal} radius={[6,6,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:20,fontWeight:900,color:T.orange }}>{stats.numWorkouts}</div>
+            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Sessioni</div>
           </div>
-        )}
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:20,fontWeight:900,color:T.green }}>{stats.maxWeight}kg</div>
+            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Max</div>
+          </div>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:20,fontWeight:900,color:T.purple }}>{stats.max1RM}kg</div>
+            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>1RM</div>
+          </div>
+        </div>
 
-        {chartData.length > 1 && (
-          <div style={{ background:T.card,borderRadius:16,padding:16,marginBottom:16,border:`1px solid ${T.border}` }}>
-            <div style={{ fontSize:12,fontWeight:700,color:T.text,marginBottom:12 }}>1RM Stimato</div>
-            <ResponsiveContainer width="100%" height={140}>
+        {chartData.length > 0 && (
+          <div style={{ background:T.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${T.border}` }}>
+            <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Volume (ultimi 7 giorni)</div>
+            <ResponsiveContainer width="100%" height={200}>
               <LineChart data={chartData}>
-                <XAxis dataKey="date" tick={{ fontSize:9 }} tickLine={false} axisLine={false}/>
-                <Tooltip formatter={(v) => [`${v} kg`, "1RM"]}
-                  contentStyle={{ borderRadius:10,fontSize:11,border:`1px solid ${T.border}` }}/>
-                <Line type="monotone" dataKey="max1RM" stroke={T.purple} strokeWidth={2} dot={{ r:3 }}/>
+                <XAxis dataKey="name" tick={{ fontSize: 10 }}/>
+                <YAxis hide/>
+                <Tooltip contentStyle={{ background:T.card,borderRadius:8,border:`1px solid ${T.border}` }}/>
+                <Line type="monotone" dataKey="volume" stroke={T.teal} strokeWidth={2} dot={{ r: 3 }}/>
               </LineChart>
             </ResponsiveContainer>
           </div>
         )}
 
-        <div style={{ fontSize:13,fontWeight:700,color:T.text,marginBottom:10 }}>Storico ({history.length} sessioni)</div>
-        {history.slice(0, 20).map((h, i) => (
-          <div key={i} style={{
-            background:T.card,borderRadius:14,padding:12,marginBottom:8,border:`1px solid ${T.border}`,
-          }}>
-            <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
-              <span style={{ fontSize:12,fontWeight:700,color:T.text }}>{formatDateFull(h.date)}</span>
-              <span style={{ fontSize:11,color:T.textMuted }}>{h.volume.toLocaleString()} kg</span>
+        <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Storico set</div>
+        {sets.slice(0, 10).map((s, i) => {
+          const w = allWorkouts.find(wk => wk.id === s.workoutId);
+          return (
+            <div key={i} style={{
+              background:T.card,borderRadius:12,padding:12,marginBottom:8,border:`1px solid ${T.border}`,
+              display:"flex",alignItems:"center",justifyContent:"space-between",
+            }}>
+              <div>
+                <div style={{ fontSize:12,fontWeight:700,color:T.text }}>{s.weight}kg × {s.reps}</div>
+                <div style={{ fontSize:10,color:T.textMuted }}>{w ? formatDate(w.date) : "Data sconosciuta"}</div>
+              </div>
+              <div style={{ fontSize:11,fontWeight:700,color:T.teal }}>{(s.weight||0)*(s.reps||0)} vol</div>
             </div>
-            <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
-              {h.sets.map((s, j) => (
-                <span key={j} style={{ fontSize:11,fontWeight:600,color:T.textSec,background:T.bg,padding:"3px 8px",borderRadius:6 }}>
-                  {s.weight}×{s.reps}
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   WORKOUT CARD (history item)
+   WORKOUT CARD (history view)
    ═══════════════════════════════════════════ */
 const WorkoutCard = ({ workout, sets, customExercises, onTap }) => {
-  const exerciseGroups = useMemo(() => {
-    const byEx = {};
-    sets.forEach(s => { if (!byEx[s.exerciseId]) byEx[s.exerciseId] = []; byEx[s.exerciseId].push(s); });
-    return Object.entries(byEx).map(([exId, exSets]) => ({
-      info: getExerciseById(exId, customExercises),
-      setsCount: exSets.length,
-      bestSet: exSets.reduce((best, s) => (s.weight||0) > (best.weight||0) ? s : best, exSets[0]),
-    }));
-  }, [sets, customExercises]);
-  const volume = calcVolume(sets);
-
+  const exSet = new Set(sets.map(s => s.exerciseId));
+  const exNames = Array.from(exSet).map(id => getExerciseById(id, customExercises).name).join(" • ");
   return (
     <button onClick={onTap} style={{
-      width:"100%",background:T.card,borderRadius:16,padding:14,marginBottom:8,
-      border:`1px solid ${T.border}`,boxShadow:T.shadow,cursor:"pointer",textAlign:"left",
+      width:"100%",background:T.card,borderRadius:14,padding:14,marginBottom:10,
+      border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",
+      cursor:"pointer",textAlign:"left",
     }}>
-      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6 }}>
-        <div>
-          <div style={{ fontSize:13,fontWeight:800,color:T.text }}>{workout.name}</div>
-          <div style={{ fontSize:10,color:T.textMuted,marginTop:1 }}>{formatDateFull(workout.date)} • {formatDuration(workout.durationMin)}</div>
-        </div>
-        <div style={{ fontSize:11,fontWeight:700,color:T.teal }}>{volume.toLocaleString()} kg</div>
+      <div>
+        <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{workout.name}</div>
+        <div style={{ fontSize:10,color:T.textMuted,marginTop:4 }}>{exNames}</div>
+        <div style={{ fontSize:10,color:T.textMuted,marginTop:2 }}>{formatDate(workout.date)} • {formatDuration(workout.durationMin)}</div>
       </div>
-      {exerciseGroups.slice(0, 4).map((g, i) => (
-        <div key={i} style={{ fontSize:11,color:T.textSec,lineHeight:1.5 }}>
-          <span style={{ fontWeight:600 }}>{g.setsCount}×</span> {g.info.name}
-          <span style={{ color:T.textMuted }}> — {g.bestSet.weight}kg×{g.bestSet.reps}</span>
-        </div>
-      ))}
-      {exerciseGroups.length > 4 && <div style={{ fontSize:10,color:T.textMuted }}>+{exerciseGroups.length - 4} altri</div>}
+      <ChevronRight size={16} color={T.textMuted}/>
     </button>
   );
 };
 
 /* ═══════════════════════════════════════════
-   WORKOUT DETAIL
+   WORKOUT DETAIL SCREEN
    ═══════════════════════════════════════════ */
 const WorkoutDetailScreen = ({ workout, sets, customExercises, onBack, onExerciseDetail, onDelete }) => {
-  const exerciseGroups = useMemo(() => {
-    const byEx = {};
-    sets.forEach(s => { if (!byEx[s.exerciseId]) byEx[s.exerciseId] = []; byEx[s.exerciseId].push(s); });
-    return Object.entries(byEx).map(([exId, exSets]) => ({
-      exerciseId: exId, info: getExerciseById(exId, customExercises),
-      sets: exSets.sort((a, b) => a.order - b.order),
-    }));
-  }, [sets, customExercises]);
-  const volume = calcVolume(sets);
+  const totalVol = useMemo(() => calcVolume(sets), [sets]);
+  const exData = useMemo(() => {
+    const map = {};
+    sets.forEach(s => {
+      if (!map[s.exerciseId]) map[s.exerciseId] = [];
+      map[s.exerciseId].push(s);
+    });
+    return map;
+  }, [sets]);
 
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
@@ -1070,42 +1360,59 @@ const WorkoutDetailScreen = ({ workout, sets, customExercises, onBack, onExercis
           display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
         }}><ChevronLeft size={18} color={T.teal}/></button>
         <div style={{ flex:1 }}>
-          <div style={{ fontSize:18,fontWeight:800,color:T.text }}>{workout.name}</div>
-          <div style={{ fontSize:11,color:T.textMuted }}>{formatDateFull(workout.date)} • {formatDuration(workout.durationMin)} • {volume.toLocaleString()} kg</div>
+          <div style={{ fontSize:16,fontWeight:800,color:T.text }}>{workout.name}</div>
+          <div style={{ fontSize:11,color:T.textMuted }}>{formatDateFull(workout.date)}</div>
         </div>
-        <button onClick={() => onDelete(workout.id)} style={{
-          width:36,height:36,borderRadius:12,background:"#FEE2E2",border:"none",
-          display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-        }}><Trash2 size={16} color={T.red}/></button>
+        <button onClick={onDelete} style={{
+          padding:"6px 8px",borderRadius:8,border:`1px solid ${T.border}`,background:T.card,cursor:"pointer",
+        }}><Trash2 size={14} color={T.textMuted}/></button>
       </div>
 
       <div style={{ padding:"0 16px" }}>
-        {exerciseGroups.map((g, i) => (
-          <button key={i} onClick={() => onExerciseDetail(g.exerciseId)} style={{
-            width:"100%",background:T.card,borderRadius:14,padding:14,marginBottom:10,
-            border:`1px solid ${T.border}`,boxShadow:T.shadow,cursor:"pointer",textAlign:"left",
-          }}>
-            <div style={{ display:"flex",justifyContent:"space-between",marginBottom:8 }}>
-              <div style={{ fontSize:14,fontWeight:700,color:MUSCLE_COLORS[g.info.muscle]||T.teal }}>{g.info.name}</div>
-              <ChevronRight size={16} color={T.textMuted}/>
-            </div>
-            <div style={{ display:"grid",gridTemplateColumns:"32px 50px 50px",gap:4,fontSize:9,fontWeight:700,color:T.textMuted,marginBottom:4 }}>
-              <span>Serie</span><span>Kg</span><span>Reps</span>
-            </div>
-            {g.sets.map((s, j) => (
-              <div key={j} style={{ display:"grid",gridTemplateColumns:"32px 50px 50px",gap:4,fontSize:12,fontWeight:600,color:T.text }}>
-                <span style={{ color:T.textMuted }}>{j+1}</span><span>{s.weight}</span><span>{s.reps}</span>
+        <div style={{ background:T.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${T.border}`,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12 }}>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:20,fontWeight:900,color:T.teal }}>{sets.length}</div>
+            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Set</div>
+          </div>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:20,fontWeight:900,color:T.orange }}>{Math.round(totalVol)}</div>
+            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Volume</div>
+          </div>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:20,fontWeight:900,color:T.green }}>{formatDuration(workout.durationMin)}</div>
+            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>Durata</div>
+          </div>
+        </div>
+
+        <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Esercizi</div>
+        {Object.entries(exData).map(([exId, exSets]) => {
+          const info = getExerciseById(exId, customExercises);
+          return (
+            <button key={exId} onClick={() => onExerciseDetail(exId)} style={{
+              width:"100%",background:T.card,borderRadius:12,padding:12,marginBottom:8,border:`1px solid ${T.border}`,
+              textAlign:"left",cursor:"pointer",
+            }}>
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                <div style={{ fontSize:12,fontWeight:700,color:T.text }}>{info.name}</div>
+                <div style={{ fontSize:11,fontWeight:700,color:T.textMuted }}>{exSets.length} set</div>
               </div>
-            ))}
-          </button>
-        ))}
+              <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
+                {exSets.sort((a, b) => a.order - b.order).map((s, i) => (
+                  <div key={i} style={{ fontSize:10,fontWeight:700,background:T.bg,color:T.text,padding:"4px 8px",borderRadius:6 }}>
+                    {s.weight}kg × {s.reps}
+                  </div>
+                ))}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   TAB: ALLENAMENTO (routines + start)
+   TAB: ALLENAMENTO
    ═══════════════════════════════════════════ */
 const TabAllenamento = ({
   workouts, allSets, routines, customExercises,
@@ -1117,13 +1424,14 @@ const TabAllenamento = ({
 
   return (
     <div style={{ padding:"12px 16px 0" }}>
-      {/* Routines */}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
         <div style={{ fontSize:14,fontWeight:800,color:T.text }}>Le tue Routine</div>
         <button onClick={onNewRoutine} style={{
-          background:T.tealLight,border:"none",borderRadius:8,padding:"5px 12px",
-          fontSize:11,fontWeight:700,color:T.teal,cursor:"pointer",display:"flex",alignItems:"center",gap:3,
-        }}><Plus size={12}/> Nuova</button>
+          background:T.gradient,border:"none",borderRadius:12,padding:"10px 20px",
+          fontSize:14,fontWeight:800,color:"#fff",cursor:"pointer",
+          display:"flex",alignItems:"center",gap:6,
+          boxShadow:"0 4px 16px rgba(2,128,144,0.3)",
+        }}><Plus size={16}/> Crea</button>
       </div>
 
       {routines.length === 0 ? (
@@ -1174,7 +1482,6 @@ const TabAllenamento = ({
         </div>
       )}
 
-      {/* Workout history */}
       {workouts.length > 0 && (
         <>
           <div style={{ fontSize:14,fontWeight:800,color:T.text,marginBottom:10 }}>Storico allenamenti</div>
@@ -1196,81 +1503,55 @@ const TabAllenamento = ({
 };
 
 /* ═══════════════════════════════════════════
-   TAB: ESERCIZI (browse library)
+   TAB: ESERCIZI
    ═══════════════════════════════════════════ */
 const TabEsercizi = ({ allSets, allWorkouts, customExercises, onExerciseDetail }) => {
-  const [search, setSearch] = useState("");
-  const [filterMuscle, setFilterMuscle] = useState(null);
+  const allExercises = useMemo(() => [...EXERCISES, ...customExercises], [customExercises]);
+  const exStats = useMemo(() => {
+    const map = {};
+    allExercises.forEach(ex => {
+      const sets = allSets.filter(s => s.exerciseId === ex.id);
+      map[ex.id] = { count: sets.length, volume: calcVolume(sets) };
+    });
+    return map;
+  }, [allExercises, allSets]);
 
-  const allEx = useMemo(() => [...EXERCISES, ...customExercises], [customExercises]);
-  const filtered = useMemo(() => {
-    let list = allEx;
-    if (filterMuscle) list = list.filter(e => e.muscle === filterMuscle);
-    if (search) { const q = search.toLowerCase(); list = list.filter(e => e.name.toLowerCase().includes(q)); }
-    return list;
-  }, [allEx, filterMuscle, search]);
-
-  // Count sessions per exercise for sorting
-  const sessionCounts = useMemo(() => {
-    const counts = {};
-    allSets.forEach(s => { counts[s.exerciseId] = (counts[s.exerciseId] || 0) + 1; });
-    return counts;
-  }, [allSets]);
-
-  const sorted = useMemo(() =>
-    [...filtered].sort((a, b) => (sessionCounts[b.id] || 0) - (sessionCounts[a.id] || 0))
-  , [filtered, sessionCounts]);
+  const sorted = useMemo(() => {
+    return allExercises.filter(ex => exStats[ex.id].count > 0).sort((a, b) => exStats[b.id].count - exStats[a.id].count);
+  }, [allExercises, exStats]);
 
   return (
     <div style={{ padding:"12px 16px 0" }}>
-      <div style={{
-        display:"flex",alignItems:"center",gap:8,background:T.card,borderRadius:12,
-        padding:"10px 14px",border:`1px solid ${T.border}`,marginBottom:10,
-      }}>
-        <Search size={16} color={T.textMuted}/>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cerca esercizio..."
-          style={{ border:"none",outline:"none",flex:1,fontSize:14,color:T.text,background:"transparent",fontFamily:"inherit" }}/>
-      </div>
-
-      <div style={{ display:"flex",gap:6,overflowX:"auto",marginBottom:12,paddingBottom:2 }}>
-        <button onClick={() => setFilterMuscle(null)} style={{
-          background:!filterMuscle?T.teal:T.card,color:!filterMuscle?"#fff":T.textSec,
-          border:`1px solid ${!filterMuscle?T.teal:T.border}`,borderRadius:20,
-          padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",
-        }}>Tutti</button>
-        {MUSCLE_GROUPS.map(mg => (
-          <button key={mg} onClick={() => setFilterMuscle(filterMuscle===mg?null:mg)} style={{
-            background:filterMuscle===mg?MUSCLE_COLORS[mg]:T.card,
-            color:filterMuscle===mg?"#fff":T.textSec,
-            border:`1px solid ${filterMuscle===mg?MUSCLE_COLORS[mg]:T.border}`,
-            borderRadius:20,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",
-          }}>{mg}</button>
-        ))}
-      </div>
-
-      {sorted.map(ex => {
-        const count = sessionCounts[ex.id] || 0;
-        return (
-          <button key={ex.id} onClick={() => onExerciseDetail(ex.id)} style={{
-            width:"100%",display:"flex",alignItems:"center",gap:12,padding:"12px 14px",
-            background:T.card,border:`1px solid ${T.border}`,borderRadius:14,marginBottom:8,
-            cursor:"pointer",textAlign:"left",
-          }}>
-            <div style={{
-              width:38,height:38,borderRadius:10,background:`${MUSCLE_COLORS[ex.muscle]||T.teal}18`,
-              display:"flex",alignItems:"center",justifyContent:"center",
-            }}>
-              <Dumbbell size={16} color={MUSCLE_COLORS[ex.muscle]||T.teal}/>
-            </div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:13,fontWeight:700,color:T.text }}>{ex.name}</div>
-              <div style={{ fontSize:10,color:T.textMuted }}>{ex.muscle} • {ex.equipment}</div>
-            </div>
-            {count > 0 && <span style={{ fontSize:10,fontWeight:600,color:T.teal,background:T.tealLight,padding:"3px 8px",borderRadius:8 }}>{count} serie</span>}
-            <ChevronRight size={16} color={T.textMuted}/>
-          </button>
-        );
-      })}
+      {sorted.length === 0 ? (
+        <div style={{ padding:"20px 0",textAlign:"center",color:T.textMuted,fontSize:12 }}>Nessun esercizio completato</div>
+      ) : (
+        <>
+          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Esercizi per volume</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:20 }}>
+            {sorted.map(ex => {
+              const stat = exStats[ex.id];
+              return (
+                <button key={ex.id} onClick={() => onExerciseDetail(ex.id)} style={{
+                  width:"100%",background:T.card,borderRadius:12,padding:12,border:`1px solid ${T.border}`,
+                  textAlign:"left",cursor:"pointer",display:"flex",alignItems:"center",gap:10,
+                }}>
+                  <div style={{
+                    width:40,height:40,borderRadius:10,background:`${MUSCLE_COLORS[ex.muscle]||T.teal}18`,
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                  }}>
+                    <Dumbbell size={16} color={MUSCLE_COLORS[ex.muscle]||T.teal}/>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:12,fontWeight:700,color:T.text }}>{ex.name}</div>
+                    <div style={{ fontSize:10,color:T.textMuted }}>{stat.count} set • {Math.round(stat.volume)} kg</div>
+                  </div>
+                  <ChevronRight size={16} color={T.textMuted}/>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -1279,117 +1560,82 @@ const TabEsercizi = ({ allSets, allWorkouts, customExercises, onExerciseDetail }
    TAB: STATISTICHE
    ═══════════════════════════════════════════ */
 const TabStatistiche = ({ workouts, allSets, customExercises }) => {
-  // Weekly stats
-  const weekStats = useMemo(() => {
-    const now = new Date();
-    const monday = new Date(now);
-    monday.setDate(monday.getDate() - ((now.getDay() + 6) % 7));
-    const monISO = toISO(monday);
-    const weekW = workouts.filter(w => w.date >= monISO);
-    const weekS = allSets.filter(s => weekW.some(w => w.id === s.workoutId));
-    return { count: weekW.length, volume: calcVolume(weekS), duration: weekW.reduce((s, w) => s + (w.durationMin||0), 0) };
+  const stats = useMemo(() => {
+    const totalSets = allSets.length;
+    const totalVol = Math.round(calcVolume(allSets));
+    const totalWorkouts = workouts.length;
+    const avgDuration = workouts.length > 0 ? Math.round(workouts.reduce((s, w) => s + w.durationMin, 0) / workouts.length) : 0;
+    const exCount = new Set(allSets.map(s => s.exerciseId)).size;
+    return { totalSets, totalVol, totalWorkouts, avgDuration, exCount };
   }, [workouts, allSets]);
 
-  // Monthly volume by week
-  const weeklyVolumes = useMemo(() => {
-    const data = [];
-    for (let w = 3; w >= 0; w--) {
-      const d = new Date();
-      d.setDate(d.getDate() - w * 7);
-      const mon = new Date(d); mon.setDate(mon.getDate() - ((mon.getDay() + 6) % 7));
-      const sun = new Date(mon); sun.setDate(sun.getDate() + 6);
-      const monISO = toISO(mon); const sunISO = toISO(sun);
-      const ww = workouts.filter(wk => wk.date >= monISO && wk.date <= sunISO);
-      const ws = allSets.filter(s => ww.some(wk => wk.id === s.workoutId));
-      data.push({ week: `Sett ${4-w}`, volume: Math.round(calcVolume(ws)/1000), sessions: ww.length });
-    }
-    return data;
-  }, [workouts, allSets]);
-
-  // Muscle distribution (4 weeks)
-  const muscleData = useMemo(() => {
-    const cutoff = toISO(new Date(Date.now() - 28 * 86400000));
-    const recentW = workouts.filter(w => w.date >= cutoff);
-    const recentS = allSets.filter(s => recentW.some(w => w.id === s.workoutId));
-    const byMuscle = {};
-    recentS.forEach(s => {
-      const info = getExerciseById(s.exerciseId, customExercises);
-      byMuscle[info.muscle] = (byMuscle[info.muscle] || 0) + (s.weight||0)*(s.reps||0);
+  const volumeByMuscle = useMemo(() => {
+    const map = {};
+    allSets.forEach(s => {
+      const ex = getExerciseById(s.exerciseId, customExercises);
+      if (!map[ex.muscle]) map[ex.muscle] = 0;
+      map[ex.muscle] += (s.weight || 0) * (s.reps || 0);
     });
-    return Object.entries(byMuscle).map(([name, value]) => ({
-      name, value: Math.round(value), fill: MUSCLE_COLORS[name] || T.teal,
-    })).sort((a, b) => b.value - a.value);
-  }, [workouts, allSets, customExercises]);
+    return Object.entries(map).map(([m, v]) => ({ name: m, value: Math.round(v) })).sort((a, b) => b.value - a.value);
+  }, [allSets, customExercises]);
 
-  const totalMuscleVol = muscleData.reduce((s, d) => s + d.value, 0);
+  const volumeOverTime = useMemo(() => {
+    const map = {};
+    allSets.forEach(s => {
+      const w = workouts.find(wk => wk.id === s.workoutId);
+      if (w) {
+        const d = new Date(w.date).toLocaleDateString("it-IT", { month: "short", day: "numeric" });
+        if (!map[d]) map[d] = 0;
+        map[d] += (s.weight || 0) * (s.reps || 0);
+      }
+    });
+    return Object.entries(map).slice(-14).map(([d, v]) => ({ name: d, volume: v }));
+  }, [workouts, allSets]);
 
   return (
     <div style={{ padding:"12px 16px 0" }}>
-      {/* Week summary */}
-      <div style={{
-        background:T.gradient,borderRadius:20,padding:20,marginBottom:16,
-        display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,
-      }}>
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16 }}>
         {[
-          { label:"Allenamenti", value:weekStats.count, icon:"🏋️" },
-          { label:"Volume", value:`${Math.round(weekStats.volume/1000)}k kg`, icon:"📊" },
-          { label:"Tempo", value:formatDuration(weekStats.duration), icon:"⏱" },
+          { label:"Allenamenti", value:stats.totalWorkouts, icon:"🏋️", color:T.teal },
+          { label:"Set", value:stats.totalSets, icon:"💪", color:T.orange },
+          { label:"Volume", value:`${stats.totalVol}kg`, icon:"📊", color:T.green },
+          { label:"Esercizi", value:stats.exCount, icon:"🎯", color:T.purple },
         ].map((s, i) => (
-          <div key={i} style={{ textAlign:"center" }}>
-            <div style={{ fontSize:16,marginBottom:2 }}>{s.icon}</div>
-            <div style={{ fontSize:20,fontWeight:900,color:"#fff" }}>{s.value}</div>
-            <div style={{ fontSize:9,color:"rgba(255,255,255,0.7)",fontWeight:600 }}>{s.label}</div>
+          <div key={i} style={{
+            background:T.card,borderRadius:12,padding:16,border:`1px solid ${T.border}`,textAlign:"center",
+          }}>
+            <div style={{ fontSize:20,marginBottom:6 }}>{s.icon}</div>
+            <div style={{ fontSize:18,fontWeight:900,color:s.color }}>{s.value}</div>
+            <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,marginTop:4 }}>{s.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Volume chart */}
-      {weeklyVolumes.some(d => d.volume > 0) && (
-        <div style={{ background:T.card,borderRadius:16,padding:16,marginBottom:16,border:`1px solid ${T.border}` }}>
-          <div style={{ fontSize:12,fontWeight:700,color:T.text,marginBottom:12 }}>Volume settimanale (tonnellate)</div>
-          <ResponsiveContainer width="100%" height={140}>
-            <BarChart data={weeklyVolumes}>
-              <XAxis dataKey="week" tick={{ fontSize:10 }} tickLine={false} axisLine={false}/>
-              <Tooltip formatter={(v) => [`${v}k kg`, "Volume"]}
-                contentStyle={{ borderRadius:10,fontSize:11,border:`1px solid ${T.border}` }}/>
-              <Bar dataKey="volume" fill={T.teal} radius={[8,8,0,0]}/>
-            </BarChart>
+      {volumeOverTime.length > 0 && (
+        <div style={{ background:T.card,borderRadius:12,padding:16,border:`1px solid ${T.border}`,marginBottom:16 }}>
+          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Volume (ultimi 14 giorni)</div>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={volumeOverTime}>
+              <XAxis dataKey="name" tick={{ fontSize: 10 }}/>
+              <YAxis hide/>
+              <Tooltip contentStyle={{ background:T.card,borderRadius:8,border:`1px solid ${T.border}` }}/>
+              <Line type="monotone" dataKey="volume" stroke={T.teal} strokeWidth={2} dot={{ r: 3 }}/>
+            </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {/* Muscle distribution */}
-      {muscleData.length > 0 && (
-        <div style={{ background:T.card,borderRadius:16,padding:16,marginBottom:16,border:`1px solid ${T.border}` }}>
-          <div style={{ fontSize:12,fontWeight:700,color:T.text,marginBottom:12 }}>Distribuzione Muscolare (4 sett.)</div>
-          <div style={{ display:"flex",alignItems:"center",gap:16 }}>
-            <div style={{ width:100,height:100,flexShrink:0 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={muscleData} dataKey="value" cx="50%" cy="50%" innerRadius={28} outerRadius={46} paddingAngle={2}>
-                    {muscleData.map((d, i) => <Cell key={i} fill={d.fill}/>)}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div style={{ flex:1,display:"flex",flexDirection:"column",gap:4 }}>
-              {muscleData.map((d, i) => (
-                <div key={i} style={{ display:"flex",alignItems:"center",gap:6 }}>
-                  <div style={{ width:8,height:8,borderRadius:4,background:d.fill,flexShrink:0 }}/>
-                  <span style={{ fontSize:11,fontWeight:600,color:T.text,flex:1 }}>{d.name}</span>
-                  <span style={{ fontSize:10,color:T.textMuted }}>{totalMuscleVol > 0 ? Math.round(d.value/totalMuscleVol*100) : 0}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {workouts.length === 0 && (
-        <div style={{ background:T.card,borderRadius:16,padding:24,textAlign:"center",border:`1px dashed ${T.border}` }}>
-          <div style={{ fontSize:32,marginBottom:8 }}>📊</div>
-          <div style={{ fontSize:13,fontWeight:700,color:T.text }}>Nessun dato ancora</div>
-          <div style={{ fontSize:11,color:T.textMuted }}>Completa il primo allenamento per vedere le statistiche</div>
+      {volumeByMuscle.length > 0 && (
+        <div style={{ background:T.card,borderRadius:12,padding:16,border:`1px solid ${T.border}`,marginBottom:20 }}>
+          <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:12 }}>Volume per gruppo muscolare</div>
+          <ResponsiveContainer width="100%" height={200}>
+            <PieChart>
+              <Pie data={volumeByMuscle} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} label>
+                {volumeByMuscle.map((e, i) => <Cell key={i} fill={MUSCLE_COLORS[e.name]||T.teal}/>)}
+              </Pie>
+              <Tooltip/>
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       )}
     </div>
@@ -1397,26 +1643,27 @@ const TabStatistiche = ({ workouts, allSets, customExercises }) => {
 };
 
 /* ═══════════════════════════════════════════
-   MAIN SCREEN (with tabs)
+   TABS DEFINITION
    ═══════════════════════════════════════════ */
 const TABS = [
   { id: "allenamento", label: "Allenamento", icon: Play },
-  { id: "esercizi",    label: "Esercizi",    icon: Dumbbell },
+  { id: "esercizi", label: "Esercizi", icon: Dumbbell },
   { id: "statistiche", label: "Statistiche", icon: BarChart3 },
 ];
 
+/* ═══════════════════════════════════════════
+   MAIN SCREEN WITH TABS
+   ═══════════════════════════════════════════ */
 const MainScreenWithTabs = (props) => {
   const [activeTab, setActiveTab] = useState("allenamento");
 
   return (
     <div style={{ minHeight:"100vh",background:T.bg,fontFamily:"'Inter',-apple-system,sans-serif",paddingBottom:100 }}>
-      {/* Header */}
       <div style={{ padding:"16px 16px 0" }}>
         <div style={{ fontSize:22,fontWeight:900,color:T.text }}>Gym</div>
         <div style={{ fontSize:12,color:T.textMuted,fontWeight:500,marginBottom:12 }}>{formatDateFull(new Date())}</div>
       </div>
 
-      {/* Tab bar */}
       <div style={{
         display:"flex",gap:0,padding:"0 16px",marginBottom:4,
         background:T.bg,position:"sticky",top:0,zIndex:10,paddingTop:4,paddingBottom:4,
@@ -1437,7 +1684,6 @@ const MainScreenWithTabs = (props) => {
         })}
       </div>
 
-      {/* Tab content */}
       {activeTab === "allenamento" && <TabAllenamento {...props}/>}
       {activeTab === "esercizi" && <TabEsercizi allSets={props.allSets} allWorkouts={props.workouts}
         customExercises={props.customExercises} onExerciseDetail={props.onExerciseDetail}/>}
@@ -1463,6 +1709,8 @@ export default function GymSection({ onNavigate }) {
   const [editRoutine, setEditRoutine] = useState(null);
   const [detailExerciseId, setDetailExerciseId] = useState(null);
   const [detailWorkout, setDetailWorkout] = useState(null);
+  const [routineName, setRoutineName] = useState("");
+  const [routineExercises, setRoutineExercises] = useState([]);
 
   const showToast = useCallback((msg, icon) => setToast({ msg, icon }), []);
 
@@ -1519,6 +1767,8 @@ export default function GymSection({ onNavigate }) {
     await loadData();
     setSubScreen("main");
     setEditRoutine(null);
+    setRoutineName("");
+    setRoutineExercises([]);
     showToast(editRoutine?.id ? "Routine aggiornata" : "Routine creata!", "📋");
   }, [editRoutine, loadData, showToast]);
 
@@ -1536,11 +1786,9 @@ export default function GymSection({ onNavigate }) {
     showToast("Allenamento eliminato", "🗑️");
   }, [loadData, showToast]);
 
-  // Prepare initial exercises from routine with auto-fill from previous workouts
-  const routineExercises = useMemo(() => {
+  const routineExercisesForWorkout = useMemo(() => {
     if (!activeRoutine) return null;
     return activeRoutine.exercises.map(ex => {
-      // Try to auto-fill from last workout
       const prevSets = allSets.filter(s => s.exerciseId === ex.exerciseId);
       let sets;
       if (prevSets.length > 0) {
@@ -1557,15 +1805,14 @@ export default function GymSection({ onNavigate }) {
           weight: ex.targetWeight || 0, reps: ex.targetReps || 0, type: "N", completed: false,
         }));
       }
-      return { exerciseId: ex.exerciseId, restTimer: ex.restTimer || 0, sets };
+      return { exerciseId: ex.exerciseId, restTimer: ex.restTimer || 90, warmupTimer: ex.warmupTimer || 60, sideTimer: ex.sideTimer || 30, unilateral: ex.unilateral || false, supersetWith: ex.supersetWith || null, note: ex.note || "", sets };
     });
   }, [activeRoutine, allSets]);
 
-  // Routing
   if (subScreen === "workout") {
     return (
       <ActiveWorkoutScreen
-        initialExercises={routineExercises}
+        initialExercises={routineExercisesForWorkout}
         routineName={activeRoutine?.name || ""}
         onFinish={handleFinishWorkout}
         onDiscard={handleDiscardWorkout}
@@ -1578,11 +1825,61 @@ export default function GymSection({ onNavigate }) {
     );
   }
 
+  if (subScreen === "nameModal") {
+    return (
+      <MainScreenWithTabs
+        workouts={workouts} allSets={allSets} routines={routines} customExercises={customExercises}
+        onStartFromRoutine={handleStartFromRoutine}
+        onEditRoutine={(r) => { setEditRoutine(r); setSubScreen("routineEditor"); }}
+        onNewRoutine={() => {}}
+        onDeleteRoutine={handleDeleteRoutine}
+        onExerciseDetail={(exId) => { setDetailExerciseId(exId); setSubScreen("exerciseDetail"); }}
+        onWorkoutDetail={(w) => { setDetailWorkout(w); setSubScreen("workoutDetail"); }}
+        onNavigate={onNavigate}
+        onAdd={() => {}}
+      >
+        <NameModal onContinue={(name) => { setRoutineName(name); setSubScreen("pickExercises"); }} onClose={() => setSubScreen("main")}/>
+      </MainScreenWithTabs>
+    );
+  }
+
+  if (subScreen === "pickExercises") {
+    return (
+      <ExercisePicker multiSelect onSelect={() => {}} onClose={() => setSubScreen("main")}
+        customExercises={customExercises} onAddCustom={handleAddCustomExercise}
+        onMultiSelect={(exs) => {
+          setRoutineExercises(exs.map(e => ({
+            exerciseId: e.id,
+            sets: [{ weight: 0, reps: 0, type: "N" }],
+            restTimer: 90,
+            warmupTimer: 60,
+            sideTimer: 30,
+            unilateral: e.uni || false,
+            supersetWith: null,
+            note: "",
+          })));
+          setSubScreen("routineEditor");
+        }}/>
+    );
+  }
+
   if (subScreen === "routineEditor") {
     return (
-      <RoutineEditor routine={editRoutine} onSave={handleSaveRoutine}
-        onClose={() => { setSubScreen("main"); setEditRoutine(null); }}
+      <RoutineEditor routine={editRoutine} exercises={routineExercises} onSave={(exs) => { setRoutineExercises(exs); setSubScreen("routineSummary"); }}
+        onClose={() => { setSubScreen("main"); setEditRoutine(null); setRoutineName(""); setRoutineExercises([]); }}
         customExercises={customExercises} onAddCustomExercise={handleAddCustomExercise}/>
+    );
+  }
+
+  if (subScreen === "routineSummary") {
+    return (
+      <RoutineSummary name={routineName} exercises={routineExercises}
+        onSave={async () => {
+          await handleSaveRoutine({ name: routineName, exercises: routineExercises });
+          setSubScreen("main");
+        }}
+        onBack={() => setSubScreen("routineEditor")}
+        customExercises={customExercises}/>
     );
   }
 
@@ -1609,15 +1906,15 @@ export default function GymSection({ onNavigate }) {
       <MainScreenWithTabs
         workouts={workouts} allSets={allSets} routines={routines} customExercises={customExercises}
         onStartFromRoutine={handleStartFromRoutine}
-        onEditRoutine={(r) => { setEditRoutine(r); setSubScreen("routineEditor"); }}
-        onNewRoutine={() => { setEditRoutine(null); setSubScreen("routineEditor"); }}
+        onEditRoutine={(r) => { setEditRoutine(r); setSubScreen("routineEditor"); setRoutineExercises(r.exercises); }}
+        onNewRoutine={() => { setSubScreen("nameModal"); }}
         onDeleteRoutine={handleDeleteRoutine}
         onExerciseDetail={(exId) => { setDetailExerciseId(exId); setSubScreen("exerciseDetail"); }}
         onWorkoutDetail={(w) => { setDetailWorkout(w); setSubScreen("workoutDetail"); }}
         onNavigate={onNavigate}
         onAdd={() => {
           if (routines.length > 0) handleStartFromRoutine(routines[0]);
-          else { setEditRoutine(null); setSubScreen("routineEditor"); }
+          else setSubScreen("nameModal");
         }}
       />
       {toast && <Toast message={toast.msg} icon={toast.icon} onDismiss={() => setToast(null)}/>}
