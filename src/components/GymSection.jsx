@@ -336,16 +336,16 @@ const DrumPicker = ({ value, title, onChange, onClose }) => {
           <div style={{
             position:"absolute",top:0,left:0,right:0,height:ITEM_H*2,
             background:"linear-gradient(to bottom,rgba(255,255,255,0.92),rgba(255,255,255,0))",
-            zIndex:2,pointerEvents:"none",
+            zIndex:3,pointerEvents:"none",
           }}/>
           <div style={{
             position:"absolute",bottom:0,left:0,right:0,height:ITEM_H*2,
             background:"linear-gradient(to top,rgba(255,255,255,0.92),rgba(255,255,255,0))",
-            zIndex:2,pointerEvents:"none",
+            zIndex:3,pointerEvents:"none",
           }}/>
           <div ref={containerRef} onScroll={handleScroll} style={{
             height:"100%",overflowY:"auto",scrollSnapType:"y mandatory",
-            WebkitOverflowScrolling:"touch",position:"relative",zIndex:0,
+            WebkitOverflowScrolling:"touch",position:"relative",zIndex:2,
           }}>
             <div style={{ height:ITEM_H*2 }}/>
             {TIMER_OPTIONS.map((opt,i) => (
@@ -368,18 +368,27 @@ const DrumPicker = ({ value, title, onChange, onClose }) => {
 /* ═══════════════════════════════════════════
    EXERCISE PICKER
    ═══════════════════════════════════════════ */
-const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multiSelect = false, onMultiSelect }) => {
+const EMPTY_CUSTOM_FORM = { name: "", muscle: "Petto", equipment: "Bilanciere", uni: false };
+
+const ExercisePicker = ({ onSelect, onClose, customExercises: initCustom, onAddCustom, multiSelect = false, onMultiSelect }) => {
   const [search, setSearch] = useState("");
   const [muscleFilter, setMuscleFilter] = useState(null);
   const [selected, setSelected] = useState(multiSelect ? [] : null);
+  const [localCustom, setLocalCustom] = useState(initCustom || []);
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customForm, setCustomForm] = useState(EMPTY_CUSTOM_FORM);
+  const [saving, setSaving] = useState(false);
+
+  const allExercises = useMemo(() => [...EXERCISES, ...localCustom], [localCustom]);
+
   const filtered = useMemo(() => {
-    const all = [...EXERCISES, ...(customExercises || [])];
-    return all.filter(e => {
+    return allExercises.filter(e => {
       const matchSearch = !search || e.name.toLowerCase().includes(search.toLowerCase());
       const matchMuscle = !muscleFilter || e.muscle === muscleFilter;
       return matchSearch && matchMuscle;
     });
-  }, [search, muscleFilter, customExercises]);
+  }, [search, muscleFilter, allExercises]);
+
   const handleSelect = (ex) => {
     if (multiSelect) {
       const ids = selected.map(s => s.id || s.exerciseId);
@@ -392,11 +401,38 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multi
       onSelect(ex);
     }
   };
+
   const isSelected = (ex) => {
     if (!selected) return false;
     if (Array.isArray(selected)) return selected.map(s => s.id || s.exerciseId).includes(ex.id);
     return selected.id === ex.id;
   };
+
+  const handleSaveCustom = async () => {
+    if (!customForm.name.trim() || saving) return;
+    setSaving(true);
+    const newEx = {
+      id: `custom_${Date.now()}`,
+      name: customForm.name.trim(),
+      muscle: customForm.muscle,
+      secondary: "",
+      equipment: customForm.equipment,
+      uni: customForm.uni,
+      isCustom: true,
+    };
+    try {
+      await addGymCustomExercise(newEx);
+      setLocalCustom(prev => [...prev, newEx]);
+      onAddCustom?.(newEx);
+      setShowCustomForm(false);
+      setCustomForm(EMPTY_CUSTOM_FORM);
+    } catch (e) {
+      console.error("Error saving custom exercise:", e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
@@ -461,7 +497,7 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multi
           ))}
         </div>
         {/* List */}
-        <div style={{ flex:1, overflowY:"auto", padding:"0 16px" }}>
+        <div style={{ flex:1, overflowY:"auto", padding:"0 16px 8px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {filtered.map(ex => {
               const sel = isSelected(ex);
@@ -485,7 +521,9 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multi
                     <div style={{ width:10, height:10, borderRadius:"50%", background: MUSCLE_COLORS[ex.muscle] || T.teal }} />
                   </div>
                   <div style={{ flex: 1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:700, color: sel ? T.teal : T.text }}>{ex.name}</div>
+                    <div style={{ fontSize:14, fontWeight:700, color: sel ? T.teal : T.text }}>
+                      {ex.name}{ex.isCustom ? " ✦" : ""}
+                    </div>
                     <div style={{ fontSize:11, color: T.textSec, marginTop:1 }}>
                       {ex.muscle} · {ex.equipment}{ex.uni ? " · Unilat." : ""}
                     </div>
@@ -495,105 +533,259 @@ const ExercisePicker = ({ onSelect, onClose, customExercises, onAddCustom, multi
               );
             })}
             {filtered.length === 0 && (
-              <div style={{ textAlign:"center", padding:"40px 0", color:T.textMuted }}>
+              <div style={{ textAlign:"center", padding:"32px 0 20px", color:T.textMuted }}>
                 <Search size={32} color={T.border} style={{marginBottom:8}} />
                 <div style={{fontSize:13}}>Nessun esercizio trovato</div>
               </div>
             )}
+            {/* Create custom — always at bottom of list */}
+            <div style={{ paddingTop:6, paddingBottom:4 }}>
+              <button onClick={() => setShowCustomForm(true)} style={{
+                width:"100%", padding:"12px 14px",
+                background:`${T.purple}10`, border:`1.5px dashed ${T.purple}50`,
+                borderRadius:14, cursor:"pointer",
+                display:"flex", alignItems:"center", gap:10,
+              }}>
+                <div style={{
+                  width:36, height:36, borderRadius:10, background:`${T.purple}20`,
+                  display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                }}>
+                  <Plus size={18} color={T.purple} />
+                </div>
+                <div style={{ textAlign:"left" }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:T.purple }}>Crea esercizio personalizzato</div>
+                  <div style={{ fontSize:11, color:`${T.purple}80` }}>Aggiungilo al tuo database</div>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
         {/* Footer */}
-        <div style={{ padding:"12px 16px 28px", borderTop:`1px solid ${T.border}`, display:"flex", gap:8 }}>
-          {multiSelect && (
+        {multiSelect && (
+          <div style={{ padding:"12px 16px 28px", borderTop:`1px solid ${T.border}` }}>
             <button onClick={() => onMultiSelect(selected)} style={{
-              flex: 2, padding: "14px 0",
+              width:"100%", padding: "14px 0",
               background: selected.length > 0 ? T.gradient : T.bg,
               color: selected.length > 0 ? "white" : T.textMuted,
               border: "none", borderRadius: 14, cursor: "pointer",
               fontSize: 14, fontWeight: 800,
               boxShadow: selected.length > 0 ? "0 2px 10px rgba(2,128,144,0.25)" : "none",
             }}>Aggiungi {selected.length > 0 ? `(${selected.length})` : ""}</button>
-          )}
-          <button onClick={onAddCustom} style={{
-            flex: 1, padding: "14px 0",
-            background: `${T.purple}15`, color: T.purple, border: "none",
-            borderRadius: 14, cursor: "pointer", fontSize: 13, fontWeight: 700,
-          }}>+ Personalizzato</button>
-        </div>
+          </div>
+        )}
       </div>
+
+      {/* Custom Exercise Form — fixed overlay on top */}
+      {showCustomForm && (
+        <div style={{
+          position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,0.6)",
+          display:"flex", alignItems:"flex-end", justifyContent:"center",
+        }} onClick={() => setShowCustomForm(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background:T.card, borderRadius:"24px 24px 0 0", width:"100%", maxWidth:430,
+            padding:"20px 20px 40px", maxHeight:"85vh", overflowY:"auto",
+          }}>
+            {/* Handle */}
+            <div style={{ display:"flex", justifyContent:"center", marginBottom:16 }}>
+              <div style={{ width:36, height:4, borderRadius:2, background:T.border }} />
+            </div>
+            {/* Title */}
+            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
+              <div style={{
+                width:44, height:44, borderRadius:14, background:`${T.purple}20`,
+                display:"flex", alignItems:"center", justifyContent:"center",
+              }}>
+                <Plus size={22} color={T.purple} />
+              </div>
+              <div>
+                <div style={{ fontSize:17, fontWeight:900, color:T.text }}>Nuovo esercizio</div>
+                <div style={{ fontSize:12, color:T.textSec }}>Verrà salvato nel tuo database</div>
+              </div>
+            </div>
+            {/* Name */}
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:T.textSec, marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>Nome</div>
+              <div style={{
+                display:"flex", alignItems:"center", background:T.bg,
+                borderRadius:12, padding:"12px 14px", border:`1.5px solid ${T.border}`,
+              }}>
+                <input
+                  type="text"
+                  placeholder="Es. Curl cavi bassa carrucola..."
+                  value={customForm.name}
+                  onChange={e => setCustomForm(f => ({...f, name: e.target.value}))}
+                  autoFocus
+                  style={{
+                    flex:1, border:"none", background:"transparent", fontSize:14,
+                    color:T.text, outline:"none", fontFamily:"inherit", fontWeight:600,
+                  }}
+                />
+              </div>
+            </div>
+            {/* Muscle group */}
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:T.textSec, marginBottom:8, textTransform:"uppercase", letterSpacing:0.5 }}>Gruppo muscolare</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                {MUSCLE_GROUPS.map(mg => {
+                  const active = customForm.muscle === mg;
+                  return (
+                    <button key={mg} onClick={() => setCustomForm(f => ({...f, muscle: mg}))} style={{
+                      padding:"7px 14px", borderRadius:20, border:"none", cursor:"pointer",
+                      background: active ? (MUSCLE_COLORS[mg] || T.teal) : `${MUSCLE_COLORS[mg] || T.teal}15`,
+                      color: active ? "#fff" : (MUSCLE_COLORS[mg] || T.teal),
+                      fontSize:13, fontWeight:700,
+                    }}>{mg}</button>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Equipment */}
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:T.textSec, marginBottom:8, textTransform:"uppercase", letterSpacing:0.5 }}>Attrezzatura</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                {EQUIPMENT.map(eq => {
+                  const active = customForm.equipment === eq;
+                  return (
+                    <button key={eq} onClick={() => setCustomForm(f => ({...f, equipment: eq}))} style={{
+                      padding:"7px 14px", borderRadius:20, border:"none", cursor:"pointer",
+                      background: active ? T.teal : T.bg,
+                      color: active ? "#fff" : T.textSec,
+                      fontSize:13, fontWeight:700,
+                      border: active ? "none" : `1px solid ${T.border}`,
+                    }}>{eq}</button>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Unilateral toggle */}
+            <div style={{
+              display:"flex", alignItems:"center", justifyContent:"space-between",
+              padding:"14px 16px", background:T.bg, borderRadius:14, marginBottom:20,
+            }}>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, color:T.text }}>Unilaterale</div>
+                <div style={{ fontSize:11, color:T.textSec }}>Esercizio su un lato alla volta</div>
+              </div>
+              <button onClick={() => setCustomForm(f => ({...f, uni: !f.uni}))} style={{
+                width:48, height:28, borderRadius:14, border:"none", cursor:"pointer",
+                background: customForm.uni ? T.teal : T.border,
+                transition:"background .2s", position:"relative",
+              }}>
+                <div style={{
+                  position:"absolute", top:3, left: customForm.uni ? 22 : 3,
+                  width:22, height:22, borderRadius:11, background:"#fff",
+                  transition:"left .2s", boxShadow:"0 1px 4px rgba(0,0,0,0.2)",
+                }} />
+              </button>
+            </div>
+            {/* Save */}
+            <button
+              onClick={handleSaveCustom}
+              disabled={!customForm.name.trim() || saving}
+              style={{
+                width:"100%", padding:"15px 0",
+                background: customForm.name.trim() ? T.gradient : T.bg,
+                color: customForm.name.trim() ? "#fff" : T.textMuted,
+                border:"none", borderRadius:14, cursor: customForm.name.trim() ? "pointer" : "default",
+                fontSize:15, fontWeight:800,
+                boxShadow: customForm.name.trim() ? "0 2px 12px rgba(2,128,144,0.3)" : "none",
+              }}
+            >
+              {saving ? "Salvataggio..." : "Salva esercizio"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   EXERCISE MENU (3-DOT DROPDOWN)
+   EXERCISE MENU (BOTTOM SHEET)
    ═══════════════════════════════════════════ */
 const ExerciseMenu = ({
   onUnilateral, onSuperset, onMove, onDelete, isUnilateral, isSupersetted,
-  isLastExercise, isActive,
+  isLastExercise, exerciseName,
 }) => {
   const [open, setOpen] = useState(false);
+  const menuItem = (icon, label, sublabel, onClick, color = T.text, bg = `${T.border}50`, active = false) => (
+    <button onClick={() => { onClick(); setOpen(false); }} style={{
+      width:"100%", padding:"13px 16px", background: active ? `${color}15` : "transparent",
+      border:"none", borderRadius:14, cursor:"pointer",
+      display:"flex", alignItems:"center", gap:12, marginBottom:6,
+    }}>
+      <div style={{
+        width:40, height:40, borderRadius:12, background: bg,
+        display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+      }}>
+        {icon}
+      </div>
+      <div style={{ flex:1, textAlign:"left" }}>
+        <div style={{ fontSize:14, fontWeight:700, color }}>{label}</div>
+        {sublabel && <div style={{ fontSize:11, color:`${color}99`, marginTop:1 }}>{sublabel}</div>}
+      </div>
+      {active && <Check size={18} color={color} />}
+    </button>
+  );
   return (
-    <div style={{ position: "relative" }}>
-      <button onClick={() => setOpen(!open)} style={{
-        background: "none", border: "none", cursor: "pointer", padding: 4,
+    <>
+      <button onClick={() => setOpen(true)} style={{
+        background:"none", border:"none", cursor:"pointer", padding:6,
+        borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center",
       }}>
         <MoreVertical size={20} color={T.textSec} />
       </button>
+
       {open && (
         <div style={{
-          position: "absolute", top: "100%", right: 0, background: T.card,
-          border: `1px solid ${T.border}`, borderRadius: 8, boxShadow: T.shadow,
-          minWidth: 160, zIndex: 40,
-        }}>
-          <button onClick={() => {
-            onUnilateral();
-            setOpen(false);
-          }} style={{
-            width: "100%", padding: "10px 12px", background: "none", border: "none",
-            textAlign: "left", cursor: "pointer", color: T.text, fontSize: 13,
-            display: "flex", alignItems: "center", gap: 8,
+          position:"fixed", inset:0, zIndex:500, background:"rgba(0,0,0,0.45)",
+          display:"flex", alignItems:"flex-end", justifyContent:"center",
+        }} onClick={() => setOpen(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background:T.card, borderRadius:"24px 24px 0 0", width:"100%", maxWidth:430,
+            paddingBottom:34,
           }}>
-            {isUnilateral && <Check size={16} color={T.teal} />}
-            <span style={{ flex: 1 }}>Unilaterale</span>
-          </button>
-          {!isLastExercise && (
-            <button onClick={() => {
-              onSuperset();
-              setOpen(false);
-            }} style={{
-              width: "100%", padding: "10px 12px", background: "none", border: "none",
-              textAlign: "left", cursor: "pointer", color: T.text, fontSize: 13,
-              display: "flex", alignItems: "center", gap: 8,
-              borderTop: `1px solid ${T.border}`,
-            }}>
-              {isSupersetted && <Check size={16} color={T.teal} />}
-              <span style={{ flex: 1 }}>Superset</span>
-            </button>
-          )}
-          <button onClick={() => {
-            onMove();
-            setOpen(false);
-          }} style={{
-            width: "100%", padding: "10px 12px", background: "none", border: "none",
-            textAlign: "left", cursor: "pointer", color: T.text, fontSize: 13,
-            borderTop: `1px solid ${T.border}`,
-          }}>
-            Sposta
-          </button>
-          <button onClick={() => {
-            onDelete();
-            setOpen(false);
-          }} style={{
-            width: "100%", padding: "10px 12px", background: "none", border: "none",
-            textAlign: "left", cursor: "pointer", color: T.red, fontSize: 13,
-            borderTop: `1px solid ${T.border}`,
-          }}>
-            Elimina
-          </button>
+            {/* Handle */}
+            <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 4px" }}>
+              <div style={{ width:36, height:4, borderRadius:2, background:T.border }} />
+            </div>
+            {/* Title */}
+            {exerciseName && (
+              <div style={{
+                fontSize:13, fontWeight:700, color:T.textMuted,
+                padding:"6px 20px 12px", textAlign:"center",
+              }}>{exerciseName}</div>
+            )}
+            <div style={{ padding:"0 12px" }}>
+              {menuItem(
+                <ArrowLeftRight size={19} color={T.teal} />,
+                "Unilaterale",
+                isUnilateral ? "Attivo — tocca per disattivare" : "Esercizio su un lato alla volta",
+                onUnilateral, T.teal, `${T.teal}18`, isUnilateral,
+              )}
+              {!isLastExercise && menuItem(
+                <Link2 size={19} color={T.orange} />,
+                "Superset",
+                isSupersetted ? "Attivo — tocca per rimuovere" : "Collega col prossimo esercizio",
+                onSuperset, T.orange, `${T.orange}18`, isSupersetted,
+              )}
+              {menuItem(
+                <GripVertical size={19} color={T.purple} />,
+                "Sposta",
+                "Cambia posizione nella lista",
+                onMove, T.purple, `${T.purple}18`, false,
+              )}
+              {menuItem(
+                <Trash2 size={19} color={T.red} />,
+                "Elimina esercizio",
+                "Rimuovi dalla routine",
+                onDelete, T.red, `${T.red}18`, false,
+              )}
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 
@@ -612,8 +804,16 @@ const NameModal = ({ onContinue, onClose, title = "Nome Routine" }) => {
         background: T.card, borderRadius: 20, padding: "24px 20px 20px", width: "100%", maxWidth: 340,
         boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
       }}>
-        <div style={{ fontSize:18, fontWeight:900, color:T.text, marginBottom:6 }}>{title}</div>
-        <div style={{ fontSize:13, color:T.textSec, marginBottom:18 }}>Dai un nome alla tua routine</div>
+        {/* Icon */}
+        <div style={{
+          width:56, height:56, borderRadius:18, background:T.gradient,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          marginBottom:16, boxShadow:"0 4px 16px rgba(2,128,144,0.3)",
+        }}>
+          <Dumbbell size={26} color="#fff" />
+        </div>
+        <div style={{ fontSize:18, fontWeight:900, color:T.text, marginBottom:4 }}>{title}</div>
+        <div style={{ fontSize:13, color:T.textSec, marginBottom:18 }}>Dai un nome alla tua routine 💪</div>
         <div style={{
           display:"flex", alignItems:"center", gap:8, background:T.bg,
           borderRadius:12, padding:"12px 14px", border:`1.5px solid ${T.border}`,
@@ -804,31 +1004,31 @@ const RoutineEditor = ({ routine, exercises, onSave, onClose, customExercises, o
                   {/* Timer pills inline */}
                   <div style={{ display:"flex",gap:4,flexWrap:"wrap",flexShrink:0 }}>
                     <button onClick={() => setDrumPicker({ exIdx, field:"restTimer", title:"Riposo" })} style={{
-                      display:"flex",alignItems:"center",gap:3,
-                      background:`${T.teal}12`,border:"none",borderRadius:8,
-                      padding:"4px 8px",cursor:"pointer",
+                      display:"flex",alignItems:"center",gap:5,
+                      background:`${T.teal}12`,border:"none",borderRadius:10,
+                      padding:"6px 10px",cursor:"pointer",
                     }}>
-                      <Timer size={10} color={T.teal} />
-                      <span style={{ fontSize:9,fontWeight:700,color:T.teal }}>{fmtTimer(ex.restTimer)}</span>
+                      <Timer size={13} color={T.teal} />
+                      <span style={{ fontSize:12,fontWeight:700,color:T.teal }}>{fmtTimer(ex.restTimer)}</span>
                     </button>
                     {hasWarmup(ex) && (
                       <button onClick={() => setDrumPicker({ exIdx, field:"warmupTimer", title:"Warmup" })} style={{
-                        display:"flex",alignItems:"center",gap:3,
-                        background:"#EAB30815",border:"none",borderRadius:8,
-                        padding:"4px 8px",cursor:"pointer",
+                        display:"flex",alignItems:"center",gap:5,
+                        background:"#EAB30815",border:"none",borderRadius:10,
+                        padding:"6px 10px",cursor:"pointer",
                       }}>
-                        <Flame size={10} color="#EAB308" />
-                        <span style={{ fontSize:9,fontWeight:700,color:"#EAB308" }}>{fmtTimer(ex.warmupTimer)}</span>
+                        <Flame size={13} color="#EAB308" />
+                        <span style={{ fontSize:12,fontWeight:700,color:"#EAB308" }}>{fmtTimer(ex.warmupTimer)}</span>
                       </button>
                     )}
                     {ex.unilateral && (
                       <button onClick={() => setDrumPicker({ exIdx, field:"sideTimer", title:"Timer lati" })} style={{
-                        display:"flex",alignItems:"center",gap:3,
-                        background:`${T.purple}12`,border:"none",borderRadius:8,
-                        padding:"4px 8px",cursor:"pointer",
+                        display:"flex",alignItems:"center",gap:5,
+                        background:`${T.purple}12`,border:"none",borderRadius:10,
+                        padding:"6px 10px",cursor:"pointer",
                       }}>
-                        <ArrowLeftRight size={10} color={T.purple} />
-                        <span style={{ fontSize:9,fontWeight:700,color:T.purple }}>{fmtTimer(ex.sideTimer)}</span>
+                        <ArrowLeftRight size={13} color={T.purple} />
+                        <span style={{ fontSize:12,fontWeight:700,color:T.purple }}>{fmtTimer(ex.sideTimer)}</span>
                       </button>
                     )}
                   </div>
@@ -838,6 +1038,7 @@ const RoutineEditor = ({ routine, exercises, onSave, onClose, customExercises, o
                     isUnilateral={ex.unilateral}
                     isSupersetted={ex.supersetWith !== null}
                     isLastExercise={exIdx === exs.length - 1}
+                    exerciseName={info?.name}
                     onUnilateral={() => updateExercise(exIdx, { unilateral: !ex.unilateral })}
                     onSuperset={() => updateExercise(exIdx, { supersetWith: ex.supersetWith !== null ? null : exIdx + 1 })}
                     onMove={() => setReorderIdx(reorderIdx === exIdx ? null : exIdx)}
@@ -2253,7 +2454,7 @@ export default function GymSection({ onNavigate }) {
         onSelect={() => {}}
         onClose={() => setSubScreen("main")}
         customExercises={customExercises}
-        onAddCustom={() => {}}
+        onAddCustom={(ex) => setCustomExercises(prev => [...prev, ex])}
         multiSelect={true}
         onMultiSelect={(selected) => {
           setNewRoutineExercises(selected.map(e => ({
