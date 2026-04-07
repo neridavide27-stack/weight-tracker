@@ -18,6 +18,7 @@ import {
   getAllGymRoutines, addGymRoutine, updateGymRoutine, deleteGymRoutine,
   getAllGymCustomExercises, addGymCustomExercise,
   getGymRestTimer, saveGymRestTimer,
+  getGymPrecMode, saveGymPrecMode,
 } from "../lib/food-db";
 
 /* ═══════════════════════════════════════════
@@ -189,35 +190,74 @@ const Toast = ({ message, icon, action, onAction, onDismiss }) => {
 /* ═══════════════════════════════════════════
    REST TIMER OVERLAY
    ═══════════════════════════════════════════ */
-const RestTimerOverlay = ({ seconds, exerciseName, isSideTimer, onSkip }) => {
+const RestTimerOverlay = ({ seconds, exerciseName, isSideTimer, isWarmup, onSkip }) => {
+  const [total, setTotal] = useState(seconds);
   const [remaining, setRemaining] = useState(seconds);
   useEffect(() => {
-    if (remaining <= 0) {
-      onSkip();
-      return;
-    }
+    if (remaining <= 0) { onSkip(); return; }
     const interval = setInterval(() => setRemaining(r => r - 1), 1000);
     return () => clearInterval(interval);
   }, [remaining, onSkip]);
+
+  const adjust = (delta) => {
+    setRemaining(r => Math.max(1, r + delta));
+    setTotal(t => Math.max(1, t + delta));
+  };
+
+  const pct = total > 0 ? (remaining / total) * 100 : 0;
+  const accentColor = isSideTimer ? T.purple : isWarmup ? "#EAB308" : (remaining <= 10 ? T.red : T.teal);
+  const radius = 70, stroke = 8, circ = 2 * Math.PI * radius;
+
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 90,
     }}>
       <div style={{
-        background: T.card, borderRadius: 12, padding: 24, textAlign: "center",
-        maxWidth: "90%",
+        background: T.card, borderRadius: 24, padding: "28px 24px 24px", textAlign: "center",
+        width: "90%", maxWidth: 340, boxShadow: "0 8px 40px rgba(0,0,0,0.3)",
       }}>
-        <p style={{ color: T.textSec, fontSize: 14, marginBottom: 8 }}>
-          {isSideTimer ? "CAMBIA LATO" : "RIPOSO"} • {exerciseName}
-        </p>
         <p style={{
-          fontSize: 48, fontWeight: "bold", color: remaining <= 10 ? T.red : T.teal,
-          margin: "16px 0",
-        }}>{formatTimer(remaining)}</p>
+          fontSize: 11, fontWeight: 800, color: accentColor, textTransform: "uppercase",
+          letterSpacing: 1, marginBottom: 4,
+        }}>
+          {isSideTimer ? "⟷ CAMBIA LATO" : isWarmup ? "🔥 WARMUP" : "💤 RIPOSO"}
+        </p>
+        <p style={{ color: T.textSec, fontSize: 13, marginBottom: 16, fontWeight: 600 }}>{exerciseName}</p>
+
+        {/* Circular progress */}
+        <div style={{ position: "relative", width: 160, height: 160, margin: "0 auto 20px" }}>
+          <svg width="160" height="160" style={{ transform: "rotate(-90deg)" }}>
+            <circle cx="80" cy="80" r={radius} fill="none" stroke={`${accentColor}20`} strokeWidth={stroke} />
+            <circle cx="80" cy="80" r={radius} fill="none" stroke={accentColor} strokeWidth={stroke}
+              strokeDasharray={circ} strokeDashoffset={circ * (1 - pct / 100)}
+              strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s" }}
+            />
+          </svg>
+          <div style={{
+            position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+            flexDirection: "column",
+          }}>
+            <span style={{ fontSize: 42, fontWeight: 900, color: accentColor, lineHeight: 1 }}>
+              {formatTimer(remaining)}
+            </span>
+          </div>
+        </div>
+
+        {/* Adjust buttons */}
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 18 }}>
+          {[{ label: "-30s", delta: -30 }, { label: "-15s", delta: -15 }, { label: "+15s", delta: 15 }, { label: "+30s", delta: 30 }].map(b => (
+            <button key={b.label} onClick={() => adjust(b.delta)} style={{
+              padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${T.border}`,
+              background: T.bg, cursor: "pointer", fontSize: 13, fontWeight: 700,
+              color: b.delta < 0 ? T.red : T.teal,
+            }}>{b.label}</button>
+          ))}
+        </div>
+
         <button onClick={onSkip} style={{
-          background: T.teal, color: "white", border: "none", padding: "12px 24px",
-          borderRadius: 6, cursor: "pointer", fontSize: 16,
+          width: "100%", padding: 14, background: `${accentColor}15`, border: `1.5px solid ${accentColor}40`,
+          borderRadius: 14, cursor: "pointer", fontSize: 15, fontWeight: 800, color: accentColor,
         }}>Salta</button>
       </div>
     </div>
@@ -1425,281 +1465,569 @@ const RoutineSummary = ({ name, exercises, onSave, onBack, customExercises }) =>
    ACTIVE WORKOUT SCREEN
    ═══════════════════════════════════════════ */
 const ActiveWorkoutScreen = ({
-  workout, exercises: initialExercises, customExercises, onComplete, onCancel, allSets, onExerciseDetail,
+  workout, exercises: initialExercises, customExercises, onComplete, onCancel,
+  allSets, allWorkouts, precMode, defaultTimers,
 }) => {
-  const [exs, setExs] = useState(() => JSON.parse(JSON.stringify(initialExercises)));
-  const [currentExIdx, setCurrentExIdx] = useState(0);
-  const [currentSetIdx, setCurrentSetIdx] = useState(0);
-  const [workoutSets, setWorkoutSets] = useState([]);
+  // Build previousSets lookup (routine-specific or global)
+  const previousSets = useMemo(() => {
+    const result = {};
+    // Find workoutIds for this routine (for routine-specific mode)
+    const routineWorkoutIds = precMode === "routine" && workout.routineId
+      ? new Set((allWorkouts || []).filter(w => w.routineId === workout.routineId).map(w => String(w.id)))
+      : null;
+
+    initialExercises.forEach(ex => {
+      let setsForEx = (allSets || []).filter(s => s.exerciseId === ex.exerciseId);
+      // Filter by routine if precMode is "routine"
+      if (routineWorkoutIds) {
+        setsForEx = setsForEx.filter(s => routineWorkoutIds.has(String(s.workoutId)));
+      }
+      if (!setsForEx.length) { result[ex.exerciseId] = []; return; }
+      const byWorkout = {};
+      setsForEx.forEach(s => {
+        if (!byWorkout[s.workoutId]) byWorkout[s.workoutId] = [];
+        byWorkout[s.workoutId].push(s);
+      });
+      const sorted = Object.entries(byWorkout).sort((a, b) => {
+        const tA = Math.max(...a[1].map(s => new Date(s.timestamp || 0).getTime()));
+        const tB = Math.max(...b[1].map(s => new Date(s.timestamp || 0).getTime()));
+        return tB - tA;
+      });
+      result[ex.exerciseId] = (sorted[0]?.[1] || []).sort((a, b) => (a.setNumber || 0) - (b.setNumber || 0));
+    });
+    return result;
+  }, [initialExercises, allSets, allWorkouts, precMode, workout.routineId]);
+
+  // Init exs with pre-filled kg/reps from previousSets
+  const [exs, setExs] = useState(() =>
+    JSON.parse(JSON.stringify(initialExercises)).map(ex => {
+      const prevSets = previousSets[ex.exerciseId] || [];
+      return {
+        ...ex,
+        sets: (ex.sets || []).map((s, i) => {
+          const prev = prevSets[i];
+          return {
+            ...s,
+            weight: prev ? prev.weight : (s.weight || 0),
+            reps: prev ? prev.reps : (s.reps || 0),
+            completed: false,
+            sideCompleted: false, // for unilateral: track first side
+          };
+        }),
+      };
+    })
+  );
+
   const [restTimer, setRestTimer] = useState(null);
   const [numpad, setNumpad] = useState(null);
+  const [drumPicker, setDrumPicker] = useState(null);
+  const [reorderIdx, setReorderIdx] = useState(null);
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef(Date.now());
 
-  const currentEx = exs[currentExIdx];
-  const currentSet = currentEx?.sets[currentSetIdx];
-  const exInfo = getExerciseById(currentEx?.exerciseId, customExercises);
+  // Elapsed timer tick
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
 
-  const updateCurrentSet = (field, value) => {
+  // Exercise-level helpers
+  const updateExercise = (idx, updates) => {
+    setExs(prev => { const next = [...prev]; next[idx] = { ...next[idx], ...updates }; return next; });
+  };
+  const deleteExercise = (idx) => setExs(prev => prev.filter((_, i) => i !== idx));
+  const moveExercise = (idx, direction) => {
+    const newIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= exs.length) return;
+    setExs(prev => { const m = [...prev]; [m[idx], m[newIdx]] = [m[newIdx], m[idx]]; return m; });
+    setReorderIdx(newIdx);
+  };
+
+  const updateSet = (exIdx, setIdx, field, value) => {
     setExs(prev => {
       const next = JSON.parse(JSON.stringify(prev));
-      next[currentExIdx].sets[currentSetIdx][field] = value;
+      next[exIdx].sets[setIdx][field] = value;
       return next;
     });
   };
 
-  const handleCompleteSet = async () => {
-    const w = currentSet?.weight || 0;
-    const r = currentSet?.reps || 0;
-    const setData = {
-      workoutId: workout.id,
-      exerciseId: currentEx.exerciseId,
-      setNumber: currentSetIdx + 1,
-      weight: w, reps: r, type: currentSet.type,
-      duration: 1.5, timestamp: new Date().toISOString(),
-    };
-    setWorkoutSets(prev => [...prev, setData]);
+  const addSet = (exIdx) => {
+    setExs(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const last = next[exIdx].sets[next[exIdx].sets.length - 1];
+      const prevSetsArr = previousSets[next[exIdx].exerciseId] || [];
+      const prevForNew = prevSetsArr[next[exIdx].sets.length];
+      next[exIdx].sets.push({
+        weight: prevForNew ? prevForNew.weight : (last?.weight || 0),
+        reps: prevForNew ? prevForNew.reps : (last?.reps || 0),
+        type: "N", completed: false, sideCompleted: false,
+      });
+      return next;
+    });
+  };
 
-    if (currentEx.unilateral && !currentSet.sideCompleted && !currentSet.completed) {
-      updateCurrentSet("sideCompleted", true);
-      if (currentEx.sideTimer > 0) {
-        setRestTimer({ seconds: currentEx.sideTimer, exerciseName: exInfo?.name, isSideTimer: true });
+  const removeSet = (exIdx, setIdx) => {
+    setExs(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next[exIdx].sets.length > 1) next[exIdx].sets.splice(setIdx, 1);
+      return next;
+    });
+  };
+
+  const hasWarmup = (ex) => ex.sets && ex.sets.some(s => s.type === "W");
+
+  // Toggle complete logic: handles normal, warmup, and unilateral
+  const toggleComplete = (exIdx, setIdx) => {
+    const ex = exs[exIdx];
+    const set = ex.sets[setIdx];
+    const info = getExerciseById(ex.exerciseId, customExercises);
+    const exName = info?.name || "Esercizio";
+
+    if (set.completed) {
+      // Un-complete: reset
+      updateSet(exIdx, setIdx, "completed", false);
+      // Also reset sideCompleted if unilateral
+      if (ex.unilateral) {
+        setExs(prev => {
+          const next = JSON.parse(JSON.stringify(prev));
+          next[exIdx].sets[setIdx].completed = false;
+          next[exIdx].sets[setIdx].sideCompleted = false;
+          return next;
+        });
       }
       return;
     }
-    if (currentEx.unilateral && currentSet.sideCompleted && !currentSet.completed) {
-      updateCurrentSet("completed", true);
+
+    // Unilateral logic: two taps
+    if (ex.unilateral && !set.sideCompleted) {
+      // First tap: side 1 done → start side timer
+      setExs(prev => {
+        const next = JSON.parse(JSON.stringify(prev));
+        next[exIdx].sets[setIdx].sideCompleted = true;
+        return next;
+      });
+      const sideSecs = ex.sideTimer || defaultTimers?.side || 15;
+      if (sideSecs > 0) {
+        setRestTimer({ seconds: sideSecs, exerciseName: exName, isSideTimer: true, isWarmup: false });
+      }
+      return;
     }
 
-    if (currentSetIdx < currentEx.sets.length - 1) {
-      setCurrentSetIdx(prev => prev + 1);
-      const rest = getRestForSet(currentEx, currentSet.type);
-      setRestTimer({ seconds: rest, exerciseName: exInfo?.name, isSideTimer: false });
-    } else if (currentExIdx < exs.length - 1) {
-      setCurrentExIdx(prev => prev + 1);
-      setCurrentSetIdx(0);
-      setRestTimer({ seconds: 60, exerciseName: exInfo?.name, isSideTimer: false });
+    // Mark fully completed
+    updateSet(exIdx, setIdx, "completed", true);
+
+    // Decide which timer
+    if (set.type === "W") {
+      const warmSecs = ex.warmupTimer || defaultTimers?.warmup || 60;
+      if (warmSecs > 0) setRestTimer({ seconds: warmSecs, exerciseName: exName, isSideTimer: false, isWarmup: true });
     } else {
-      await saveWorkout();
+      const restSecs = ex.restTimer || defaultTimers?.rest || 90;
+      if (restSecs > 0) setRestTimer({ seconds: restSecs, exerciseName: exName, isSideTimer: false, isWarmup: false });
     }
   };
 
-  const saveWorkout = async () => {
+  const saveAndComplete = async () => {
     try {
-      const wk = {
-        ...workout,
-        endTime: new Date().toISOString(),
-        completed: true,
-      };
+      const wk = { ...workout, endTime: new Date().toISOString(), completed: true };
       await addGymWorkout(wk);
-      if (workoutSets.length > 0) {
-        await addGymSets(workoutSets);
-      }
-      onComplete();
+      const completedSetsData = [];
+      exs.forEach(ex => {
+        ex.sets.forEach((set, idx) => {
+          if (set.completed) {
+            completedSetsData.push({
+              workoutId: workout.id,
+              exerciseId: ex.exerciseId,
+              setNumber: idx + 1,
+              weight: set.weight || 0,
+              reps: set.reps || 0,
+              type: set.type,
+              duration: 1.5,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        });
+      });
+      if (completedSetsData.length > 0) await addGymSets(completedSetsData);
     } catch (err) {
       console.error("Error saving workout:", err);
     }
+    onComplete();
   };
 
-  if (restTimer) {
-    return (
-      <RestTimerOverlay
-        seconds={restTimer.seconds}
-        exerciseName={restTimer.exerciseName || "Esercizio"}
-        isSideTimer={restTimer.isSideTimer}
-        onSkip={() => setRestTimer(null)}
-      />
-    );
-  }
-
-  if (!currentEx) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg, padding: 24 }}>
-        <div style={{
-          width:80, height:80, borderRadius:24, background:`${T.green}15`,
-          display:"flex", alignItems:"center", justifyContent:"center", marginBottom:20,
-        }}>
-          <CheckCircle2 size={44} color={T.green} />
-        </div>
-        <div style={{ fontSize:22, fontWeight:900, color:T.text, marginBottom:6 }}>Allenamento Completato!</div>
-        <div style={{ fontSize:13, color:T.textSec, marginBottom:32, textAlign:"center" }}>Ottimo lavoro, continua così 💪</div>
-        <button onClick={onComplete} style={{
-          padding: "16px 40px", background: T.gradient, color: "white",
-          border: "none", borderRadius: 14, cursor: "pointer", fontWeight: 800, fontSize:15,
-          boxShadow:"0 4px 20px rgba(2,128,144,0.3)",
-        }}>Chiudi</button>
-      </div>
-    );
-  }
-
-  const progressPct = Math.round(((currentExIdx * (currentEx?.sets?.length || 3) + currentSetIdx) / (exs.reduce((t,e) => t + (e.sets?.length||3), 0))) * 100);
+  const totalSets = exs.reduce((t, ex) => t + ex.sets.length, 0);
+  const completedCount = exs.reduce((t, ex) => t + ex.sets.filter(s => s.completed).length, 0);
+  const progressPct = totalSets > 0 ? Math.round((completedCount / totalSets) * 100) : 0;
+  const elapsedStr = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, paddingBottom: 120 }}>
-      {/* Header */}
+
+      {/* Rest Timer Overlay */}
+      {restTimer && (
+        <RestTimerOverlay
+          seconds={restTimer.seconds}
+          exerciseName={restTimer.exerciseName}
+          isSideTimer={restTimer.isSideTimer}
+          isWarmup={restTimer.isWarmup}
+          onSkip={() => setRestTimer(null)}
+        />
+      )}
+
+      {/* ── Header ── */}
       <div style={{
-        background: T.card, padding: "14px 16px", borderBottom: `1px solid ${T.border}`,
-        display: "flex", alignItems: "center", gap: 10,
+        background: T.card, padding: "14px 16px 10px",
+        borderBottom: `1px solid ${T.border}`,
+        position: "sticky", top: 0, zIndex: 10,
       }}>
-        <button onClick={onCancel} style={{
-          width:36, height:36, borderRadius:12, background:T.tealLight, border:"none",
-          display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", flexShrink:0,
-        }}>
-          <ChevronLeft size={18} color={T.teal} />
-        </button>
-        <div style={{ flex: 1, minWidth:0 }}>
-          <div style={{ fontSize:15, fontWeight:900, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-            {exInfo?.name}
-          </div>
-          <div style={{ fontSize:11, color:T.textSec, marginTop:1 }}>
-            Esercizio {currentExIdx + 1}/{exs.length} · <span style={{ color:MUSCLE_COLORS[exInfo?.muscle]||T.teal, fontWeight:700 }}>{exInfo?.muscle}</span>
-          </div>
-        </div>
-        <button onClick={onCancel} style={{
-          width:36, height:36, borderRadius:12, background:`${T.red}12`, border:"none",
-          display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer",
-        }}>
-          <X size={16} color={T.red} />
-        </button>
-      </div>
-
-      {/* Progress bar */}
-      <div style={{ height: 6, background: T.border, position:"relative" }}>
-        <div style={{
-          height: "100%", background: T.gradient,
-          width: `${progressPct}%`,
-          transition: "width 0.4s ease",
-          borderRadius:"0 3px 3px 0",
-        }}/>
-      </div>
-
-      <div style={{ padding: 16 }}>
-        {/* Current set card */}
-        <div style={{
-          background: T.card, borderRadius: 16, padding: "20px 20px",
-          boxShadow: T.shadow, border: `1px solid ${T.border}`,
-        }}>
-          <div style={{ marginBottom: 16, textAlign: "center" }}>
-            <div style={{
-              display:"inline-flex", alignItems:"center", gap:8,
-              background:T.bg, borderRadius:20, padding:"6px 16px",
-            }}>
-              <span style={{ fontSize:13, fontWeight:700, color:T.text }}>
-                Serie {currentSetIdx + 1} di {currentEx.sets.length}
-              </span>
-              {currentSet?.type === "W" && (
-                <span style={{ fontSize:11, fontWeight:800, color:"#EAB308", background:"#EAB30815", padding:"2px 8px", borderRadius:10 }}>WARMUP</span>
-              )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={onCancel} style={{
+            width: 36, height: 36, borderRadius: 12,
+            background: T.bg, border: `1.5px solid ${T.border}`,
+            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+          }}>
+            <X size={16} color={T.textSec} />
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 900, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {workout.routineName || "Allenamento"}
+            </div>
+            <div style={{ fontSize: 11, color: T.textSec }}>
+              {completedCount}/{totalSets} serie · ⏱ {elapsedStr}
             </div>
           </div>
-
-          {/* Kg / Reps buttons */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-            <button onClick={() => setNumpad({ type: "weight" })} style={{
-              padding: "18px 12px", background: T.bg, border: `1.5px solid ${T.border}`,
-              borderRadius: 14, cursor: "pointer", textAlign: "center",
-            }}>
-              <div style={{ fontSize:10, fontWeight:700, color:T.textMuted, textTransform:"uppercase", letterSpacing:0.5, marginBottom:6 }}>Peso</div>
-              <div style={{ fontSize:28, fontWeight:900, color:T.text, lineHeight:1 }}>
-                {currentSet?.weight || 0}<span style={{ fontSize:14, color:T.textSec, fontWeight:600 }}>kg</span>
-              </div>
-            </button>
-            <button onClick={() => setNumpad({ type: "reps" })} style={{
-              padding: "18px 12px", background: T.bg, border: `1.5px solid ${T.border}`,
-              borderRadius: 14, cursor: "pointer", textAlign: "center",
-            }}>
-              <div style={{ fontSize:10, fontWeight:700, color:T.textMuted, textTransform:"uppercase", letterSpacing:0.5, marginBottom:6 }}>Ripetizioni</div>
-              <div style={{ fontSize:28, fontWeight:900, color:T.text, lineHeight:1 }}>
-                {currentSet?.reps || 0}
-              </div>
-            </button>
-          </div>
-
-          {/* Complete set button */}
-          <button onClick={handleCompleteSet} style={{
-            width: "100%", padding: "16px", background: T.gradient, color: "white",
-            border: "none", borderRadius: 14, cursor: "pointer", fontWeight: 800, fontSize: 15,
-            boxShadow: "0 4px 16px rgba(2,128,144,0.3)",
+          <button onClick={saveAndComplete} style={{
+            padding: "9px 16px", background: T.gradient, border: "none", borderRadius: 12,
+            color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer",
+            boxShadow: "0 2px 10px rgba(2,128,144,0.25)",
+            display: "flex", alignItems: "center", gap: 6,
           }}>
-            {currentEx.unilateral && !currentSet?.sideCompleted ? "Completa Lato 1 →" :
-             currentEx.unilateral && currentSet?.sideCompleted ? "Completa Lato 2 →" :
-             "✓ Completa Serie"}
+            <Check size={14} color="#fff" /> Termina
           </button>
         </div>
-
-        {/* All sets overview */}
-        <div style={{ marginTop: 16 }}>
-          <p style={{ margin: "0 0 8px", color: T.textSec, fontSize: 12, fontWeight: 600 }}>Tutte le serie</p>
-          {currentEx.sets.map((set, idx) => (
-            <div key={idx} style={{
-              display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
-              background: idx === currentSetIdx ? T.tealLight : T.card,
-              borderRadius: 8, marginBottom: 4,
-              border: idx === currentSetIdx ? `1px solid ${T.teal}40` : `1px solid ${T.border}`,
-            }}>
-              <span style={{
-                width: 24, height: 24, borderRadius: 6, fontSize: 11, fontWeight: 700,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: set.type === "W" ? "#EAB30815" : T.bg,
-                color: set.type === "W" ? "#EAB308" : T.textSec,
-              }}>{set.type}</span>
-              <span style={{ flex: 1, fontSize: 13, color: T.text }}>
-                {set.weight || "—"}kg × {set.reps || "—"}
-              </span>
-              {idx < currentSetIdx && <Check size={14} color={T.green} />}
-              {idx === currentSetIdx && <span style={{ fontSize: 10, fontWeight: 700, color: T.teal }}>ORA</span>}
-            </div>
-          ))}
+        {/* Progress bar */}
+        <div style={{ height: 4, background: T.border, borderRadius: 2, marginTop: 10, overflow: "hidden" }}>
+          <div style={{
+            height: "100%", background: T.gradient,
+            width: `${progressPct}%`, transition: "width 0.3s", borderRadius: 2,
+          }} />
         </div>
       </div>
 
-      {/* Bottom: navigation between exercises */}
+      {/* ── Exercise cards ── */}
+      <div style={{ padding: "14px 16px 0" }}>
+        {exs.map((ex, exIdx) => {
+          const info = getExerciseById(ex.exerciseId, customExercises);
+          const muscleColor = MUSCLE_COLORS[info?.muscle] || T.teal;
+          const prevSetsArr = previousSets[ex.exerciseId] || [];
+          const allDone = ex.sets.every(s => s.completed);
+          const isSuperset = ex.supersetWith === exIdx + 1;
+          const isPrevSuperset = exIdx > 0 && exs[exIdx - 1].supersetWith === exIdx;
+
+          return (
+            <div key={exIdx} style={{ position: "relative" }}>
+              {/* Superset connector */}
+              {isSuperset && (
+                <div style={{
+                  position: "absolute", left: 16, right: 16, bottom: -7, height: 14,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  zIndex: 2, pointerEvents: "none",
+                }}>
+                  <div style={{ flex: 1, height: 2, background: `${T.orange}50` }} />
+                  <div style={{
+                    padding: "2px 8px", background: T.orange, borderRadius: 20,
+                    fontSize: 9, fontWeight: 900, color: "#fff", letterSpacing: 0.5, margin: "0 6px",
+                  }}>SUPERSET</div>
+                  <div style={{ flex: 1, height: 2, background: `${T.orange}50` }} />
+                </div>
+              )}
+
+              <div style={{
+                background: T.card, borderRadius: 16, marginBottom: isSuperset ? 20 : 14,
+                border: reorderIdx === exIdx
+                  ? `2px solid ${T.teal}`
+                  : allDone ? `1.5px solid ${T.green}50`
+                  : (isSuperset || isPrevSuperset) ? `2px solid ${T.orange}60`
+                  : `1px solid ${T.border}`,
+                boxShadow: allDone ? `0 2px 12px ${T.green}15`
+                  : (isSuperset || isPrevSuperset) ? `0 2px 12px ${T.orange}20`
+                  : T.shadow,
+                overflow: "hidden",
+              }}>
+                {/* Exercise header */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "12px 10px 10px 12px",
+                  borderBottom: `1px solid ${T.border}`,
+                  background: allDone ? `${T.green}06` : (isSuperset || isPrevSuperset) ? `${T.orange}08` : "transparent",
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{
+                        fontSize: 14, fontWeight: 900,
+                        color: allDone ? T.green : muscleColor,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {info?.name || ex.exerciseId}
+                      </div>
+                      {(isSuperset || isPrevSuperset) && (
+                        <div style={{
+                          padding: "1px 6px", background: `${T.orange}20`, borderRadius: 6,
+                          fontSize: 9, fontWeight: 900, color: T.orange,
+                        }}>SS</div>
+                      )}
+                      {allDone && (
+                        <div style={{
+                          padding: "2px 8px", background: `${T.green}15`, borderRadius: 20,
+                          fontSize: 9, fontWeight: 800, color: T.green,
+                        }}>✓</div>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 500 }}>
+                      {info?.muscle} · {info?.equipment}
+                    </div>
+                  </div>
+
+                  {/* Timer pills */}
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", flexShrink: 0 }}>
+                    <button onClick={() => setDrumPicker({ exIdx, field: "restTimer", title: "Riposo" })} style={{
+                      display: "flex", alignItems: "center", gap: 5,
+                      background: `${T.teal}12`, border: "none", borderRadius: 10,
+                      padding: "6px 10px", cursor: "pointer",
+                    }}>
+                      <Timer size={13} color={T.teal} />
+                      <span style={{ fontSize: 12, fontWeight: 700, color: T.teal }}>{fmtTimer(ex.restTimer)}</span>
+                    </button>
+                    {hasWarmup(ex) && (
+                      <button onClick={() => setDrumPicker({ exIdx, field: "warmupTimer", title: "Warmup" })} style={{
+                        display: "flex", alignItems: "center", gap: 5,
+                        background: "#EAB30815", border: "none", borderRadius: 10,
+                        padding: "6px 10px", cursor: "pointer",
+                      }}>
+                        <Flame size={13} color="#EAB308" />
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#EAB308" }}>{fmtTimer(ex.warmupTimer)}</span>
+                      </button>
+                    )}
+                    {ex.unilateral && (
+                      <button onClick={() => setDrumPicker({ exIdx, field: "sideTimer", title: "Timer lati" })} style={{
+                        display: "flex", alignItems: "center", gap: 5,
+                        background: `${T.purple}12`, border: "none", borderRadius: 10,
+                        padding: "6px 10px", cursor: "pointer",
+                      }}>
+                        <ArrowLeftRight size={13} color={T.purple} />
+                        <span style={{ fontSize: 12, fontWeight: 700, color: T.purple }}>{fmtTimer(ex.sideTimer)}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 3-dot menu */}
+                  <ExerciseMenu
+                    isUnilateral={ex.unilateral}
+                    isSupersetted={ex.supersetWith !== null}
+                    isLastExercise={exIdx === exs.length - 1}
+                    exerciseName={info?.name}
+                    onUnilateral={() => updateExercise(exIdx, { unilateral: !ex.unilateral })}
+                    onSuperset={() => updateExercise(exIdx, { supersetWith: ex.supersetWith !== null ? null : exIdx + 1 })}
+                    onMove={() => setReorderIdx(reorderIdx === exIdx ? null : exIdx)}
+                    onDelete={() => deleteExercise(exIdx)}
+                  />
+                </div>
+
+                {/* Sets table */}
+                <div style={{ padding: "8px 12px 12px" }}>
+                  {/* Column headers */}
+                  <div style={{
+                    display: "grid", gridTemplateColumns: "28px 1fr 1fr 1fr 36px",
+                    gap: 6, padding: "4px 0 8px",
+                    fontSize: 9, fontWeight: 800, color: T.textMuted,
+                    textTransform: "uppercase", letterSpacing: 0.5,
+                  }}>
+                    <span style={{ textAlign: "center" }}>#</span>
+                    <span style={{ textAlign: "center" }}>Prec.</span>
+                    <span style={{ textAlign: "center" }}>Kg</span>
+                    <span style={{ textAlign: "center" }}>Rep</span>
+                    <span />
+                  </div>
+
+                  {ex.sets.map((set, setIdx) => {
+                    const prevSet = prevSetsArr[setIdx];
+                    const prevLabel = prevSet
+                      ? `${prevSet.weight > 0 ? prevSet.weight + "kg" : "BW"} × ${prevSet.reps}`
+                      : "—";
+                    const done = set.completed;
+                    const sideOnly = ex.unilateral && set.sideCompleted && !done;
+                    const normalSetNum = ex.sets.slice(0, setIdx + 1).filter(s => s.type !== "W").length;
+
+                    return (
+                      <div key={setIdx} style={{
+                        display: "grid", gridTemplateColumns: "28px 1fr 1fr 1fr 36px",
+                        gap: 6, alignItems: "center", marginBottom: 6,
+                        background: done ? `${T.green}08` : sideOnly ? `${T.purple}08` : "transparent",
+                        borderRadius: 10, padding: "4px 0",
+                      }}>
+                        {/* Set badge */}
+                        <div style={{
+                          width: 26, height: 26, borderRadius: 7, fontSize: 10, fontWeight: 800,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          background: done ? `${T.green}20` : set.type === "W" ? "#EAB30820" : `${T.text}08`,
+                          color: done ? T.green : set.type === "W" ? "#EAB308" : T.textSec,
+                        }}>
+                          {set.type === "W" ? "W" : normalSetNum}
+                        </div>
+
+                        {/* Previous */}
+                        <div style={{
+                          textAlign: "center", fontSize: 11,
+                          color: prevSet ? T.textSec : T.textMuted, fontWeight: 600,
+                        }}>
+                          {prevLabel}
+                        </div>
+
+                        {/* Kg — always editable */}
+                        <button
+                          onClick={() => setNumpad({ exIdx, setIdx, field: "weight", label: "Peso (kg)", decimal: true })}
+                          style={{
+                            height: 38, borderRadius: 10, cursor: "pointer",
+                            border: `1.5px solid ${done ? `${T.green}30` : T.border}`,
+                            background: done ? `${T.green}06` : "#fff",
+                            fontSize: 15, fontWeight: 800,
+                            color: set.weight ? (done ? T.green : T.text) : T.textMuted,
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 2,
+                          }}
+                        >
+                          {set.weight || "—"}
+                          <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600 }}>kg</span>
+                        </button>
+
+                        {/* Reps — always editable */}
+                        <button
+                          onClick={() => setNumpad({ exIdx, setIdx, field: "reps", label: "Ripetizioni", decimal: false })}
+                          style={{
+                            height: 38, borderRadius: 10, cursor: "pointer",
+                            border: `1.5px solid ${done ? `${T.green}30` : T.border}`,
+                            background: done ? `${T.green}06` : "#fff",
+                            fontSize: 15, fontWeight: 800,
+                            color: set.reps ? (done ? T.green : T.text) : T.textMuted,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}
+                        >
+                          {set.reps || "—"}
+                        </button>
+
+                        {/* Complete/toggle button */}
+                        <button
+                          onClick={() => toggleComplete(exIdx, setIdx)}
+                          style={{
+                            width: 34, height: 34, borderRadius: 10, border: "none",
+                            background: done ? `${T.green}25` : sideOnly ? `${T.purple}25` : T.tealLight,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            cursor: "pointer", flexShrink: 0,
+                          }}
+                        >
+                          {sideOnly
+                            ? <ArrowLeftRight size={14} color={T.purple} strokeWidth={2.5} />
+                            : <Check size={15} color={done ? T.green : T.teal} strokeWidth={done ? 3 : 2} />
+                          }
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {/* Add set */}
+                  <button onClick={() => addSet(exIdx)} style={{
+                    width: "100%", padding: "9px", borderRadius: 12,
+                    border: `1.5px dashed ${T.teal}40`, background: `${T.tealLight}50`,
+                    cursor: "pointer", fontSize: 12, fontWeight: 700, color: T.teal,
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                    marginTop: 4,
+                  }}>
+                    <Plus size={13} color={T.teal} /> Aggiungi serie
+                  </button>
+                </div>
+
+                {/* Superset badge */}
+                {isSuperset && (
+                  <div style={{
+                    padding: "6px 12px 8px", background: `${T.orange}08`,
+                    borderTop: `1px solid ${T.orange}20`,
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    <Link2 size={12} color={T.orange} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: T.orange }}>
+                      Superset con {getExerciseById(exs[exIdx + 1]?.exerciseId, customExercises)?.name}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Bottom bar ── */}
       <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, maxWidth: "430px",
-        marginLeft: "auto", marginRight: "auto",
-        display: "flex", gap: 8, padding: "12px 16px 32px", background: T.card,
-        borderTop: `1px solid ${T.border}`,
+        position: "fixed", bottom: 0, left: 0, right: 0,
+        padding: "12px 16px 32px", background: T.card,
+        borderTop: `1px solid ${T.border}`, zIndex: 10,
       }}>
-        <button
-          onClick={() => { setCurrentExIdx(Math.max(0, currentExIdx - 1)); setCurrentSetIdx(0); }}
-          disabled={currentExIdx === 0}
-          style={{
-            flex: 1, padding: 13, background: T.bg, border: `1.5px solid ${T.border}`,
-            borderRadius: 12, cursor: currentExIdx === 0 ? "default" : "pointer",
-            color: T.textSec, fontWeight: 700, fontSize: 13, opacity: currentExIdx === 0 ? 0.35 : 1,
-            display:"flex", alignItems:"center", justifyContent:"center", gap:4,
-          }}>
-          <ChevronLeft size={16} /> Prec.
-        </button>
-        <button
-          onClick={async () => { if (currentExIdx === exs.length - 1) { await saveWorkout(); } else { setCurrentExIdx(prev => prev + 1); setCurrentSetIdx(0); }}}
-          style={{
-            flex: 2, padding: 13,
-            background: currentExIdx === exs.length - 1
-              ? `linear-gradient(135deg, ${T.green}, #22c55e)`
-              : T.gradient,
-            color: "white", border: "none", borderRadius: 12, cursor: "pointer",
-            fontWeight: 800, fontSize: 13,
-            boxShadow: "0 2px 12px rgba(2,128,144,0.25)",
-            display:"flex", alignItems:"center", justifyContent:"center", gap:4,
-          }}>
-          {currentExIdx === exs.length - 1 ? "Fine Allenamento ✓" : "Prossimo →"}
+        <button onClick={saveAndComplete} style={{
+          width: "100%", padding: 16, background: T.gradient, border: "none",
+          borderRadius: 14, cursor: "pointer", color: "#fff", fontWeight: 800, fontSize: 15,
+          boxShadow: "0 4px 16px rgba(2,128,144,0.3)",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+        }}>
+          <Check size={18} color="#fff" /> Completa Allenamento
         </button>
       </div>
 
+      {/* Reorder floating toolbar */}
+      {reorderIdx !== null && (
+        <div style={{
+          position: "fixed", bottom: 80, left: 16, right: 16, maxWidth: "398px",
+          marginLeft: "auto", marginRight: "auto",
+          display: "flex", gap: 8, zIndex: 50, background: T.card,
+          padding: 12, borderRadius: 16, boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+        }}>
+          <button onClick={() => moveExercise(reorderIdx, "up")} disabled={reorderIdx === 0} style={{
+            flex: 1, padding: 10, background: T.teal, color: "white", border: "none",
+            borderRadius: 12, cursor: reorderIdx === 0 ? "default" : "pointer", fontWeight: 700,
+            opacity: reorderIdx === 0 ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+          }}><ChevronUp size={16} /> Su</button>
+          <button onClick={() => moveExercise(reorderIdx, "down")} disabled={reorderIdx === exs.length - 1} style={{
+            flex: 1, padding: 10, background: T.teal, color: "white", border: "none",
+            borderRadius: 12, cursor: reorderIdx === exs.length - 1 ? "default" : "pointer", fontWeight: 700,
+            opacity: reorderIdx === exs.length - 1 ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+          }}><ChevronDown size={16} /> Giù</button>
+          <button onClick={() => setReorderIdx(null)} style={{
+            flex: 1, padding: 10, background: T.green, color: "white", border: "none",
+            borderRadius: 12, cursor: "pointer", fontWeight: 700,
+          }}>Fatto</button>
+        </div>
+      )}
+
+      {/* ── Numpad overlay ── */}
       {numpad && (
         <NumpadOverlay
-          label={numpad.type === "weight" ? "Peso (kg)" : "Ripetizioni"}
-          value={numpad.type === "weight" ? currentSet?.weight : currentSet?.reps}
-          decimal={numpad.type === "weight"}
-          onConfirm={(v) => {
-            updateCurrentSet(numpad.type === "weight" ? "weight" : "reps", v);
-            setNumpad(null);
-          }}
+          label={numpad.label}
+          value={exs[numpad.exIdx]?.sets[numpad.setIdx]?.[numpad.field] || 0}
+          decimal={numpad.decimal}
+          onConfirm={(val) => { updateSet(numpad.exIdx, numpad.setIdx, numpad.field, val); setNumpad(null); }}
           onClose={() => setNumpad(null)}
+        />
+      )}
+
+      {/* ── DrumPicker overlay ── */}
+      {drumPicker && (
+        <DrumPicker
+          value={exs[drumPicker.exIdx][drumPicker.field] || 90}
+          title={drumPicker.title}
+          onChange={(v) => updateExercise(drumPicker.exIdx, { [drumPicker.field]: v })}
+          onClose={() => setDrumPicker(null)}
         />
       )}
     </div>
   );
 };
+
 
 /* ═══════════════════════════════════════════
    EXERCISE DETAIL SCREEN (UNCHANGED)
@@ -2306,9 +2634,10 @@ const TabStatistiche = ({ workouts, allSets, customExercises }) => {
 /* ═══════════════════════════════════════════
    SETTINGS SCREEN
    ═══════════════════════════════════════════ */
-const SettingsScreen = ({ defaultTimers, onSave, onBack }) => {
+const SettingsScreen = ({ defaultTimers, precMode: initialPrecMode, onSave, onBack }) => {
   const [timers, setTimers] = useState(defaultTimers);
   const [drumPicker, setDrumPicker] = useState(null);
+  const [localPrecMode, setLocalPrecMode] = useState(initialPrecMode || "routine");
 
   const timerRow = (label, sublabel, field, color, icon) => (
     <div style={{
@@ -2353,7 +2682,7 @@ const SettingsScreen = ({ defaultTimers, onSave, onBack }) => {
           <div style={{ fontSize:17, fontWeight:900, color:T.text }}>Impostazioni</div>
           <div style={{ fontSize:11, color:T.textSec }}>Timer predefiniti per gli esercizi</div>
         </div>
-        <button onClick={() => onSave(timers)} style={{
+        <button onClick={() => onSave(timers, localPrecMode)} style={{
           background:T.gradient, border:"none", borderRadius:12, padding:"9px 20px",
           color:"#fff", fontSize:13, fontWeight:800, cursor:"pointer",
           boxShadow:"0 2px 10px rgba(2,128,144,0.25)",
@@ -2392,6 +2721,36 @@ const SettingsScreen = ({ defaultTimers, onSave, onBack }) => {
           <div style={{ fontSize:12, fontWeight:700, color:T.teal, marginBottom:3 }}>💡 Come funziona</div>
           <div style={{ fontSize:12, color:T.textSec, lineHeight:1.6 }}>
             Questi timer vengono applicati automaticamente quando aggiungi esercizi a una nuova routine. Puoi sempre cambiarli singolarmente nell'editor della routine.
+          </div>
+        </div>
+
+        {/* precMode toggle */}
+        <div style={{
+          fontSize:11, fontWeight:700, color:T.textMuted, textTransform:"uppercase",
+          letterSpacing:0.6, marginTop:24, marginBottom:14,
+        }}>Dati precedenti allenamento</div>
+
+        <div style={{
+          background:T.card, borderRadius:16, padding:16,
+          border:`1px solid ${T.border}`, boxShadow:T.shadow,
+        }}>
+          <div style={{ fontSize:14, fontWeight:800, color:T.text, marginBottom:4 }}>Modalità "Precedente"</div>
+          <div style={{ fontSize:12, color:T.textSec, marginBottom:14, lineHeight:1.5 }}>
+            Scegli se mostrare i dati dell'ultimo allenamento della stessa routine o l'ultimo allenamento globale per quell'esercizio.
+          </div>
+          <div style={{ display:"flex", gap:6 }}>
+            {[{ key:"routine", label:"Per routine" }, { key:"global", label:"Globale" }].map(opt => {
+              const active = localPrecMode === opt.key;
+              return (
+                <button key={opt.key} onClick={() => setLocalPrecMode(opt.key)} style={{
+                  flex:1, padding:"11px 0", borderRadius:12, cursor:"pointer",
+                  border: active ? `2px solid ${T.teal}` : `1.5px solid ${T.border}`,
+                  background: active ? `${T.teal}12` : T.bg,
+                  fontSize:13, fontWeight: active ? 800 : 600,
+                  color: active ? T.teal : T.textSec,
+                }}>{opt.label}</button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -2526,6 +2885,7 @@ export default function GymSection({ onNavigate }) {
   const [newRoutineName, setNewRoutineName] = useState(null);
   const [newRoutineExercises, setNewRoutineExercises] = useState([]);
   const [defaultTimers, setDefaultTimers] = useState(DEFAULT_TIMERS);
+  const [precMode, setPrecMode] = useState("routine");
 
   useEffect(() => {
     loadData();
@@ -2538,6 +2898,10 @@ export default function GymSection({ onNavigate }) {
       if (saved && typeof saved === "object" && "rest" in saved) {
         setDefaultTimers(saved);
       }
+    } catch (e) { /* use defaults */ }
+    try {
+      const mode = await getGymPrecMode();
+      setPrecMode(mode || "routine");
     } catch (e) { /* use defaults */ }
   };
 
@@ -2558,13 +2922,17 @@ export default function GymSection({ onNavigate }) {
     }
   };
 
-  const handleSaveSettings = async (timers) => {
+  const handleSaveSettings = async (timers, newPrecMode) => {
     try {
       await saveGymRestTimer(timers);
       setDefaultTimers(timers);
     } catch (e) { console.error("Error saving timers:", e); }
+    try {
+      await saveGymPrecMode(newPrecMode);
+      setPrecMode(newPrecMode);
+    } catch (e) { console.error("Error saving precMode:", e); }
     setSubScreen("main");
-    setToast({ message: "Timer aggiornati!", icon: <Check size={16} color={T.green} /> });
+    setToast({ message: "Impostazioni aggiornate!", icon: <Check size={16} color={T.green} /> });
   };
 
   const handleStartRoutine = (routineId) => {
@@ -2671,6 +3039,7 @@ export default function GymSection({ onNavigate }) {
     return (
       <SettingsScreen
         defaultTimers={defaultTimers}
+        precMode={precMode}
         onSave={handleSaveSettings}
         onBack={() => setSubScreen("main")}
       />
@@ -2774,6 +3143,7 @@ export default function GymSection({ onNavigate }) {
         workout={{
           id: Date.now().toString(),
           routineId: selectedRoutine.id,
+          routineName: selectedRoutine.name,
           startTime: new Date().toISOString(),
           endTime: null,
           completed: false,
@@ -2783,6 +3153,9 @@ export default function GymSection({ onNavigate }) {
         onComplete={handleCompleteWorkout}
         onCancel={() => setSubScreen("main")}
         allSets={allSets}
+        allWorkouts={workouts}
+        precMode={precMode}
+        defaultTimers={defaultTimers}
         onExerciseDetail={handleExerciseDetail}
       />
     );
