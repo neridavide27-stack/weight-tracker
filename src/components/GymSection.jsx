@@ -2179,6 +2179,7 @@ const WorkoutCard = ({ workout, sets, customExercises, onTap }) => {
   const duration = workout.endTime ? Math.round((new Date(workout.endTime) - new Date(workout.startTime)) / 60000) : 0;
   const uniqueExIds = [...new Set(sets.map(s => s.exerciseId))];
   const muscles = [...new Set(uniqueExIds.map(id => getExerciseById(id, customExercises)?.muscle).filter(Boolean))];
+  const volume = sets.reduce((s, x) => s + (x.weight||0)*(x.reps||0), 0);
 
   return (
     <div onClick={onTap} style={{
@@ -2187,7 +2188,6 @@ const WorkoutCard = ({ workout, sets, customExercises, onTap }) => {
       border: `1px solid ${T.border}`,
       display:"flex", alignItems:"center", gap:12,
     }}>
-      {/* Date badge */}
       <div style={{
         width:44, height:44, borderRadius:12, background:T.tealLight,
         display:"flex", flexDirection:"column", alignItems:"center",
@@ -2196,14 +2196,19 @@ const WorkoutCard = ({ workout, sets, customExercises, onTap }) => {
         <Dumbbell size={18} color={T.teal} />
       </div>
       <div style={{ flex: 1, minWidth:0 }}>
-        <div style={{ fontSize:14, fontWeight:800, color:T.text, textTransform:"capitalize" }}>
+        {workout.routineName && (
+          <div style={{ fontSize:13, fontWeight:900, color:T.text, marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+            {workout.routineName}
+          </div>
+        )}
+        <div style={{ fontSize:11, fontWeight:600, color:T.textSec, textTransform:"capitalize" }}>
           {dayName} — {date}
         </div>
-        <div style={{ fontSize:11, color:T.textSec, marginTop:3 }}>
-          {uniqueExIds.length} esercizi · {sets.length} set{duration > 0 ? ` · ${duration}min` : ""}
+        <div style={{ fontSize:11, color:T.textMuted, marginTop:2 }}>
+          {uniqueExIds.length} esercizi · {sets.length} set{duration > 0 ? ` · ${duration}min` : ""}{volume > 0 ? ` · ${(volume/1000).toFixed(1)}t` : ""}
         </div>
         {muscles.length > 0 && (
-          <div style={{ display:"flex", gap:4, marginTop:6, flexWrap:"wrap" }}>
+          <div style={{ display:"flex", gap:4, marginTop:5, flexWrap:"wrap" }}>
             {muscles.slice(0,4).map(m => (
               <span key={m} style={{
                 fontSize:9, fontWeight:800, padding:"2px 7px", borderRadius:20,
@@ -2220,79 +2225,213 @@ const WorkoutCard = ({ workout, sets, customExercises, onTap }) => {
 };
 
 /* ═══════════════════════════════════════════
-   WORKOUT DETAIL SCREEN (UNCHANGED)
+   WORKOUT DETAIL SCREEN — read-only active workout style
    ═══════════════════════════════════════════ */
 const WorkoutDetailScreen = ({ workout, sets, customExercises, onBack, onExerciseDetail, onDelete }) => {
+  const [confirmDelete, setConfirmDelete] = useState(null); // null | "first" | "final"
   const duration = workout.endTime ? Math.round((new Date(workout.endTime) - new Date(workout.startTime)) / 60000) : 0;
+  const totalVolume = sets.reduce((s, x) => s + (x.weight||0)*(x.reps||0), 0);
+  const dayName = new Date(workout.startTime).toLocaleDateString("it-IT", { weekday:"long", day:"numeric", month:"long" });
+
   const groupedByExercise = useMemo(() => {
     const grouped = {};
     sets.forEach(s => {
-      if (!grouped[s.exerciseId]) {
-        grouped[s.exerciseId] = [];
-      }
+      if (!grouped[s.exerciseId]) grouped[s.exerciseId] = [];
       grouped[s.exerciseId].push(s);
     });
     return Object.entries(grouped).map(([exId, exSets]) => ({
       exerciseId: exId,
       name: getExerciseById(exId, customExercises)?.name || exId,
+      muscle: getExerciseById(exId, customExercises)?.muscle || "",
       sets: exSets,
     }));
   }, [sets, customExercises]);
 
-  const muscleColor = (exId) => MUSCLE_COLORS[getExerciseById(exId, customExercises)?.muscle] || T.teal;
-
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, paddingBottom: 80 }}>
+    <div style={{ minHeight:"100vh", background:T.bg, paddingBottom:40 }}>
       {/* Header */}
       <div style={{
-        background: T.card, padding: "14px 16px", borderBottom: `1px solid ${T.border}`,
-        display: "flex", alignItems: "center", gap: 10,
+        background:T.card, padding:"14px 16px", borderBottom:`1px solid ${T.border}`,
+        display:"flex", alignItems:"center", gap:10,
       }}>
         <button onClick={onBack} style={{
           width:36, height:36, borderRadius:12, background:T.tealLight, border:"none",
           display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", flexShrink:0,
-        }}>
-          <ChevronLeft size={18} color={T.teal} />
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        }}><ChevronLeft size={18} color={T.teal} /></button>
+        <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:16, fontWeight:900, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-            {formatDateFull(workout.startTime)}
+            {workout.routineName || "Allenamento"}
           </div>
-          <div style={{ fontSize:11, color:T.textSec, marginTop:2 }}>
-            {sets.length} set{duration > 0 ? ` · ${duration}min` : ""}
+          <div style={{ fontSize:11, color:T.textSec, marginTop:2, textTransform:"capitalize" }}>
+            {dayName}
           </div>
         </div>
-        <button onClick={() => onDelete(workout.id)} style={{
-          width:36, height:36, borderRadius:12, background:`${T.red}12`, border:"none",
-          display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer",
-        }}>
-          <Trash2 size={16} color={T.red} />
-        </button>
       </div>
 
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-        {groupedByExercise.map((ex, idx) => (
-          <div key={idx} onClick={() => onExerciseDetail(ex.exerciseId)} style={{
-            background: T.card, borderRadius: 14, padding: "14px 16px",
-            boxShadow: T.shadow, cursor: "pointer",
-            border: `1px solid ${T.border}`,
-            display:"flex", alignItems:"center", gap:12,
-          }}>
-            <div style={{
-              width:36, height:36, borderRadius:10, flexShrink:0,
-              background:`${muscleColor(ex.exerciseId)}20`,
-              display:"flex", alignItems:"center", justifyContent:"center",
-            }}>
-              <div style={{ width:10, height:10, borderRadius:"50%", background:muscleColor(ex.exerciseId) }} />
-            </div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:14, fontWeight:800, color:T.text }}>{ex.name}</div>
-              <div style={{ fontSize:11, color:T.textSec, marginTop:2 }}>{ex.sets.length} serie</div>
-            </div>
-            <ChevronRight size={18} color={T.textMuted} />
+      {/* Summary strip */}
+      <div style={{ display:"flex", gap:0, background:T.card, borderBottom:`1px solid ${T.border}` }}>
+        {[
+          { label:"Durata", value: duration > 0 ? `${duration}min` : "—", icon:Clock, color:T.teal },
+          { label:"Serie", value: sets.length, icon:BarChart3, color:T.purple },
+          { label:"Volume", value: totalVolume > 0 ? `${(totalVolume/1000).toFixed(1)}t` : "—", icon:TrendingUp, color:T.orange },
+          { label:"Esercizi", value: groupedByExercise.length, icon:Dumbbell, color:T.green },
+        ].map((s, i) => (
+          <div key={i} style={{ flex:1, padding:"12px 8px", textAlign:"center", borderRight: i < 3 ? `1px solid ${T.border}` : "none" }}>
+            <div style={{ fontSize:9, fontWeight:700, color:T.textMuted, textTransform:"uppercase", letterSpacing:0.4, marginBottom:4 }}>{s.label}</div>
+            <div style={{ fontSize:16, fontWeight:900, color:s.color }}>{s.value}</div>
           </div>
         ))}
       </div>
+
+      {/* Exercise cards — active workout style */}
+      <div style={{ padding:12, display:"flex", flexDirection:"column", gap:10 }}>
+        {groupedByExercise.map((ex, exIdx) => {
+          const mc = MUSCLE_COLORS[ex.muscle] || T.teal;
+          return (
+            <div key={exIdx} style={{
+              background:T.card, borderRadius:16, overflow:"hidden",
+              boxShadow:T.shadow, border:`1px solid ${T.border}`,
+            }}>
+              {/* Exercise header */}
+              <div onClick={() => onExerciseDetail(ex.exerciseId)} style={{
+                padding:"12px 14px", display:"flex", alignItems:"center", gap:10, cursor:"pointer",
+                borderBottom:`1px solid ${T.border}`,
+              }}>
+                <div style={{
+                  width:32, height:32, borderRadius:10, background:`${mc}20`,
+                  display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
+                }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:mc }} />
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:800, color:T.text }}>{ex.name}</div>
+                  {ex.muscle && <div style={{ fontSize:10, color:mc, fontWeight:700, marginTop:1 }}>{ex.muscle}</div>}
+                </div>
+                <ChevronRight size={16} color={T.textMuted} />
+              </div>
+
+              {/* Sets table header */}
+              <div style={{ display:"flex", padding:"8px 14px 4px", gap:8 }}>
+                <div style={{ width:28, fontSize:9, fontWeight:700, color:T.textMuted, textAlign:"center" }}>SET</div>
+                <div style={{ flex:1, fontSize:9, fontWeight:700, color:T.textMuted, textAlign:"center" }}>KG</div>
+                <div style={{ flex:1, fontSize:9, fontWeight:700, color:T.textMuted, textAlign:"center" }}>REPS</div>
+                <div style={{ width:50, fontSize:9, fontWeight:700, color:T.textMuted, textAlign:"center" }}>VOL</div>
+              </div>
+
+              {/* Sets rows */}
+              {ex.sets.map((set, sIdx) => {
+                const vol = (set.weight||0) * (set.reps||0);
+                const isWarmup = set.type === "W";
+                return (
+                  <div key={sIdx} style={{
+                    display:"flex", padding:"7px 14px", gap:8, alignItems:"center",
+                    background: isWarmup ? `${T.orange}08` : sIdx % 2 === 0 ? "transparent" : `${T.bg}60`,
+                  }}>
+                    <div style={{
+                      width:28, height:24, borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center",
+                      fontSize:11, fontWeight:800,
+                      background: isWarmup ? `${T.orange}20` : `${T.teal}15`,
+                      color: isWarmup ? T.orange : T.teal,
+                    }}>
+                      {isWarmup ? "W" : sIdx + 1}
+                    </div>
+                    <div style={{ flex:1, textAlign:"center", fontSize:14, fontWeight:800, color:T.text }}>
+                      {set.weight || 0}
+                    </div>
+                    <div style={{ flex:1, textAlign:"center", fontSize:14, fontWeight:800, color:T.text }}>
+                      {set.reps || 0}
+                    </div>
+                    <div style={{ width:50, textAlign:"center", fontSize:12, fontWeight:700, color:T.textSec }}>
+                      {vol > 0 ? `${(vol/1000).toFixed(vol >= 1000 ? 1 : 2)}t` : "—"}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Exercise volume footer */}
+              <div style={{
+                padding:"8px 14px", borderTop:`1px solid ${T.border}`,
+                display:"flex", justifyContent:"space-between", alignItems:"center",
+              }}>
+                <div style={{ fontSize:11, fontWeight:700, color:T.textMuted }}>{ex.sets.length} serie</div>
+                <div style={{ fontSize:12, fontWeight:800, color:mc }}>
+                  Vol: {(ex.sets.reduce((s, x) => s + (x.weight||0)*(x.reps||0), 0) / 1000).toFixed(1)}t
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Delete button */}
+      <div style={{ padding:"8px 16px 24px" }}>
+        <button onClick={() => setConfirmDelete("first")} style={{
+          width:"100%", padding:"14px", background:`${T.red}08`, border:`1.5px solid ${T.red}25`,
+          borderRadius:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+          fontSize:13, fontWeight:700, color:T.red,
+        }}>
+          <Trash2 size={15} /> Elimina allenamento
+        </button>
+      </div>
+
+      {/* Double confirmation modal */}
+      {confirmDelete && (
+        <div style={{
+          position:"fixed", inset:0, zIndex:500, background:"rgba(0,0,0,0.5)",
+          display:"flex", alignItems:"center", justifyContent:"center", padding:24,
+        }} onClick={() => setConfirmDelete(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background:T.card, borderRadius:20, padding:"24px 20px", width:"100%", maxWidth:340,
+            boxShadow:"0 12px 40px rgba(0,0,0,0.25)",
+          }}>
+            {confirmDelete === "first" ? (
+              <>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+                  <div style={{ width:44, height:44, borderRadius:12, background:`${T.orange}15`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <AlertTriangle size={20} color={T.orange} />
+                  </div>
+                  <div style={{ fontSize:16, fontWeight:900, color:T.text }}>Eliminare allenamento?</div>
+                </div>
+                <div style={{ fontSize:13, color:T.textSec, lineHeight:1.5, marginBottom:20 }}>
+                  Stai per eliminare l'allenamento "{workout.routineName || "Senza nome"}" del {dayName}. Questa azione è irreversibile.
+                </div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <button onClick={() => setConfirmDelete(null)} style={{
+                    flex:1, padding:"12px 0", background:T.bg, border:`1.5px solid ${T.border}`,
+                    borderRadius:12, cursor:"pointer", fontSize:13, fontWeight:700, color:T.text,
+                  }}>Annulla</button>
+                  <button onClick={() => setConfirmDelete("final")} style={{
+                    flex:1, padding:"12px 0", background:T.orange, border:"none",
+                    borderRadius:12, cursor:"pointer", fontSize:13, fontWeight:700, color:"#fff",
+                  }}>Sì, continua</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+                  <div style={{ width:44, height:44, borderRadius:12, background:`${T.red}15`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <Trash2 size={20} color={T.red} />
+                  </div>
+                  <div style={{ fontSize:16, fontWeight:900, color:T.text }}>Conferma eliminazione</div>
+                </div>
+                <div style={{ fontSize:13, color:T.textSec, lineHeight:1.5, marginBottom:20 }}>
+                  Tutti i dati delle serie (kg, reps, volume) di questo allenamento verranno eliminati permanentemente.
+                </div>
+                <div style={{ display:"flex", gap:10 }}>
+                  <button onClick={() => setConfirmDelete(null)} style={{
+                    flex:1, padding:"12px 0", background:T.bg, border:`1.5px solid ${T.border}`,
+                    borderRadius:12, cursor:"pointer", fontSize:13, fontWeight:700, color:T.text,
+                  }}>Annulla</button>
+                  <button onClick={() => { onDelete(workout.id); setConfirmDelete(null); }} style={{
+                    flex:1, padding:"12px 0", background:T.red, border:"none",
+                    borderRadius:12, cursor:"pointer", fontSize:13, fontWeight:700, color:"#fff",
+                  }}>ELIMINA</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2300,11 +2439,9 @@ const WorkoutDetailScreen = ({ workout, sets, customExercises, onBack, onExercis
 /* ═══════════════════════════════════════════
    TAB: ALLENAMENTO
    ═══════════════════════════════════════════ */
-const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartRoutine, onSelectWorkout, suspendedWorkout, onResumeWorkout, onDeleteWorkout }) => {
+const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartRoutine, onSelectWorkout, suspendedWorkout, onResumeWorkout }) => {
   const [showRoutinePicker, setShowRoutinePicker] = useState(false);
   const [showAllWorkouts, setShowAllWorkouts] = useState(false);
-  const [confirmDeleteWk, setConfirmDeleteWk] = useState(null);
-
   return (
     <div style={{ padding: "16px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
 
@@ -2399,17 +2536,7 @@ const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartR
               {(showAllWorkouts ? workouts : workouts.slice(0, 3)).map((w, idx) => {
                 const sets = allSets.filter(s => s.workoutId === w.id);
                 return (
-                  <div key={w.id || idx} style={{ position: "relative" }}>
-                    <WorkoutCard workout={w} sets={sets} customExercises={customExercises} onTap={() => onSelectWorkout(w.id)} />
-                    {/* Delete button on workout card */}
-                    <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteWk(w); }} style={{
-                      position: "absolute", top: 10, right: 10, width: 30, height: 30, borderRadius: 8,
-                      background: `${T.red}10`, border: "none", cursor: "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2,
-                    }}>
-                      <Trash2 size={13} color={T.red} />
-                    </button>
-                  </div>
+                  <WorkoutCard key={w.id || idx} workout={w} sets={sets} customExercises={customExercises} onTap={() => onSelectWorkout(w.id)} />
                 );
               })}
             </div>
@@ -2436,34 +2563,6 @@ const TabAllenamento = ({ workouts, allSets, customExercises, routines, onStartR
           </>
         )}
       </div>
-
-      {/* Delete workout confirmation modal */}
-      {confirmDeleteWk && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 500, background: "rgba(0,0,0,0.5)",
-          display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
-        }} onClick={() => setConfirmDeleteWk(null)}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: T.card, borderRadius: 20, padding: "24px 20px", width: "100%", maxWidth: 340,
-            boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
-          }}>
-            <div style={{ fontSize: 16, fontWeight: 900, color: T.text, marginBottom: 8 }}>Eliminare allenamento?</div>
-            <div style={{ fontSize: 13, color: T.textSec, lineHeight: 1.5, marginBottom: 20 }}>
-              Stai per eliminare l'allenamento "{confirmDeleteWk.routineName || "Senza nome"}" e tutti i dati associati. Questa azione è irreversibile.
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setConfirmDeleteWk(null)} style={{
-                flex: 1, padding: "12px 0", background: T.bg, border: `1.5px solid ${T.border}`,
-                borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, color: T.text,
-              }}>Annulla</button>
-              <button onClick={() => { if (onDeleteWorkout) onDeleteWorkout(confirmDeleteWk.id); setConfirmDeleteWk(null); }} style={{
-                flex: 1, padding: "12px 0", background: T.red, border: "none",
-                borderRadius: 12, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#fff",
-              }}>Elimina</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Routine picker bottom sheet */}
       {showRoutinePicker && (
@@ -2653,140 +2752,246 @@ const TabRoutine = ({ routines, customExercises, onCreateRoutine, onEditRoutine,
 };
 
 /* ═══════════════════════════════════════════
-   TAB: STATISTICHE
+   HELPER: Estimated 1RM (Epley formula)
    ═══════════════════════════════════════════ */
-const TabStatistiche = ({ workouts, allSets, customExercises }) => {
-  const totalWorkouts = workouts.length;
-  const totalSets = allSets.length;
-  const totalVolume = allSets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
+const calc1RM = (w, r) => r === 1 ? w : Math.round(w * (1 + r / 30));
 
-  // Weekly volume for last 8 weeks
-  const weeklyVolume = useMemo(() => {
-    const weeks = [];
-    const now = new Date();
-    for (let w = 7; w >= 0; w--) {
-      const start = new Date(now); start.setDate(now.getDate() - w * 7 - 6);
-      const end = new Date(now); end.setDate(now.getDate() - w * 7);
-      const wSets = allSets.filter(s => {
-        const d = new Date(s.timestamp || 0);
-        return d >= start && d <= end;
-      });
-      const vol = wSets.reduce((sum, s) => sum + (s.weight||0)*(s.reps||0), 0);
-      const label = `S${8-w}`;
-      weeks.push({ week: label, volume: Math.round(vol / 1000 * 10) / 10 });
-    }
-    return weeks;
-  }, [allSets]);
+/* ═══════════════════════════════════════════
+   TAB: STATISTICHE — Full redesign
+   ═══════════════════════════════════════════ */
+const TabStatistiche = ({ workouts, allSets, customExercises, routines }) => {
+  const [section, setSection] = useState("overview"); // overview | routine | esercizi | muscoli | record
+  const [period, setPeriod] = useState("all"); // 30 | 90 | 365 | all
+  const [expandedRoutine, setExpandedRoutine] = useState(null);
+  const [expandedExercise, setExpandedExercise] = useState(null);
 
-  // Top exercises by total volume
-  const topExercises = useMemo(() => {
-    const byEx = {};
-    allSets.forEach(s => {
-      if (!byEx[s.exerciseId]) byEx[s.exerciseId] = { volume:0, sets:0 };
-      byEx[s.exerciseId].volume += (s.weight||0)*(s.reps||0);
-      byEx[s.exerciseId].sets += 1;
-    });
-    return Object.entries(byEx)
-      .map(([id, data]) => ({ id, name: getExerciseById(id, customExercises)?.name || id, ...data }))
-      .sort((a,b) => b.volume - a.volume)
-      .slice(0, 6);
-  }, [allSets, customExercises]);
+  // Period filter
+  const cutoff = useMemo(() => {
+    if (period === "all") return 0;
+    const d = new Date(); d.setDate(d.getDate() - Number(period));
+    return d.getTime();
+  }, [period]);
 
-  const maxVol = Math.max(...topExercises.map(e => e.volume), 1);
-  const maxWeekly = Math.max(...weeklyVolume.map(w => w.volume), 0.1);
+  const fWorkouts = useMemo(() => workouts.filter(w => new Date(w.startTime).getTime() >= cutoff), [workouts, cutoff]);
+  const fSets = useMemo(() => {
+    const wIds = new Set(fWorkouts.map(w => w.id));
+    return allSets.filter(s => wIds.has(s.workoutId));
+  }, [allSets, fWorkouts]);
 
-  // Streak
+  // Previous period for comparison
+  const prevCutoff = useMemo(() => {
+    if (period === "all") return 0;
+    const d = new Date(); d.setDate(d.getDate() - Number(period) * 2);
+    return d.getTime();
+  }, [period]);
+  const prevWorkouts = useMemo(() => {
+    if (period === "all") return [];
+    return workouts.filter(w => { const t = new Date(w.startTime).getTime(); return t >= prevCutoff && t < cutoff; });
+  }, [workouts, prevCutoff, cutoff, period]);
+  const prevSets = useMemo(() => {
+    const wIds = new Set(prevWorkouts.map(w => w.id));
+    return allSets.filter(s => wIds.has(s.workoutId));
+  }, [allSets, prevWorkouts]);
+
+  const totalVolume = fSets.reduce((s, x) => s + (x.weight||0)*(x.reps||0), 0);
+  const prevVolume = prevSets.reduce((s, x) => s + (x.weight||0)*(x.reps||0), 0);
+  const avgDuration = fWorkouts.length > 0 ? Math.round(fWorkouts.reduce((s, w) => s + (w.endTime ? (new Date(w.endTime) - new Date(w.startTime)) / 60000 : 0), 0) / fWorkouts.length) : 0;
+
+  // Streak (weeks)
   const streak = useMemo(() => {
     const dates = [...new Set(workouts.map(w => toISO(w.startTime)))].sort((a,b) => b.localeCompare(a));
     if (dates.length === 0) return 0;
     let s = 1;
     for (let i = 0; i < dates.length - 1; i++) {
-      const d1 = new Date(dates[i]);
-      const d2 = new Date(dates[i+1]);
-      const diff = (d1 - d2) / (1000*60*60*24);
+      const diff = (new Date(dates[i]) - new Date(dates[i+1])) / (1000*60*60*24);
       if (diff <= 7) s++; else break;
     }
     return s;
   }, [workouts]);
 
-  const statCards = [
-    { label:"Allenamenti", value:totalWorkouts, color:T.teal, icon:Dumbbell },
-    { label:"Set Totali", value:totalSets.toLocaleString(), color:T.purple, icon:BarChart3 },
-    { label:"Volume (ton)", value:(totalVolume/1000).toFixed(1), color:T.orange, icon:TrendingUp },
-    { label:"Streak sett.", value:streak, color:T.green, icon:Flame },
+  const pctChange = (curr, prev) => prev > 0 ? Math.round((curr - prev) / prev * 100) : (curr > 0 ? 100 : 0);
+
+  // Weekly volume chart
+  const weeklyVolume = useMemo(() => {
+    const weeks = []; const now = new Date();
+    for (let w = 7; w >= 0; w--) {
+      const end = new Date(now); end.setDate(now.getDate() - w * 7);
+      const start = new Date(end); start.setDate(end.getDate() - 6);
+      const vol = fSets.filter(s => { const d = new Date(s.timestamp||0); return d >= start && d <= end; })
+        .reduce((sum, s) => sum + (s.weight||0)*(s.reps||0), 0);
+      const label = `${start.getDate()}/${start.getMonth()+1}`;
+      weeks.push({ week: label, volume: Math.round(vol / 100) / 10 });
+    }
+    return weeks;
+  }, [fSets]);
+
+  // ── Section pill selector ──
+  const sections = [
+    { id:"overview", label:"Overview", icon:BarChart3 },
+    { id:"routine", label:"Routine", icon:FolderOpen },
+    { id:"esercizi", label:"Esercizi", icon:Dumbbell },
+    { id:"muscoli", label:"Muscoli", icon:Target },
+    { id:"record", label:"Record", icon:Trophy },
   ];
 
-  return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Stat card grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        {statCards.map((s, i) => {
-          const Icon = s.icon;
-          return (
-            <div key={i} style={{
-              background: T.card, borderRadius: 14, padding: "14px 14px",
-              boxShadow: T.shadow, border:`1px solid ${T.border}`,
-            }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                <div style={{ width:28, height:28, borderRadius:8, background:`${s.color}15`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  <Icon size={14} color={s.color} />
-                </div>
-                <div style={{ fontSize:10, fontWeight:700, color:T.textMuted, textTransform:"uppercase", letterSpacing:0.5 }}>{s.label}</div>
-              </div>
-              <div style={{ fontSize:26, fontWeight:900, color:s.color }}>{s.value}</div>
-            </div>
-          );
-        })}
-      </div>
+  const periodOptions = [
+    { id:"30", label:"30gg" }, { id:"90", label:"3 mesi" },
+    { id:"365", label:"1 anno" }, { id:"all", label:"Tutto" },
+  ];
 
-      {/* Weekly volume chart */}
-      {totalWorkouts > 0 && (
-        <div style={{ background:T.card, borderRadius:16, padding:16, boxShadow:T.shadow, border:`1px solid ${T.border}` }}>
-          <div style={{ fontSize:13, fontWeight:800, color:T.text, marginBottom:14 }}>Volume settimanale (ton)</div>
-          <div style={{ display:"flex", alignItems:"flex-end", gap:4, height:80 }}>
-            {weeklyVolume.map((w, i) => (
-              <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
-                <div style={{
-                  width:"100%", borderRadius:"4px 4px 0 0",
-                  height: w.volume > 0 ? `${Math.max(8, (w.volume / maxWeekly) * 72)}px` : 4,
-                  background: i === 7 ? T.gradient : `${T.teal}40`,
-                  transition:"height 0.3s",
-                }} />
-                <div style={{ fontSize:8, fontWeight:700, color:T.textMuted }}>{w.week}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+  // ── Muscle distribution ──
+  const muscleData = useMemo(() => {
+    const byMuscle = {};
+    fSets.forEach(s => {
+      const m = getExerciseById(s.exerciseId, customExercises)?.muscle || "Altro";
+      if (!byMuscle[m]) byMuscle[m] = { sets:0, volume:0, exercises: new Set() };
+      byMuscle[m].sets++;
+      byMuscle[m].volume += (s.weight||0)*(s.reps||0);
+      byMuscle[m].exercises.add(s.exerciseId);
+    });
+    return Object.entries(byMuscle)
+      .map(([name, d]) => ({ name, sets:d.sets, volume:d.volume, exCount:d.exercises.size, color: MUSCLE_COLORS[name]||T.teal }))
+      .sort((a,b) => b.sets - a.sets);
+  }, [fSets, customExercises]);
 
-      {/* Top exercises */}
-      {topExercises.length > 0 && (
-        <div style={{ background:T.card, borderRadius:16, padding:16, boxShadow:T.shadow, border:`1px solid ${T.border}` }}>
-          <div style={{ fontSize:13, fontWeight:800, color:T.text, marginBottom:14 }}>Esercizi più frequenti</div>
-          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            {topExercises.map((ex, i) => (
-              <div key={i}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:T.text, flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginRight:8 }}>
-                    {i+1}. {ex.name}
-                  </div>
-                  <div style={{ fontSize:11, fontWeight:800, color:T.teal, flexShrink:0 }}>
-                    {(ex.volume/1000).toFixed(1)}t
-                  </div>
-                </div>
-                <div style={{ height:5, background:T.bg, borderRadius:3, overflow:"hidden" }}>
-                  <div style={{
-                    height:"100%", width:`${(ex.volume/maxVol)*100}%`,
-                    background:T.gradient, borderRadius:3,
-                  }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+  // ── All exercises global ──
+  const allExerciseStats = useMemo(() => {
+    const byEx = {};
+    fSets.forEach(s => {
+      if (!byEx[s.exerciseId]) byEx[s.exerciseId] = { sets:0, volume:0, maxW:0, maxR:0, best1RM:0, sessions: new Set() };
+      const d = byEx[s.exerciseId];
+      d.sets++;
+      d.volume += (s.weight||0)*(s.reps||0);
+      if ((s.weight||0) > d.maxW) d.maxW = s.weight;
+      if ((s.reps||0) > d.maxR) d.maxR = s.reps;
+      const est = calc1RM(s.weight||0, s.reps||0);
+      if (est > d.best1RM) d.best1RM = est;
+      d.sessions.add(s.workoutId);
+    });
+    return Object.entries(byEx)
+      .map(([id, d]) => {
+        const info = getExerciseById(id, customExercises);
+        return { id, name: info?.name||id, muscle: info?.muscle||"", ...d, sessionCount: d.sessions.size };
+      })
+      .sort((a,b) => b.volume - a.volume);
+  }, [fSets, customExercises]);
 
-      {totalWorkouts === 0 && (
+  // ── Per-routine stats ──
+  const routineStats = useMemo(() => {
+    return (routines||[]).map(r => {
+      const rWorkouts = fWorkouts.filter(w => w.routineId === r.id);
+      const rWorkoutIds = new Set(rWorkouts.map(w => w.id));
+      const rSets = fSets.filter(s => rWorkoutIds.has(s.workoutId));
+      const vol = rSets.reduce((sum, s) => sum + (s.weight||0)*(s.reps||0), 0);
+      const last = rWorkouts.length > 0 ? rWorkouts[0].startTime : null;
+
+      // Per-exercise in this routine
+      const byEx = {};
+      rSets.forEach(s => {
+        if (!byEx[s.exerciseId]) byEx[s.exerciseId] = { sessions: {}, maxW:0, maxR:0, best1RM:0 };
+        const d = byEx[s.exerciseId];
+        if (!d.sessions[s.workoutId]) d.sessions[s.workoutId] = { sets:[], date:null };
+        d.sessions[s.workoutId].sets.push(s);
+        if ((s.weight||0) > d.maxW) d.maxW = s.weight;
+        if ((s.reps||0) > d.maxR) d.maxR = s.reps;
+        const est = calc1RM(s.weight||0, s.reps||0);
+        if (est > d.best1RM) d.best1RM = est;
+      });
+
+      // Add workout dates to sessions
+      rWorkouts.forEach(w => {
+        Object.keys(byEx).forEach(exId => {
+          if (byEx[exId].sessions[w.id]) byEx[exId].sessions[w.id].date = w.startTime;
+        });
+      });
+
+      const exercises = Object.entries(byEx).map(([exId, d]) => {
+        const info = getExerciseById(exId, customExercises);
+        const sessionsArr = Object.values(d.sessions).filter(ss => ss.date).sort((a,b) => new Date(a.date) - new Date(b.date));
+        const progression = sessionsArr.map(ss => {
+          const best = Math.max(...ss.sets.map(s => calc1RM(s.weight||0, s.reps||0)));
+          const vol = ss.sets.reduce((sum, s) => sum + (s.weight||0)*(s.reps||0), 0);
+          const maxW = Math.max(...ss.sets.map(s => s.weight||0));
+          return { date: ss.date, best1RM: best, volume: vol, maxWeight: maxW };
+        });
+        const first = progression[0];
+        const last = progression[progression.length - 1];
+        const improvement1RM = first && last && first.best1RM > 0
+          ? Math.round((last.best1RM - first.best1RM) / first.best1RM * 100) : 0;
+        return {
+          id: exId, name: info?.name||exId, muscle: info?.muscle||"",
+          maxW: d.maxW, maxR: d.maxR, best1RM: d.best1RM,
+          sessionCount: sessionsArr.length, progression, improvement1RM,
+        };
+      });
+
+      return { id: r.id, name: r.name, count: rWorkouts.length, volume: vol, lastDate: last, exercises };
+    }).filter(r => r.count > 0 || (routines||[]).find(rt => rt.id === r.id));
+  }, [routines, fWorkouts, fSets, customExercises]);
+
+  // ── Personal records (all time, not filtered by period) ──
+  const personalRecords = useMemo(() => {
+    const byEx = {};
+    allSets.forEach(s => {
+      if (!byEx[s.exerciseId]) byEx[s.exerciseId] = { maxW:0, maxWDate:"", maxR:0, maxRDate:"", best1RM:0, best1RMDate:"", bestVolSession:0, bestVolSessionDate:"" };
+      const d = byEx[s.exerciseId];
+      if ((s.weight||0) > d.maxW) { d.maxW = s.weight; d.maxWDate = s.timestamp; }
+      if ((s.reps||0) > d.maxR) { d.maxR = s.reps; d.maxRDate = s.timestamp; }
+      const est = calc1RM(s.weight||0, s.reps||0);
+      if (est > d.best1RM) { d.best1RM = est; d.best1RMDate = s.timestamp; }
+    });
+    // Best volume per session
+    workouts.forEach(w => {
+      const wSets = allSets.filter(s => s.workoutId === w.id);
+      const byExInW = {};
+      wSets.forEach(s => {
+        if (!byExInW[s.exerciseId]) byExInW[s.exerciseId] = 0;
+        byExInW[s.exerciseId] += (s.weight||0)*(s.reps||0);
+      });
+      Object.entries(byExInW).forEach(([exId, vol]) => {
+        if (byEx[exId] && vol > byEx[exId].bestVolSession) {
+          byEx[exId].bestVolSession = vol; byEx[exId].bestVolSessionDate = w.startTime;
+        }
+      });
+    });
+    return Object.entries(byEx)
+      .map(([id, d]) => ({ id, name: getExerciseById(id, customExercises)?.name||id, muscle: getExerciseById(id, customExercises)?.muscle||"", ...d }))
+      .filter(r => r.maxW > 0)
+      .sort((a,b) => b.best1RM - a.best1RM);
+  }, [allSets, workouts, customExercises]);
+
+  // Check if PR is recent (last 14 days)
+  const isRecent = (dateStr) => {
+    if (!dateStr) return false;
+    return (Date.now() - new Date(dateStr).getTime()) < 14 * 86400000;
+  };
+
+  // ── Exercise detail: per-session progression for global view ──
+  const getExerciseProgression = (exId) => {
+    const sessionsMap = {};
+    allSets.filter(s => s.exerciseId === exId).forEach(s => {
+      if (!sessionsMap[s.workoutId]) sessionsMap[s.workoutId] = [];
+      sessionsMap[s.workoutId].push(s);
+    });
+    return workouts
+      .filter(w => sessionsMap[w.id])
+      .sort((a,b) => new Date(a.startTime) - new Date(b.startTime))
+      .map(w => {
+        const ss = sessionsMap[w.id];
+        return {
+          date: w.startTime,
+          routineName: w.routineName || "—",
+          best1RM: Math.max(...ss.map(s => calc1RM(s.weight||0, s.reps||0))),
+          maxWeight: Math.max(...ss.map(s => s.weight||0)),
+          volume: ss.reduce((sum, s) => sum + (s.weight||0)*(s.reps||0), 0),
+          sets: ss,
+        };
+      });
+  };
+
+  if (workouts.length === 0) {
+    return (
+      <div style={{ padding:16 }}>
         <div style={{
           background:T.card, borderRadius:16, padding:"40px 20px",
           boxShadow:T.shadow, border:`1px solid ${T.border}`, textAlign:"center",
@@ -2795,7 +3000,435 @@ const TabStatistiche = ({ workouts, allSets, customExercises }) => {
           <div style={{ fontSize:15, fontWeight:800, color:T.text, marginBottom:6 }}>Nessun dato ancora</div>
           <div style={{ fontSize:13, color:T.textSec }}>Le statistiche appariranno dopo il primo allenamento</div>
         </div>
-      )}
+      </div>
+    );
+  }
+
+  // ── Mini sparkline component ──
+  const Sparkline = ({ data, color, height=32 }) => {
+    if (!data || data.length < 2) return null;
+    const max = Math.max(...data, 0.1);
+    const min = Math.min(...data);
+    const range = max - min || 1;
+    const w = 100;
+    const pts = data.map((v, i) => `${(i/(data.length-1))*w},${height - ((v-min)/range)*height}`).join(" ");
+    return (
+      <svg viewBox={`0 0 ${w} ${height}`} style={{ width:"100%", height }} preserveAspectRatio="none">
+        <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  };
+
+  // ── Trend badge ──
+  const TrendBadge = ({ curr, prev }) => {
+    const pct = pctChange(curr, prev);
+    if (period === "all" || prev === 0) return null;
+    const up = pct >= 0;
+    return (
+      <span style={{
+        fontSize:9, fontWeight:800, padding:"2px 6px", borderRadius:8, marginLeft:6,
+        background: up ? `${T.green}20` : `${T.red}20`,
+        color: up ? T.green : T.red,
+      }}>{up ? "↑" : "↓"}{Math.abs(pct)}%</span>
+    );
+  };
+
+  return (
+    <div style={{ padding:"0 0 16px", display:"flex", flexDirection:"column", gap:0 }}>
+      {/* Section pill selector */}
+      <div style={{ padding:"12px 16px 0", overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+        <div style={{ display:"flex", gap:6, paddingBottom:10 }}>
+          {sections.map(s => {
+            const active = section === s.id;
+            const Icon = s.icon;
+            return (
+              <button key={s.id} onClick={() => setSection(s.id)} style={{
+                padding:"7px 14px", borderRadius:20, border:"none", cursor:"pointer",
+                background: active ? T.teal : T.card, color: active ? "#fff" : T.textSec,
+                fontSize:11, fontWeight:800, whiteSpace:"nowrap",
+                display:"flex", alignItems:"center", gap:5,
+                boxShadow: active ? `0 2px 8px ${T.teal}40` : T.shadow,
+              }}>
+                <Icon size={13} /> {s.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Period selector */}
+      <div style={{ padding:"0 16px 12px", display:"flex", gap:4 }}>
+        {periodOptions.map(p => (
+          <button key={p.id} onClick={() => setPeriod(p.id)} style={{
+            flex:1, padding:"6px 0", borderRadius:10, border:"none", cursor:"pointer",
+            background: period === p.id ? `${T.teal}15` : "transparent",
+            color: period === p.id ? T.teal : T.textMuted,
+            fontSize:11, fontWeight:700,
+          }}>{p.label}</button>
+        ))}
+      </div>
+
+      <div style={{ padding:"0 16px", display:"flex", flexDirection:"column", gap:12 }}>
+
+      {/* ════════ OVERVIEW ════════ */}
+      {section === "overview" && (<>
+        {/* Stat cards */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+          {[
+            { label:"Allenamenti", value:fWorkouts.length, prev:prevWorkouts.length, color:T.teal, icon:Dumbbell },
+            { label:"Volume (ton)", value:+(totalVolume/1000).toFixed(1), prev:+(prevVolume/1000).toFixed(1), color:T.orange, icon:TrendingUp },
+            { label:"Durata media", value:`${avgDuration}min`, prev:0, color:T.purple, icon:Clock },
+            { label:"Streak sett.", value:streak, prev:0, color:T.green, icon:Flame },
+          ].map((s, i) => {
+            const Icon = s.icon;
+            return (
+              <div key={i} style={{ background:T.card, borderRadius:14, padding:"14px", boxShadow:T.shadow, border:`1px solid ${T.border}` }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+                  <div style={{ width:26, height:26, borderRadius:8, background:`${s.color}15`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    <Icon size={13} color={s.color} />
+                  </div>
+                  <div style={{ fontSize:9, fontWeight:700, color:T.textMuted, textTransform:"uppercase", letterSpacing:0.5 }}>{s.label}</div>
+                </div>
+                <div style={{ display:"flex", alignItems:"baseline" }}>
+                  <div style={{ fontSize:24, fontWeight:900, color:s.color }}>{s.value}</div>
+                  {typeof s.prev === "number" && s.prev > 0 && <TrendBadge curr={typeof s.value === "number" ? s.value : 0} prev={s.prev} />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Weekly volume chart */}
+        <div style={{ background:T.card, borderRadius:16, padding:16, boxShadow:T.shadow, border:`1px solid ${T.border}` }}>
+          <div style={{ fontSize:13, fontWeight:800, color:T.text, marginBottom:12 }}>Volume settimanale</div>
+          <ResponsiveContainer width="100%" height={100}>
+            <BarChart data={weeklyVolume} barSize={14}>
+              <XAxis dataKey="week" tick={{ fontSize:9, fill:T.textMuted }} axisLine={false} tickLine={false} />
+              <YAxis hide />
+              <Tooltip formatter={(v) => [`${v} t`, "Volume"]} contentStyle={{ fontSize:11, borderRadius:8 }} />
+              <Bar dataKey="volume" radius={[4,4,0,0]}>
+                {weeklyVolume.map((_, i) => (
+                  <Cell key={i} fill={i === weeklyVolume.length - 1 ? T.teal : `${T.teal}50`} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Top 5 exercises */}
+        {allExerciseStats.length > 0 && (
+          <div style={{ background:T.card, borderRadius:16, padding:16, boxShadow:T.shadow, border:`1px solid ${T.border}` }}>
+            <div style={{ fontSize:13, fontWeight:800, color:T.text, marginBottom:12 }}>Top esercizi per volume</div>
+            {allExerciseStats.slice(0,5).map((ex, i) => {
+              const maxV = allExerciseStats[0].volume || 1;
+              const mc = MUSCLE_COLORS[ex.muscle] || T.teal;
+              return (
+                <div key={i} style={{ marginBottom:10 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:T.text, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      <span style={{ color:T.textMuted, marginRight:4 }}>{i+1}.</span>{ex.name}
+                    </div>
+                    <div style={{ fontSize:11, fontWeight:800, color:mc, flexShrink:0, marginLeft:8 }}>
+                      {(ex.volume/1000).toFixed(1)}t
+                    </div>
+                  </div>
+                  <div style={{ height:5, background:T.bg, borderRadius:3, overflow:"hidden" }}>
+                    <div style={{ height:"100%", width:`${(ex.volume/maxV)*100}%`, background:mc, borderRadius:3 }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </>)}
+
+      {/* ════════ PER ROUTINE ════════ */}
+      {section === "routine" && (<>
+        {routineStats.map(rs => {
+          const isOpen = expandedRoutine === rs.id;
+          return (
+            <div key={rs.id} style={{ background:T.card, borderRadius:16, boxShadow:T.shadow, border:`1px solid ${T.border}`, overflow:"hidden" }}>
+              <button onClick={() => setExpandedRoutine(isOpen ? null : rs.id)} style={{
+                width:"100%", padding:"14px 16px", background:"transparent", border:"none", cursor:"pointer",
+                display:"flex", alignItems:"center", gap:12, textAlign:"left",
+              }}>
+                <div style={{ width:40, height:40, borderRadius:12, background:T.tealLight, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  <FolderOpen size={18} color={T.teal} />
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:900, color:T.text }}>{rs.name}</div>
+                  <div style={{ fontSize:11, color:T.textSec, marginTop:2 }}>
+                    {rs.count}× completata · {(rs.volume/1000).toFixed(1)}t volume
+                    {rs.lastDate && ` · Ultima: ${formatDateFull(rs.lastDate)}`}
+                  </div>
+                </div>
+                <ChevronDown size={16} color={T.textMuted} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition:"transform 0.2s" }} />
+              </button>
+
+              {isOpen && (
+                <div style={{ padding:"0 12px 14px", display:"flex", flexDirection:"column", gap:8 }}>
+                  {rs.exercises.map((ex) => {
+                    const mc = MUSCLE_COLORS[ex.muscle] || T.teal;
+                    const prog = ex.progression;
+                    return (
+                      <div key={ex.id} style={{ background:T.bg, borderRadius:12, padding:"10px 12px", border:`1px solid ${T.border}` }}>
+                        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+                          <div>
+                            <div style={{ fontSize:13, fontWeight:800, color:T.text }}>{ex.name}</div>
+                            <div style={{ fontSize:10, color:mc, fontWeight:700 }}>{ex.muscle}</div>
+                          </div>
+                          {ex.improvement1RM !== 0 && (
+                            <span style={{
+                              fontSize:10, fontWeight:800, padding:"3px 8px", borderRadius:8,
+                              background: ex.improvement1RM > 0 ? `${T.green}20` : `${T.red}20`,
+                              color: ex.improvement1RM > 0 ? T.green : T.red,
+                            }}>
+                              {ex.improvement1RM > 0 ? "↑" : "↓"}{Math.abs(ex.improvement1RM)}% 1RM
+                            </span>
+                          )}
+                        </div>
+                        {/* Mini stats row */}
+                        <div style={{ display:"flex", gap:8, marginBottom:6 }}>
+                          {[
+                            { l:"Max kg", v:`${ex.maxW}`, c:mc },
+                            { l:"Max reps", v:`${ex.maxR}`, c:T.purple },
+                            { l:"1RM", v:`${ex.best1RM}`, c:T.orange },
+                            { l:"Sessioni", v:`${ex.sessionCount}`, c:T.teal },
+                          ].map((s, i) => (
+                            <div key={i} style={{ flex:1, textAlign:"center" }}>
+                              <div style={{ fontSize:8, fontWeight:700, color:T.textMuted, textTransform:"uppercase" }}>{s.l}</div>
+                              <div style={{ fontSize:14, fontWeight:900, color:s.c }}>{s.v}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Sparkline 1RM progression */}
+                        {prog.length >= 2 && (
+                          <div style={{ marginTop:4 }}>
+                            <div style={{ fontSize:9, fontWeight:700, color:T.textMuted, marginBottom:4 }}>1RM stimato nel tempo</div>
+                            <Sparkline data={prog.map(p => p.best1RM)} color={mc} height={28} />
+                            <div style={{ display:"flex", justifyContent:"space-between", marginTop:2 }}>
+                              <span style={{ fontSize:8, color:T.textMuted }}>{formatDateFull(prog[0].date)}</span>
+                              <span style={{ fontSize:8, color:T.textMuted }}>{formatDateFull(prog[prog.length-1].date)}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {rs.exercises.length === 0 && (
+                    <div style={{ textAlign:"center", padding:16, color:T.textMuted, fontSize:12 }}>
+                      Nessun dato per questa routine nel periodo selezionato
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {routineStats.filter(r => r.count > 0).length === 0 && (
+          <div style={{ textAlign:"center", padding:20, color:T.textMuted, fontSize:13 }}>
+            Nessun allenamento nel periodo selezionato
+          </div>
+        )}
+      </>)}
+
+      {/* ════════ PER ESERCIZIO (GLOBAL) ════════ */}
+      {section === "esercizi" && (<>
+        {allExerciseStats.map(ex => {
+          const mc = MUSCLE_COLORS[ex.muscle] || T.teal;
+          const isOpen = expandedExercise === ex.id;
+          const prog = isOpen ? getExerciseProgression(ex.id) : [];
+          return (
+            <div key={ex.id} style={{ background:T.card, borderRadius:14, boxShadow:T.shadow, border:`1px solid ${T.border}`, overflow:"hidden" }}>
+              <button onClick={() => setExpandedExercise(isOpen ? null : ex.id)} style={{
+                width:"100%", padding:"12px 14px", background:"transparent", border:"none", cursor:"pointer",
+                display:"flex", alignItems:"center", gap:10, textAlign:"left",
+              }}>
+                <div style={{ width:32, height:32, borderRadius:10, background:`${mc}20`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:mc }} />
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:800, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{ex.name}</div>
+                  <div style={{ fontSize:10, color:T.textSec }}>
+                    {ex.sessionCount}× · Max {ex.maxW}kg · 1RM {ex.best1RM}kg
+                  </div>
+                </div>
+                <div style={{ fontSize:12, fontWeight:800, color:mc, marginRight:4 }}>
+                  {(ex.volume/1000).toFixed(1)}t
+                </div>
+                <ChevronDown size={14} color={T.textMuted} style={{ transform: isOpen ? "rotate(180deg)" : "none", transition:"transform 0.2s" }} />
+              </button>
+
+              {isOpen && prog.length > 0 && (
+                <div style={{ padding:"0 12px 12px" }}>
+                  {/* 1RM chart */}
+                  {prog.length >= 2 && (
+                    <div style={{ background:T.bg, borderRadius:10, padding:10, marginBottom:8 }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:T.textMuted, marginBottom:6 }}>1RM stimato nel tempo</div>
+                      <Sparkline data={prog.map(p => p.best1RM)} color={mc} height={36} />
+                      <div style={{ display:"flex", justifyContent:"space-between", marginTop:3 }}>
+                        <span style={{ fontSize:8, color:T.textMuted }}>{formatDateFull(prog[0].date)}</span>
+                        <span style={{ fontSize:8, color:T.textMuted }}>{formatDateFull(prog[prog.length-1].date)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {/* Session history */}
+                  <div style={{ fontSize:10, fontWeight:700, color:T.textMuted, marginBottom:6, textTransform:"uppercase" }}>Storico sessioni</div>
+                  {prog.slice(-8).reverse().map((p, i) => (
+                    <div key={i} style={{
+                      display:"flex", alignItems:"center", gap:8, padding:"6px 0",
+                      borderBottom: i < Math.min(prog.length, 8) - 1 ? `1px solid ${T.border}` : "none",
+                    }}>
+                      <div style={{ fontSize:11, color:T.textSec, width:70 }}>{formatDateFull(p.date)}</div>
+                      <div style={{ fontSize:9, color:T.textMuted, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.routineName}</div>
+                      <div style={{ fontSize:11, fontWeight:800, color:T.text }}>{p.maxWeight}kg</div>
+                      <div style={{ fontSize:10, fontWeight:700, color:mc }}>{(p.volume/1000).toFixed(1)}t</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </>)}
+
+      {/* ════════ PER GRUPPO MUSCOLARE ════════ */}
+      {section === "muscoli" && (<>
+        {/* Donut chart */}
+        {muscleData.length > 0 && (
+          <div style={{ background:T.card, borderRadius:16, padding:16, boxShadow:T.shadow, border:`1px solid ${T.border}` }}>
+            <div style={{ fontSize:13, fontWeight:800, color:T.text, marginBottom:12 }}>Distribuzione set per muscolo</div>
+            <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+              <div style={{ width:120, height:120, flexShrink:0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={muscleData} dataKey="sets" nameKey="name" cx="50%" cy="50%" innerRadius={30} outerRadius={55} paddingAngle={2}>
+                      {muscleData.map((m, i) => <Cell key={i} fill={m.color} />)}
+                    </Pie>
+                    <Tooltip formatter={(v, name) => [`${v} set`, name]} contentStyle={{ fontSize:11, borderRadius:8 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ flex:1, display:"flex", flexDirection:"column", gap:4 }}>
+                {muscleData.map((m, i) => {
+                  const totalSets = muscleData.reduce((s, x) => s + x.sets, 0);
+                  const pct = totalSets > 0 ? Math.round(m.sets / totalSets * 100) : 0;
+                  return (
+                    <div key={i} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <div style={{ width:8, height:8, borderRadius:"50%", background:m.color, flexShrink:0 }} />
+                      <div style={{ fontSize:11, fontWeight:700, color:T.text, flex:1 }}>{m.name}</div>
+                      <div style={{ fontSize:10, fontWeight:800, color:m.color }}>{pct}%</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Muscle detail list */}
+        {muscleData.map((m, i) => {
+          const totalS = muscleData.reduce((s, x) => s + x.sets, 0);
+          const pct = totalS > 0 ? Math.round(m.sets / totalS * 100) : 0;
+          return (
+            <div key={i} style={{ background:T.card, borderRadius:14, padding:"12px 14px", boxShadow:T.shadow, border:`1px solid ${T.border}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+                <div style={{ width:32, height:32, borderRadius:10, background:`${m.color}20`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  <Target size={14} color={m.color} />
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:800, color:T.text }}>{m.name}</div>
+                  <div style={{ fontSize:10, color:T.textSec }}>{m.exCount} esercizi · {m.sets} set · {(m.volume/1000).toFixed(1)}t</div>
+                </div>
+                <div style={{ fontSize:18, fontWeight:900, color:m.color }}>{pct}%</div>
+              </div>
+              <div style={{ height:6, background:T.bg, borderRadius:3, overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${pct}%`, background:m.color, borderRadius:3 }} />
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Push/Pull balance */}
+        {(() => {
+          const push = muscleData.filter(m => ["Petto","Spalle","Tricipiti"].includes(m.name)).reduce((s, m) => s + m.sets, 0);
+          const pull = muscleData.filter(m => ["Schiena","Bicipiti"].includes(m.name)).reduce((s, m) => s + m.sets, 0);
+          const upper = muscleData.filter(m => !["Gambe","Core"].includes(m.name)).reduce((s, m) => s + m.sets, 0);
+          const lower = muscleData.filter(m => ["Gambe"].includes(m.name)).reduce((s, m) => s + m.sets, 0);
+          if (push + pull === 0 && upper + lower === 0) return null;
+          return (
+            <div style={{ background:T.card, borderRadius:14, padding:"14px", boxShadow:T.shadow, border:`1px solid ${T.border}` }}>
+              <div style={{ fontSize:13, fontWeight:800, color:T.text, marginBottom:12 }}>Bilancio muscolare</div>
+              {[
+                { l:"Push", r:"Pull", lv:push, rv:pull, lc:"#FF6B6B", rc:"#4ECDC4" },
+                { l:"Upper", r:"Lower", lv:upper, rv:lower, lc:"#A78BFA", rc:"#FF8C42" },
+              ].map((b, i) => {
+                const total = b.lv + b.rv || 1;
+                const lPct = Math.round(b.lv / total * 100);
+                return (
+                  <div key={i} style={{ marginBottom: i === 0 ? 10 : 0 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                      <span style={{ fontSize:11, fontWeight:800, color:b.lc }}>{b.l} {lPct}%</span>
+                      <span style={{ fontSize:11, fontWeight:800, color:b.rc }}>{b.r} {100-lPct}%</span>
+                    </div>
+                    <div style={{ display:"flex", height:8, borderRadius:4, overflow:"hidden" }}>
+                      <div style={{ width:`${lPct}%`, background:b.lc }} />
+                      <div style={{ width:`${100-lPct}%`, background:b.rc }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </>)}
+
+      {/* ════════ RECORD PERSONALI ════════ */}
+      {section === "record" && (<>
+        {personalRecords.map(pr => {
+          const mc = MUSCLE_COLORS[pr.muscle] || T.teal;
+          return (
+            <div key={pr.id} style={{ background:T.card, borderRadius:14, padding:"12px 14px", boxShadow:T.shadow, border:`1px solid ${T.border}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+                <div style={{ width:32, height:32, borderRadius:10, background:`${mc}20`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  <Trophy size={14} color={mc} />
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:800, color:T.text }}>{pr.name}</div>
+                  {pr.muscle && <div style={{ fontSize:10, color:mc, fontWeight:700 }}>{pr.muscle}</div>}
+                </div>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6 }}>
+                {[
+                  { icon:"🏋️", label:"Max peso", value:`${pr.maxW}kg`, date:pr.maxWDate },
+                  { icon:"🔄", label:"Max reps", value:`${pr.maxR}`, date:pr.maxRDate },
+                  { icon:"💪", label:"Best 1RM", value:`${pr.best1RM}kg`, date:pr.best1RMDate },
+                  { icon:"📊", label:"Best vol sessione", value:pr.bestVolSession > 0 ? `${(pr.bestVolSession/1000).toFixed(1)}t` : "—", date:pr.bestVolSessionDate },
+                ].map((r, i) => (
+                  <div key={i} style={{ background:T.bg, borderRadius:10, padding:"8px 10px", position:"relative" }}>
+                    <div style={{ fontSize:9, fontWeight:700, color:T.textMuted, textTransform:"uppercase" }}>{r.icon} {r.label}</div>
+                    <div style={{ fontSize:16, fontWeight:900, color:T.text, marginTop:2 }}>{r.value}</div>
+                    {r.date && <div style={{ fontSize:9, color:T.textMuted, marginTop:2 }}>{formatDateFull(r.date)}</div>}
+                    {isRecent(r.date) && (
+                      <span style={{
+                        position:"absolute", top:6, right:6, fontSize:8, fontWeight:800,
+                        padding:"1px 5px", borderRadius:6, background:`${T.green}20`, color:T.green,
+                      }}>NEW</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {personalRecords.length === 0 && (
+          <div style={{ textAlign:"center", padding:20, color:T.textMuted, fontSize:13 }}>
+            Nessun record ancora — completa il tuo primo allenamento!
+          </div>
+        )}
+      </>)}
+
+      </div>
     </div>
   );
 };
@@ -3131,6 +3764,7 @@ const MainScreenWithTabs = (props) => {
             workouts={workouts}
             allSets={allSets}
             customExercises={customExercises}
+            routines={routines}
           />
         )}
       </div>
