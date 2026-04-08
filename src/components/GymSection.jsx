@@ -2757,11 +2757,6 @@ const TabRoutine = ({ routines, customExercises, onCreateRoutine, onEditRoutine,
 const calc1RM = (w, r) => r === 1 ? w : Math.round(w * (1 + r / 30));
 
 /* ═══════════════════════════════════════════
-   HELPER: Estimated 1RM (Epley formula)
-   ═══════════════════════════════════════════ */
-const calc1RM = (w, r) => r === 1 ? w : Math.round(w * (1 + r / 30));
-
-/* ═══════════════════════════════════════════
    BODY SILHOUETTE SVG — muscle heatmap
    ═══════════════════════════════════════════ */
 const BodySilhouette = ({ muscleData }) => {
