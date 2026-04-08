@@ -3004,6 +3004,48 @@ const TABS = [
   { id: "statistiche", label: "Statistiche", icon: BarChart3 },
 ];
 
+const GymBottomNav = ({ onAdd, onNavigate }) => {
+  const tabs = [
+    { id: "dashboard", Icon: Home,       label: "Home"    },
+    { id: "food",      Icon: Utensils,   label: "Cibo"    },
+    { id: "add",       Icon: null,       label: ""        },
+    { id: "fitness",   Icon: Footprints, label: "Fitness" },
+    { id: "gym",       Icon: Dumbbell,   label: "Gym"     },
+  ];
+  return (
+    <div style={{
+      position:"fixed",bottom:0,left:0,right:0,background:T.card,
+      borderTop:`1px solid ${T.border}`,display:"flex",
+      justifyContent:"space-around",alignItems:"flex-end",
+      padding:"6px 8px 22px",zIndex:20,
+      boxShadow:"0 -4px 20px rgba(0,0,0,0.06)",
+    }}>
+      {tabs.map(tab => {
+        if (tab.id === "add") return (
+          <button key="add" onClick={onAdd} style={{
+            width:54,height:54,borderRadius:"50%",border:"none",
+            background:T.gradient,color:"#fff",cursor:"pointer",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            boxShadow:"0 4px 24px rgba(2,128,144,0.35)",transform:"translateY(-14px)",
+          }}><Plus size={26} strokeWidth={2.5}/></button>
+        );
+        const isActive = tab.id === "gym";
+        return (
+          <button key={tab.id} onClick={() => onNavigate(tab.id)} style={{
+            background:"none",border:"none",cursor:"pointer",
+            display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+            padding:"6px 14px",opacity:isActive?1:0.5,transition:"opacity 0.2s",
+          }}>
+            <tab.Icon size={21} color={isActive?T.teal:T.textSec} strokeWidth={isActive?2.3:1.8}/>
+            <span style={{fontSize:10,fontWeight:700,color:isActive?T.teal:T.textSec}}>{tab.label}</span>
+            {isActive && <div style={{width:4,height:4,borderRadius:2,background:T.teal,marginTop:-1}}/>}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 const MainScreenWithTabs = (props) => {
   const {
     activeTab, setActiveTab, workouts, routines, customExercises,
@@ -3495,6 +3537,8 @@ export default function GymSection({ onNavigate }) {
         onResumeWorkout={handleResumeWorkout}
         onDeleteWorkout={handleDeleteWorkout}
       />
+      <div style={{ height: 80 }} />
+      <GymBottomNav onAdd={() => onNavigate("add")} onNavigate={onNavigate} />
       {toast && (
         <Toast
           message={toast.message}
