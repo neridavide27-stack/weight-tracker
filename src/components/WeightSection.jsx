@@ -125,122 +125,174 @@ const THEMES = {
 
 function SnapshotCard({ smoothed, sorted, settings, T, onShowHistory }) {
   const currentTrend = smoothed.length > 0 ? smoothed[smoothed.length - 1].trend : null;
-  const bmi = calcBMI(currentTrend, settings.height);
-  const cat = bmiCategory(bmi);
+  const bmi     = calcBMI(currentTrend, settings.height);
+  const cat     = bmiCategory(bmi);
   const catColor = bmiColor(bmi);
 
+  // Streak
   const streak = useMemo(() => {
     if (sorted.length === 0) return 0;
     const dateSet = new Set(sorted.map((e) => e.date));
     const todayStr = today();
-    const yd = new Date();
-    yd.setDate(yd.getDate() - 1);
+    const yd = new Date(); yd.setDate(yd.getDate() - 1);
     const yesterdayStr = toISO(yd);
     if (!dateSet.has(todayStr) && !dateSet.has(yesterdayStr)) return 0;
     let cur = new Date(dateSet.has(todayStr) ? todayStr : yesterdayStr);
     let count = 0;
-    while (dateSet.has(toISO(cur))) {
-      count++;
-      cur.setDate(cur.getDate() - 1);
-    }
+    while (dateSet.has(toISO(cur))) { count++; cur.setDate(cur.getDate() - 1); }
     return count;
   }, [sorted]);
 
-  // Direction arrow
-  const reg14 = useMemo(() => {
-    const last14 = smoothed.slice(-14);
-    return linearRegression(last14);
+  // EMA delta: confronta ultimo trend con il trend del giorno precedente disponibile
+  const emaDelta = useMemo(() => {
+    if (smoothed.length < 2) return null;
+    const last  = smoothed[smoothed.length - 1];
+    const prev  = smoothed[smoothed.length - 2];
+    const diff  = Math.round((last.trend - prev.trend) * 100) / 100;
+    // quanti giorni fa era la misurazione precedente
+    const d1    = new Date(last.date);
+    const d0    = new Date(prev.date);
+    const days  = Math.round((d1 - d0) / (1000 * 60 * 60 * 24));
+    return { diff, days };
   }, [smoothed]);
 
-  const direction = reg14
-    ? reg14.slope < -0.01 ? "down" : reg14.slope > 0.01 ? "up" : "flat"
-    : "flat";
+  // Ultimo peso grezzo registrato
+  const lastRaw = useMemo(() => {
+    if (sorted.length === 0) return null;
+    const last = sorted[sorted.length - 1];
+    const d    = new Date(last.date);
+    const now  = new Date();
+    const diffDays = Math.round((now - d) / (1000 * 60 * 60 * 24));
+    const whenLabel = diffDays === 0 ? "oggi"
+      : diffDays === 1 ? "ieri"
+      : `${diffDays} gg fa`;
+    return { weight: last.weight, whenLabel };
+  }, [sorted]);
+
+  const deltaDown = emaDelta && emaDelta.diff < 0;
+  const deltaUp   = emaDelta && emaDelta.diff > 0;
+  const deltaColor = deltaDown ? "#4ade80" : deltaUp ? "#f87171" : "rgba(255,255,255,0.7)";
+  const deltaArrow = deltaDown ? "↓" : deltaUp ? "↑" : "→";
 
   return (
     <div style={{
-      background: T.card,
-      borderRadius: 20,
-      padding: "20px",
-      boxShadow: T.shadow,
+      borderRadius: 22,
+      overflow: "hidden",
+      position: "relative",
+      background: "linear-gradient(135deg, #0369a1 0%, #0ea5e9 50%, #06b6d4 100%)",
+      boxShadow: "0 8px 32px rgba(14,165,233,0.28)",
       marginBottom: 12,
     }}>
-      {/* Top row: big trend number + direction */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 16 }}>
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: T.sub, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
-            Tendenza attuale
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-            <span style={{ fontSize: 52, fontWeight: 800, color: T.text, lineHeight: 1 }}>
+      {/* cerchi decorativi */}
+      <div style={{
+        position: "absolute", top: -55, right: -55,
+        width: 190, height: 190, borderRadius: "50%",
+        background: "rgba(255,255,255,0.07)", pointerEvents: "none",
+      }} />
+      <div style={{
+        position: "absolute", bottom: 44, left: -35,
+        width: 110, height: 110, borderRadius: "50%",
+        background: "rgba(255,255,255,0.04)", pointerEvents: "none",
+      }} />
+
+      {/* ── Body ── */}
+      <div style={{ position: "relative", zIndex: 1, padding: "18px 20px 18px" }}>
+
+        {/* header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.55)", letterSpacing: 1.3, textTransform: "uppercase" }}>
+            Tendenza
+          </span>
+          <button onClick={onShowHistory} style={{
+            background: "none", border: "none", cursor: "pointer", padding: 0,
+            display: "flex", alignItems: "center", gap: 3,
+            fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.65)",
+            fontFamily: "inherit",
+          }}>
+            Storico <ChevronRight size={13} color="rgba(255,255,255,0.65)" />
+          </button>
+        </div>
+
+        {/* hero: numero + unità + badge delta centrato verticalmente */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          {/* numero + kg come gruppo baseline */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexShrink: 0 }}>
+            <span style={{ fontSize: 54, fontWeight: 800, color: "#fff", lineHeight: 1, letterSpacing: -2 }}>
               {currentTrend !== null ? currentTrend.toFixed(1) : "—"}
             </span>
-            <span style={{ fontSize: 18, fontWeight: 600, color: T.sub }}>kg</span>
+            <span style={{ fontSize: 20, fontWeight: 600, color: "rgba(255,255,255,0.6)" }}>kg</span>
           </div>
+
+          {/* delta badge — centrato verticalmente rispetto al numero */}
+          {emaDelta !== null && (
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              padding: "6px 12px", borderRadius: 20,
+              background: "rgba(255,255,255,0.18)",
+              flexShrink: 0, whiteSpace: "nowrap",
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: deltaColor }}>
+                {deltaArrow} {Math.abs(emaDelta.diff).toFixed(2)} kg
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>
+                · {emaDelta.days === 1 ? "ieri" : `${emaDelta.days} gg fa`}
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Direction indicator */}
-        <div style={{
-          width: 52, height: 52, borderRadius: 16,
-          background: direction === "down" ? `${T.green}22`
-            : direction === "up" ? `${T.red}22`
-            : `${T.sub}22`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          {direction === "down" && <TrendingDown size={24} color={T.green} />}
-          {direction === "up" && <TrendingUp size={24} color={T.red} />}
-          {direction === "flat" && <Minus size={24} color={T.sub} />}
-        </div>
+        {/* riga secondaria: ultimo peso grezzo */}
+        {lastRaw && (
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.48)", fontWeight: 500 }}>
+            Ultima misurazione &nbsp;·&nbsp;{" "}
+            <span style={{ color: "rgba(255,255,255,0.82)", fontWeight: 700 }}>{lastRaw.weight} kg</span>
+            &nbsp;·&nbsp; {lastRaw.whenLabel}
+          </div>
+        )}
       </div>
 
-      {/* Pills row: BMI + Streak */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {/* BMI pill */}
-        <div style={{
-          flex: 1, borderRadius: 12, padding: "10px 14px",
-          background: `${catColor}18`,
-          border: `1.5px solid ${catColor}40`,
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: catColor, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 2 }}>
-            BMI
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 20, fontWeight: 800, color: catColor }}>{bmi ?? "—"}</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: catColor, opacity: 0.85 }}>{cat ?? ""}</span>
-          </div>
-        </div>
-
-        {/* Streak pill */}
-        <div style={{
-          flex: 1, borderRadius: 12, padding: "10px 14px",
-          background: streak > 0 ? "#f97316" + "18" : T.pill,
-          border: `1.5px solid ${streak > 0 ? "#f97316" + "40" : T.border}`,
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: streak > 0 ? "#f97316" : T.sub, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 2 }}>
+      {/* ── Frosted bottom bar ── */}
+      <div style={{
+        position: "relative", zIndex: 1,
+        background: "rgba(255,255,255,0.12)",
+        borderTop: "1px solid rgba(255,255,255,0.14)",
+        padding: "13px 20px",
+        display: "flex", alignItems: "center",
+      }}>
+        {/* Streak */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+          <span style={{ fontSize: 14, fontWeight: 800, color: "#fff", lineHeight: 1 }}>
+            {streak > 0 ? `🔥 ${streak}` : "—"}
+          </span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.48)", textTransform: "uppercase", letterSpacing: 0.8, marginTop: 2 }}>
             Streak
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-            <span style={{ fontSize: 20, fontWeight: 800, color: streak > 0 ? "#f97316" : T.sub }}>
-              {streak > 0 ? "🔥" : "—"} {streak > 0 ? streak : ""}
-            </span>
-            {streak > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: "#f97316", opacity: 0.85 }}>giorni</span>}
-          </div>
+          </span>
+        </div>
+
+        <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.18)" }} />
+
+        {/* BMI */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+          <span style={{ fontSize: 14, fontWeight: 800, color: bmi ? catColor : "#fff", lineHeight: 1 }}>
+            {bmi ?? "—"}
+          </span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.48)", textTransform: "uppercase", letterSpacing: 0.8, marginTop: 2 }}>
+            BMI
+          </span>
+        </div>
+
+        <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.18)" }} />
+
+        {/* Categoria BMI */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: bmi ? catColor : "#fff", lineHeight: 1, letterSpacing: -0.2 }}>
+            {cat ?? "—"}
+          </span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.48)", textTransform: "uppercase", letterSpacing: 0.8, marginTop: 2 }}>
+            Categoria
+          </span>
         </div>
       </div>
-
-      {/* Storico button */}
-      <button
-        onClick={onShowHistory}
-        style={{
-          width: "100%", padding: "12px", borderRadius: 12,
-          background: T.pill, border: `1px solid ${T.border}`,
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          cursor: "pointer", fontFamily: "inherit",
-        }}
-      >
-        <Activity size={16} color={T.teal} />
-        <span style={{ fontSize: 14, fontWeight: 600, color: T.text }}>Storico misurazioni</span>
-        <ChevronRight size={16} color={T.sub} />
-      </button>
     </div>
   );
 }
