@@ -392,251 +392,295 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
    ═══════════════════════════════════════════ */
 
 const GoalCard = ({ T, smoothed, settings, sorted }) => {
-  if (!settings.goalWeight || !settings.startWeight) {
-    return null;
-  }
-
   const currentWeight = sorted[sorted.length - 1]?.weight;
   const currentTrend = smoothed[smoothed.length - 1]?.trend;
 
-  if (!currentWeight || !currentTrend) return null;
+  // All useMemo hooks must be unconditional
+  const allMilestones = useMemo(() => {
+    if (!settings.showCustomMilestones || !settings.milestoneStep || !settings.startWeight || !settings.goalWeight || !currentWeight) return [];
+    const step = settings.milestoneStep;
+    const start = settings.startWeight;
+    const goal = settings.goalWeight;
+    const direction = start > goal ? -1 : 1;
+    const ms = [];
+    for (let w = start + direction * step; direction > 0 ? w <= goal : w >= goal; w += direction * step) {
+      const wRounded = Math.round(w * 10) / 10;
+      const reached = direction > 0 ? currentWeight >= wRounded : currentWeight <= wRounded;
+      ms.push({ weight: wRounded, reached });
+    }
+    const goalReached = direction > 0 ? currentWeight >= goal : currentWeight <= goal;
+    ms.push({ weight: Math.round(goal * 10) / 10, reached: goalReached, isGoal: true });
+    return ms;
+  }, [settings, currentWeight]);
 
-  // Calculate progress
+  const milestoneWindow = useMemo(() => {
+    if (allMilestones.length === 0) return null;
+    const WINDOW = 5;
+    const firstUnreached = allMilestones.findIndex(m => !m.reached);
+    const pivotIdx = firstUnreached === -1 ? allMilestones.length : firstUnreached;
+    const start = Math.max(0, Math.min(pivotIdx - 2, allMilestones.length - WINDOW));
+    const end = Math.min(allMilestones.length, start + WINDOW);
+    return {
+      visible: allMilestones.slice(start, end),
+      hasMoreBefore: start > 0,
+      hasMoreAfter: end < allMilestones.length,
+      reachedCount: allMilestones.filter(m => m.reached).length,
+      total: allMilestones.length,
+    };
+  }, [allMilestones]);
+
+  if (!settings.goalWeight || !settings.startWeight || !currentWeight || !currentTrend) return null;
+
   const total = Math.abs(settings.startWeight - settings.goalWeight);
   const done = Math.abs(settings.startWeight - currentWeight);
   const progressPct = total > 0 ? Math.min(Math.max((done / total) * 100, 0), 100) : 0;
+  const kgMancanti = Math.round(Math.abs(currentWeight - settings.goalWeight) * 10) / 10;
+  const kgPersi = Math.round(Math.abs(sorted[0].weight - currentWeight) * 10) / 10;
 
-  // kg remaining
-  const kgMancanti = Math.abs(Math.round((currentWeight - settings.goalWeight) * 10) / 10);
-
-  // kg lost
-  const kgPersi = Math.abs(Math.round((sorted[0].weight - currentWeight) * 100) / 100);
-
-  // Weekly rate
   const recent = smoothed.slice(-14);
   const reg = linearRegression(recent);
   const weeklyRate = reg ? Math.round(reg.slope * 7 * 100) / 100 : null;
 
-  // Predicted date
   let predictedDate = null;
+  let weeksToGoal = null;
   if (reg && reg.slope < 0 && settings.goalWeight) {
     const currentTrendEnd = reg.intercept + reg.slope * (recent.length - 1);
     const daysToGoal = (settings.goalWeight - currentTrendEnd) / reg.slope;
     if (daysToGoal > 0 && daysToGoal < 730) {
       const pd = new Date();
       pd.setDate(pd.getDate() + Math.round(daysToGoal));
-      predictedDate = formatDateFull(pd);
+      predictedDate = pd;
+      weeksToGoal = Math.round(daysToGoal / 7);
     }
   }
 
-  // Generate milestones for custom step
-  const generateMilestones = () => {
-    if (!settings.showCustomMilestones || !settings.milestoneStep) return [];
-    const step = settings.milestoneStep;
-    const start = settings.startWeight;
-    const goal = settings.goalWeight;
-    const direction = start > goal ? -1 : 1;
-    const milestones = [];
+  const currentBmi = settings.height ? calcBMI(currentWeight, settings.height) : null;
+  const currentBmiCat = bmiCategory(currentBmi);
+  const BMI_CATS = [
+    { name: "Sottopeso", short: "Sotto", color: "#60A5FA", min: 0, max: 18.5 },
+    { name: "Normopeso", short: "Normo", color: "#10B981", min: 18.5, max: 25 },
+    { name: "Sovrappeso", short: "Sovra", color: "#F59E0B", min: 25, max: 30 },
+    { name: "Obesità", short: "Obeso", color: "#EF4444", min: 30, max: 999 },
+  ];
+  const BMI_MIN = 15, BMI_MAX = 40;
+  const bmiNeedlePct = currentBmi
+    ? Math.min(Math.max((currentBmi - BMI_MIN) / (BMI_MAX - BMI_MIN) * 100, 1), 99)
+    : null;
 
-    for (let w = start + direction * step;
-         direction > 0 ? w <= goal : w >= goal;
-         w += direction * step) {
-      const reached = direction > 0 ? currentWeight >= w : currentWeight <= w;
-      milestones.push({ weight: Math.round(w * 10) / 10, reached });
-    }
-
-    // Add goal itself
-    milestones.push({ weight: goal, reached: currentWeight === goal });
-    return milestones;
-  };
-
-  const milestones = generateMilestones();
-
-  // Get last reached, current, and up to 2 future
-  const displayMilestones = useMemo(() => {
-    const lastReached = milestones.filter(m => m.reached).pop();
-    const current = milestones.find(m => !m.reached);
-    const future = milestones.filter(m => !m.reached && m.weight !== current?.weight).slice(0, 2);
-    const result = [];
-    if (lastReached) result.push({ ...lastReached, reached: true });
-    if (current) result.push({ ...current, reached: false });
-    result.push(...future);
-    return result;
-  }, [milestones]);
-
-  // Trajectory chart data — actual trend + projected as separate keys
-  const chartDataRaw = smoothed.map(e => ({
-    ...e,
-    dateLabel: formatDate(e.date),
-    actual: e.trend,
-    projected: null,
-  }));
-  if (reg && chartDataRaw.length > 0) {
-    const lastEntry = smoothed[smoothed.length - 1];
-    const lastDate = new Date(lastEntry.date);
-    const startDate = new Date(smoothed[0].date);
-    const daysElapsed = (lastDate - startDate) / 86400000;
-    // Bridge: last actual point also gets a projected value
-    chartDataRaw[chartDataRaw.length - 1].projected = lastEntry.trend;
-
-    for (let i = 1; i <= 60; i++) {
-      const futureDate = new Date(lastDate);
-      futureDate.setDate(futureDate.getDate() + i);
-      const daysSinceStart = daysElapsed + i;
-      const projectedValue = Math.round((reg.intercept + reg.slope * daysSinceStart) * 100) / 100;
-      chartDataRaw.push({
-        date: toISO(futureDate),
-        dateLabel: formatDate(futureDate),
-        actual: null,
-        projected: projectedValue,
-        trend: projectedValue,
-      });
-    }
-  }
-
-  // BMI milestones if enabled
-  const bmiMilestones = useMemo(() => {
-    if (!settings.showBmiMilestones || !settings.height) return [];
+  let nextBmiInfo = null;
+  if (settings.showBmiMilestones && currentBmi && settings.height) {
     const h = settings.height / 100;
-    const categories = [
-      { name: "Sottopeso", color: "#60A5FA", min: 0, max: 18.5 },
-      { name: "Normopeso", color: "#10B981", min: 18.5, max: 25 },
-      { name: "Sovrappeso", color: "#F59E0B", min: 25, max: 30 },
-      { name: "Obesità", color: "#EF4444", min: 30, max: 999 },
-    ];
+    const catIdx = BMI_CATS.findIndex(c => currentBmi >= c.min && (c.max === 999 ? true : currentBmi < c.max));
+    const cat = BMI_CATS[catIdx];
+    if (cat && cat.max !== 999) {
+      const targetW = Math.round(cat.max * h * h * 10) / 10;
+      const kgTo = Math.round((currentWeight - targetW) * 10) / 10;
+      nextBmiInfo = { kgTo, nextName: BMI_CATS[catIdx + 1]?.name };
+    }
+  }
 
-    return categories.map(cat => {
-      const weightAtMin = cat.min * h * h;
-      const weightAtMax = cat.max * h * h;
-      const currentBmi = calcBMI(currentWeight, settings.height);
-      const reached = settings.startWeight > weightAtMax || (settings.startWeight > weightAtMin && currentWeight <= weightAtMax);
-      return { ...cat, weightAtMin: Math.round(weightAtMin * 10) / 10, reached };
-    });
-  }, [settings, currentWeight]);
+  const RING_R = 38;
+  const RING_CIRC = 2 * Math.PI * RING_R;
+  const ringOffset = RING_CIRC - (progressPct / 100) * RING_CIRC;
+
+  const showMilestones = settings.showCustomMilestones && milestoneWindow;
+  const showBmi = settings.showBmiMilestones && settings.height && currentBmi;
 
   return (
-    <div style={{
-      background: "white",
-      borderRadius: 22,
-      padding: "20px",
-      boxShadow: T.shadow,
-      marginBottom: 16,
-    }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#6B7280" }}>OBIETTIVO</span>
-        <span style={{ fontSize: 18, fontWeight: 800, color: T.teal }}>{settings.goalWeight} kg</span>
-      </div>
+    <div style={{ borderRadius: 22, overflow: "hidden", boxShadow: "0 2px 20px rgba(0,0,0,0.07)", marginBottom: 14 }}>
 
-      {/* Progress ring + stats */}
-      <div style={{ display: "flex", gap: 20, marginBottom: 24 }}>
-        <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <CircularProgress percentage={progressPct} size={90} strokeWidth={5} color={T.teal} />
-          <div style={{ fontSize: 24, fontWeight: 800, color: T.text, marginTop: 12 }}>
-            {Math.round(progressPct)}%
+      {/* ── GRADIENT BANNER ── */}
+      <div style={{
+        background: "linear-gradient(135deg, #028090 0%, #02A4B5 55%, #01C5A0 100%)",
+        padding: "18px 20px 18px", position: "relative", overflow: "hidden",
+      }}>
+        <div style={{ position: "absolute", top: -30, right: -20, width: 130, height: 130, borderRadius: "50%", background: "rgba(255,255,255,0.06)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", bottom: -40, right: 30, width: 90, height: 90, borderRadius: "50%", background: "rgba(255,255,255,0.04)", pointerEvents: "none" }} />
+
+        {/* Top row: label + goal badge */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, position: "relative" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "rgba(255,255,255,0.6)" }}>Obiettivo</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, background: "rgba(255,255,255,0.15)", borderRadius: 10, padding: "5px 11px", fontSize: 13, fontWeight: 800, color: "#fff" }}>
+            🎯 {settings.goalWeight} kg
           </div>
         </div>
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 14 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700 }}>Persi</div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: T.teal }}>{kgPersi} kg</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700 }}>Mancanti</div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: "#1A2030" }}>{kgMancanti} kg</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700 }}>Ritmo</div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: "#1A2030" }}>
-              {weeklyRate != null ? `${Math.abs(weeklyRate).toFixed(2)} kg/sett` : "—"}
+
+        {/* Ring + 2×2 stats */}
+        <div style={{ display: "flex", alignItems: "center", gap: 18, position: "relative" }}>
+          <div style={{ position: "relative", width: 88, height: 88, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="88" height="88" style={{ transform: "rotate(-90deg)", position: "absolute" }}>
+              <circle cx="44" cy="44" r={RING_R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="6" />
+              <circle cx="44" cy="44" r={RING_R} fill="none" stroke="white" strokeWidth="6"
+                strokeDasharray={RING_CIRC} strokeDashoffset={ringOffset}
+                strokeLinecap="round" style={{ transition: "stroke-dashoffset 1.2s ease" }} />
+            </svg>
+            <div style={{ position: "absolute", display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <span style={{ fontSize: 20, fontWeight: 900, color: "#fff", lineHeight: 1 }}>{Math.round(progressPct)}%</span>
+              <span style={{ fontSize: 9, fontWeight: 600, color: "rgba(255,255,255,0.55)", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 2 }}>fatto</span>
             </div>
           </div>
-          <div>
-            <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700 }}>Previsione</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.teal }}>
-              {predictedDate ? formatDateFull(new Date(predictedDate)) : "—"}
-            </div>
+
+          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px" }}>
+            {[
+              { label: "Persi", value: `−${kgPersi} kg`, accent: true },
+              { label: "Mancanti", value: `${kgMancanti} kg`, accent: false },
+              { label: "Ritmo", value: weeklyRate != null ? `${Math.abs(weeklyRate).toFixed(2)} kg/sett` : "—", small: true },
+              { label: "Arrivo", value: predictedDate ? predictedDate.toLocaleDateString("it-IT", { day: "numeric", month: "short" }) : "—", small: true },
+            ].map(({ label, value, accent, small }) => (
+              <div key={label}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.55)", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 }}>{label}</div>
+                <div style={{ fontSize: small ? 13 : 15, fontWeight: 800, color: accent ? "#A7F3E4" : "#fff", lineHeight: 1.1 }}>{value}</div>
+              </div>
+            ))}
           </div>
         </div>
+
+        {/* ETA slim strip */}
+        {predictedDate && weeksToGoal && (
+          <div style={{ marginTop: 14, padding: "8px 12px", borderRadius: 10, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
+            <span style={{ fontSize: 12 }}>📅</span>
+            <span style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>
+              {predictedDate.toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })}
+            </span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginLeft: "auto" }}>
+              tra ~{weeksToGoal} {weeksToGoal === 1 ? "settimana" : "settimane"}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Custom Milestones */}
-      {settings.showCustomMilestones && displayMilestones.length > 0 && (
-        <>
-          <div style={{ height: 1, background: T.border, marginBottom: 20 }} />
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 12 }}>Tappe</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
-              {/* Timeline line */}
-              <div style={{
-                position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: T.border, zIndex: 0,
-                transform: "translateY(-50%)"
-              }} />
-              {/* Dots */}
-              {displayMilestones.map((m, i) => {
-                const isCurrent = !m.reached && displayMilestones[i + 1]?.reached === false;
-                const color = m.reached ? "#10B981" : isCurrent ? "#028090" : "#D1D5DB";
-                return (
-                  <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, zIndex: 1 }}>
-                    <div style={{
-                      width: isCurrent ? 16 : 12, height: isCurrent ? 16 : 12,
-                      borderRadius: "50%", background: color, border: isCurrent ? `3px solid ${T.bg}` : "none",
-                      boxShadow: isCurrent ? `0 0 0 2px ${T.teal}` : "none"
-                    }} />
-                    <div style={{
-                      fontSize: 11, fontWeight: m.reached ? 600 : isCurrent ? 700 : 500,
-                      color: m.reached ? "#10B981" : isCurrent ? T.text : "#9CA3AF",
-                      marginTop: 8, textDecoration: m.reached ? "line-through" : "none"
-                    }}>
-                      {m.weight}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
+      {/* ── BODY (tappe + bmi) ── */}
+      {(showMilestones || showBmi) && (
+        <div style={{ background: "#fff", padding: "18px 18px 20px" }}>
 
-      {/* BMI Milestones */}
-      {settings.showBmiMilestones && bmiMilestones.length > 0 && (
-        <>
-          <div style={{ height: 1, background: T.border, marginBottom: 20 }} />
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 12 }}>Traguardi BMI</div>
-            <div style={{ display: "flex", height: 20, borderRadius: 10, overflow: "hidden", gap: 0 }}>
-              {bmiMilestones.map((cat, i) => (
-                <div key={i} style={{
-                  flex: 1, background: cat.color, opacity: cat.reached ? 1 : 0.4,
-                  borderRight: i < bmiMilestones.length - 1 ? `2px solid white` : "none"
-                }} />
-              ))}
-            </div>
-            <div style={{ display: "flex", fontSize: 10, color: "#6B7280", marginTop: 8, gap: 2 }}>
-              {bmiMilestones.map((cat, i) => (
-                <div key={i} style={{ flex: 1, textAlign: "center" }}>
-                  {cat.weightAtMin} kg
+          {/* TAPPE INTERMEDIE */}
+          {showMilestones && (
+            <div style={{ marginBottom: showBmi ? 0 : 2 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: 7, background: "#F0F8F8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>🏁</div>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.6 }}>Tappe</span>
                 </div>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#9CA3AF" }}>
+                  {milestoneWindow.reachedCount} / {milestoneWindow.total}
+                </span>
+              </div>
 
-      {/* Trajectory chart */}
-      <div style={{ height: 1, background: T.border, marginBottom: 20 }} />
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>Traiettoria</div>
-      <ResponsiveContainer width="100%" height={180}>
-        <ComposedChart data={chartDataRaw} margin={{ top: 5, right: 8, left: -15, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
-          <XAxis dataKey="dateLabel" tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} interval={Math.floor(chartDataRaw.length / 5)} />
-          <YAxis domain={["dataMin - 1", "dataMax + 1"]} tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
-          <Tooltip content={<CustomTooltip T={T} />} cursor={false} />
-          <ReferenceLine y={settings.goalWeight} stroke="#10B981" strokeDasharray="4 4" strokeWidth={1.5} />
-          <Line type="monotone" dataKey="actual" stroke={T.teal} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
-          <Line type="monotone" dataKey="projected" stroke={T.teal} strokeWidth={2} strokeDasharray="5 5" dot={false} isAnimationActive={false} connectNulls={false} />
-        </ComposedChart>
-      </ResponsiveContainer>
+              <div style={{ position: "relative", padding: "4px 0 4px" }}>
+                {/* Background line */}
+                <div style={{
+                  position: "absolute", top: 15, left: "10%", right: "10%",
+                  height: 3, background: "#E8EDF2", borderRadius: 4, zIndex: 0,
+                }}>
+                  {(() => {
+                    const vis = milestoneWindow.visible;
+                    const firstUnreachedVis = vis.findIndex(m => !m.reached);
+                    const fillPct = firstUnreachedVis === -1 ? 100 : vis.length > 1 ? (firstUnreachedVis / (vis.length - 1)) * 100 : 0;
+                    return <div style={{ height: "100%", width: `${fillPct}%`, background: "linear-gradient(90deg, #028090, #02C39A)", borderRadius: 4 }} />;
+                  })()}
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", position: "relative", zIndex: 1 }}>
+                  {/* Fade left if more before */}
+                  {milestoneWindow.hasMoreBefore && (
+                    <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 28, background: "linear-gradient(90deg, #fff 60%, transparent)", zIndex: 2, pointerEvents: "none" }} />
+                  )}
+                  {/* Fade right if more after */}
+                  {milestoneWindow.hasMoreAfter && (
+                    <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 28, background: "linear-gradient(270deg, #fff 60%, transparent)", zIndex: 2, pointerEvents: "none" }} />
+                  )}
+
+                  {milestoneWindow.visible.map((m, i) => {
+                    const isNext = !m.reached && (i === 0 || milestoneWindow.visible[i - 1]?.reached);
+                    return (
+                      <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, flex: 1 }}>
+                        <div style={{
+                          width: isNext ? 24 : 18, height: isNext ? 24 : 18, borderRadius: "50%", flexShrink: 0,
+                          background: m.reached ? "linear-gradient(135deg, #028090, #02C39A)" : isNext ? "#fff" : "#E8EDF2",
+                          border: isNext ? "3px solid #028090" : "none",
+                          boxShadow: m.reached ? "0 2px 8px rgba(2,195,154,0.3)" : isNext ? "0 0 0 4px rgba(2,128,144,0.12)" : "none",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {m.reached
+                            ? <span style={{ color: "#fff", fontSize: 9, fontWeight: 800 }}>✓</span>
+                            : isNext ? <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#028090" }} />
+                            : null}
+                        </div>
+                        <span style={{
+                          fontSize: 11, fontWeight: m.reached ? 700 : isNext ? 800 : 500,
+                          color: m.reached ? "#02C39A" : isNext ? "#028090" : "#B0B8C8",
+                          textDecoration: m.reached ? "line-through" : "none",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {m.weight} kg
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Divider between sections */}
+          {showMilestones && showBmi && (
+            <div style={{ height: 1, background: "#F0F2F5", margin: "18px 0" }} />
+          )}
+
+          {/* BMI */}
+          {showBmi && (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+                <div style={{ width: 22, height: 22, borderRadius: 7, background: "#F0F8F8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>⚖️</div>
+                <span style={{ fontSize: 12, fontWeight: 800, color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.6 }}>Traguardi BMI</span>
+              </div>
+
+              {/* Colored bar */}
+              <div style={{ display: "flex", height: 22, borderRadius: 7, overflow: "hidden", marginBottom: 2 }}>
+                {BMI_CATS.map((cat, i) => {
+                  const isCurrent = currentBmi >= cat.min && (cat.max === 999 || currentBmi < cat.max);
+                  const isPassed = cat.max !== 999 && currentBmi >= cat.max;
+                  return (
+                    <div key={i} style={{
+                      flex: 1, background: cat.color,
+                      opacity: isPassed ? 0.65 : isCurrent ? 1 : 0.2,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <span style={{ fontSize: 8, fontWeight: 700, color: "#fff" }}>{cat.short}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Needle */}
+              <div style={{ position: "relative", height: 14, marginBottom: 8 }}>
+                <div style={{
+                  position: "absolute", left: `${bmiNeedlePct}%`, top: 0,
+                  transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center",
+                }}>
+                  <div style={{ width: 1.5, height: 6, background: "#1A2030" }} />
+                  <div style={{ width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "6px solid #1A2030" }} />
+                </div>
+              </div>
+
+              {/* Info line */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#F8F9FA", borderRadius: 8, padding: "8px 12px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#028090" }}>BMI {currentBmi}</span>
+                <span style={{ color: "#E0E4E8" }}>·</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#1A2030" }}>{currentBmiCat}</span>
+                {nextBmiInfo && (
+                  <>
+                    <span style={{ color: "#E0E4E8" }}>·</span>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "#9CA3AF" }}>
+                      −{nextBmiInfo.kgTo} kg → {nextBmiInfo.nextName}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -1144,8 +1188,9 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
   const previewMilestones = useMemo(() => {
     if (!settingsForm.showCustomMilestones || !settingsForm.startWeight || !settingsForm.goalWeight) return [];
     const step = settingsForm.milestoneStep || 2;
-    const start = settingsForm.startWeight;
-    const goal = settingsForm.goalWeight;
+    const start = parseFloat(settingsForm.startWeight);
+    const goal = parseFloat(settingsForm.goalWeight);
+    if (!start || !goal || step <= 0) return [];
     const direction = start > goal ? -1 : 1;
     const result = [];
     for (let w = start + direction * step;
@@ -1153,8 +1198,8 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
          w += direction * step) {
       result.push({ weight: Math.round(w * 10) / 10 });
     }
-    result.push({ weight: goal });
-    return result.slice(0, 5);
+    result.push({ weight: Math.round(goal * 10) / 10, isGoal: true });
+    return result;
   }, [settingsForm]);
 
   const bmiCategoryWeights = useMemo(() => {
@@ -1568,81 +1613,200 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
 
           {/* Obiettivo Card */}
           <div style={{ background: T.card, borderRadius: 20, padding: "20px", marginBottom: 16, boxShadow: T.shadow }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: T.textSec, marginBottom: 16 }}>Obiettivo</h3>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: T.textSec, marginBottom: 20 }}>Obiettivo</h3>
 
-            {/* Tappe intermedie */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Tappe intermedie</span>
-                <input
-                  type="checkbox"
-                  checked={settingsForm.showCustomMilestones}
-                  onChange={(e) => setSettingsForm({ ...settingsForm, showCustomMilestones: e.target.checked })}
-                  style={{ width: 18, height: 18, cursor: "pointer" }}
-                />
+            {/* ── TAPPE INTERMEDIE ── */}
+            <div>
+              {/* Toggle row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: settingsForm.showCustomMilestones ? 16 : 0 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Tappe intermedie</div>
+                  <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>Suddividi il percorso in sotto-obiettivi</div>
+                </div>
+                <button
+                  onClick={() => setSettingsForm(f => ({ ...f, showCustomMilestones: !f.showCustomMilestones }))}
+                  style={{
+                    width: 46, height: 26, borderRadius: 13, border: "none",
+                    background: settingsForm.showCustomMilestones ? T.teal : "#D1D5DB",
+                    position: "relative", cursor: "pointer", flexShrink: 0,
+                    transition: "background 0.2s",
+                  }}
+                >
+                  <div style={{
+                    position: "absolute", top: 3,
+                    left: settingsForm.showCustomMilestones ? 23 : 3,
+                    width: 20, height: 20, borderRadius: 10, background: "#fff",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.18)", transition: "left 0.2s",
+                  }} />
+                </button>
               </div>
+
               {settingsForm.showCustomMilestones && (
-                <>
-                  <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                    {[1, 2, 3, 5].map((step) => (
+                <div style={{ background: T.bg, borderRadius: 14, padding: "16px" }}>
+                  {/* Stepper */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: T.textSec }}>Ogni quanti kg</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <button
-                        key={step}
-                        onClick={() => setSettingsForm({ ...settingsForm, milestoneStep: step })}
+                        onClick={() => setSettingsForm(f => ({ ...f, milestoneStep: Math.max(0.5, Math.round((f.milestoneStep - 0.5) * 10) / 10) }))}
                         style={{
-                          padding: "8px 14px",
-                          borderRadius: 10,
-                          border: settingsForm.milestoneStep === step ? "none" : `1.5px solid ${T.border}`,
-                          background: settingsForm.milestoneStep === step ? T.gradient : T.bg,
-                          color: settingsForm.milestoneStep === step ? "#fff" : T.text,
-                          fontSize: 13,
-                          fontWeight: 700,
-                          cursor: "pointer",
+                          width: 32, height: 32, borderRadius: 9, border: `1.5px solid ${T.border}`,
+                          background: "#fff", fontSize: 18, fontWeight: 700, color: T.teal,
+                          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                          fontFamily: "inherit", lineHeight: 1,
                         }}
-                      >
-                        {step} kg
-                      </button>
-                    ))}
+                      >−</button>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: T.text, minWidth: 52, textAlign: "center" }}>
+                        {settingsForm.milestoneStep} kg
+                      </span>
+                      <button
+                        onClick={() => setSettingsForm(f => ({ ...f, milestoneStep: Math.round((f.milestoneStep + 0.5) * 10) / 10 }))}
+                        style={{
+                          width: 32, height: 32, borderRadius: 9, border: `1.5px solid ${T.border}`,
+                          background: "#fff", fontSize: 18, fontWeight: 700, color: T.teal,
+                          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                          fontFamily: "inherit", lineHeight: 1,
+                        }}
+                      >+</button>
+                      {previewMilestones.length > 0 && (
+                        <span style={{
+                          fontSize: 12, fontWeight: 700, color: T.teal,
+                          background: T.tealLight, padding: "4px 10px", borderRadius: 8, whiteSpace: "nowrap",
+                        }}>
+                          {previewMilestones.length} tappe
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Preview visuale */}
                   {previewMilestones.length > 0 && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.textMuted }}>
-                      <span>Preview:</span>
-                      {previewMilestones.map((m, i) => (
-                        <div key={i} style={{
-                          width: 8, height: 8, borderRadius: "50%", background: T.teal, opacity: 0.6
-                        }} />
-                      ))}
-                      {previewMilestones.length < 10 && <span>...</span>}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: T.textMuted, marginBottom: 10 }}>Anteprima</div>
+                      {previewMilestones.length <= 8 ? (
+                        /* Poche tappe: mostra dot + peso */
+                        <div style={{ display: "flex", alignItems: "flex-start", position: "relative" }}>
+                          <div style={{
+                            position: "absolute", top: 7, left: "5%", right: "5%",
+                            height: 2, background: T.border, zIndex: 0,
+                          }} />
+                          {previewMilestones.map((m, i) => (
+                            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, position: "relative", zIndex: 1 }}>
+                              <div style={{
+                                width: m.isGoal ? 14 : 10, height: m.isGoal ? 14 : 10, borderRadius: "50%",
+                                background: m.isGoal ? "#10B981" : T.teal,
+                                boxShadow: m.isGoal ? "0 0 0 3px rgba(16,185,129,0.2)" : "none",
+                              }} />
+                              <span style={{ fontSize: 10, fontWeight: 600, color: m.isGoal ? "#10B981" : T.textSec, whiteSpace: "nowrap" }}>
+                                {m.weight}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        /* Tante tappe: barra con tick marks */
+                        <div>
+                          <div style={{ position: "relative", height: 18, marginBottom: 8 }}>
+                            <div style={{
+                              position: "absolute", top: "50%", left: 0, right: 0,
+                              height: 4, borderRadius: 4, transform: "translateY(-50%)",
+                              background: `linear-gradient(90deg, ${T.teal}, #02C39A)`,
+                            }}>
+                              {previewMilestones.slice(0, -1).map((_, i) => {
+                                const pct = ((i + 1) / previewMilestones.length) * 100;
+                                return (
+                                  <div key={i} style={{
+                                    position: "absolute", top: "50%", left: `${pct}%`,
+                                    transform: "translate(-50%, -50%)",
+                                    width: 2, height: 10, background: "rgba(255,255,255,0.6)", borderRadius: 1,
+                                  }} />
+                                );
+                              })}
+                            </div>
+                            <div style={{ position: "absolute", left: 0, top: "50%", transform: "translate(-50%,-50%)", width: 10, height: 10, borderRadius: "50%", background: T.teal }} />
+                            <div style={{ position: "absolute", right: 0, top: "50%", transform: "translate(50%,-50%)", width: 12, height: 12, borderRadius: "50%", background: "#10B981", boxShadow: "0 0 0 3px rgba(16,185,129,0.2)" }} />
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: T.textMuted, fontWeight: 600 }}>
+                            <span>{settingsForm.startWeight} kg</span>
+                            <span>{settingsForm.goalWeight} kg</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
-                </>
+                </div>
               )}
             </div>
 
-            {/* Traguardi BMI */}
+            <div style={{ height: 1, background: T.border, margin: "20px 0" }} />
+
+            {/* ── TRAGUARDI BMI ── */}
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Traguardi BMI</span>
-                <input
-                  type="checkbox"
-                  checked={settingsForm.showBmiMilestones}
-                  onChange={(e) => setSettingsForm({ ...settingsForm, showBmiMilestones: e.target.checked })}
-                  style={{ width: 18, height: 18, cursor: "pointer" }}
-                />
-              </div>
-              {settingsForm.showBmiMilestones && bmiCategoryWeights.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: settingsForm.showBmiMilestones ? 16 : 0 }}>
                 <div>
-                  <div style={{ display: "flex", height: 16, borderRadius: 8, overflow: "hidden", gap: 0, marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Traguardi BMI</div>
+                  <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>
+                    {settingsForm.height ? "Visualizza le fasce BMI nella card obiettivo" : "Imposta l'altezza nel profilo per abilitarla"}
+                  </div>
+                </div>
+                <button
+                  onClick={() => settingsForm.height && setSettingsForm(f => ({ ...f, showBmiMilestones: !f.showBmiMilestones }))}
+                  style={{
+                    width: 46, height: 26, borderRadius: 13, border: "none",
+                    background: (settingsForm.showBmiMilestones && settingsForm.height) ? T.teal : "#D1D5DB",
+                    position: "relative", cursor: settingsForm.height ? "pointer" : "not-allowed",
+                    flexShrink: 0, transition: "background 0.2s",
+                    opacity: settingsForm.height ? 1 : 0.45,
+                  }}
+                >
+                  <div style={{
+                    position: "absolute", top: 3,
+                    left: (settingsForm.showBmiMilestones && settingsForm.height) ? 23 : 3,
+                    width: 20, height: 20, borderRadius: 10, background: "#fff",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.18)", transition: "left 0.2s",
+                  }} />
+                </button>
+              </div>
+
+              {settingsForm.showBmiMilestones && bmiCategoryWeights.length > 0 && (
+                <div style={{ background: T.bg, borderRadius: 14, padding: "16px" }}>
+                  {/* BMI bar */}
+                  <div style={{ display: "flex", height: 20, borderRadius: 7, overflow: "hidden", marginBottom: 4 }}>
                     {bmiCategoryWeights.map((cat, i) => (
-                      <div key={i} style={{
-                        flex: 1, background: cat.color
-                      }} />
+                      <div key={i} style={{ flex: 1, background: cat.color }} />
                     ))}
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, fontSize: 11 }}>
+
+                  {/* Needle + BMI attuale */}
+                  {(() => {
+                    const currW = sorted.length > 0 ? sorted[sorted.length - 1]?.weight : null;
+                    const bmi = currW && settingsForm.height ? calcBMI(currW, settingsForm.height) : null;
+                    if (!bmi) return null;
+                    const pct = Math.min(Math.max((bmi - 15) / (40 - 15) * 100, 1), 99);
+                    const cat = bmiCategory(bmi);
+                    return (
+                      <div>
+                        <div style={{ position: "relative", height: 14, marginBottom: 10 }}>
+                          <div style={{ position: "absolute", left: `${pct}%`, top: 0, transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                            <div style={{ width: 1.5, height: 6, background: "#1A2030" }} />
+                            <div style={{ width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "6px solid #1A2030" }} />
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#028090", marginBottom: 10 }}>
+                          BMI {bmi} · <span style={{ fontWeight: 600, color: "#1A2030" }}>{cat}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Categorie in griglia 2 colonne */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                     {bmiCategoryWeights.map((cat, i) => (
-                      <div key={i} style={{ textAlign: "center" }}>
-                        <div style={{ fontWeight: 700, color: cat.color, marginBottom: 4 }}>{cat.name}</div>
-                        <div style={{ color: T.textMuted }}>{Math.round(cat.maxWeight)} kg</div>
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: cat.color, flexShrink: 0 }} />
+                        <span style={{ fontSize: 11, color: T.textSec, fontWeight: 600 }}>
+                          {cat.name} <span style={{ color: T.textMuted, fontWeight: 500 }}>≤ {Math.round(cat.maxWeight * 10) / 10} kg</span>
+                        </span>
                       </div>
                     ))}
                   </div>
