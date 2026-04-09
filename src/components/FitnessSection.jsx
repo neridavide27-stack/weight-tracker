@@ -10,7 +10,7 @@ import {
 import {
   ChevronLeft, Plus, Check, X, Settings,
   Timer, Gauge, Footprints, Home, Utensils, Dumbbell, User,
-  Flame, TrendingUp, TrendingDown, BarChart3, Zap,
+  Flame, TrendingUp, TrendingDown, BarChart3, Zap, Scale, Activity,
   Heart, Mountain, Clock, Trash2, AlertTriangle, Award, Trophy,
 } from "lucide-react";
 import {
@@ -480,11 +480,11 @@ const ConfirmModal = ({ title, message, confirmLabel = "Elimina", onConfirm, onC
 
 const FitnessBottomNav = ({ onAdd, onNavigate }) => {
   const tabs = [
-    { id: "dashboard", Icon: Home,       label: "Home"    },
-    { id: "food",      Icon: Utensils,   label: "Cibo"    },
-    { id: "add",       Icon: null,       label: ""        },
-    { id: "fitness",   Icon: Footprints, label: "Fitness" },
-    { id: "gym",       Icon: Dumbbell,   label: "Gym"     },
+    { id: "dashboard", Icon: Home,       label: "Home"     },
+    { id: "weight",    Icon: Scale,      label: "Peso"     },
+    { id: "add",       Icon: null,       label: ""         },
+    { id: "food",      Icon: Utensils,   label: "Cibo"     },
+    { id: "activity",  Icon: Activity,   label: "Attività" },
   ];
   return (
     <div style={{
@@ -503,7 +503,7 @@ const FitnessBottomNav = ({ onAdd, onNavigate }) => {
             boxShadow:"0 4px 24px rgba(2,128,144,0.35)",transform:"translateY(-14px)",
           }}><Plus size={26} strokeWidth={2.5}/></button>
         );
-        const isActive = tab.id === "fitness";
+        const isActive = tab.id === "activity";
         return (
           <button key={tab.id} onClick={() => onNavigate(tab.id)} style={{
             background:"none",border:"none",cursor:"pointer",
@@ -1469,7 +1469,41 @@ const BadgesScreen = ({ activities, weeklyGoal, onBack, onNavigate }) => {
 /* ═══════════════════════════════════════════
    ROOT EXPORT
    ═══════════════════════════════════════════ */
-export default function FitnessSection({ onNavigate }) {
+const ActivityToggleBar = ({ activeTab, onToggle }) => {
+  if (!onToggle) return null;
+  const tabs = [
+    { id: "fitness", label: "Camminate", Icon: Footprints },
+    { id: "gym",     label: "Palestra",  Icon: Dumbbell },
+  ];
+  return (
+    <div style={{
+      background: T.card, padding: "12px 20px 0", borderBottom: `1px solid ${T.border}`,
+      position: "sticky", top: 0, zIndex: 11,
+    }}>
+      <div style={{ fontSize: 22, fontWeight: 900, color: T.text, lineHeight: 1.1, marginBottom: 12 }}>Attività</div>
+      <div style={{ display: "flex", gap: 6, background: T.bg, borderRadius: 12, padding: 4 }}>
+        {tabs.map(tab => {
+          const TabIcon = tab.Icon;
+          const active = activeTab === tab.id;
+          return (
+            <button key={tab.id} onClick={() => onToggle(tab.id)} style={{
+              flex: 1, padding: "10px 4px", background: active ? T.card : "transparent",
+              border: "none", cursor: "pointer", display: "flex", alignItems: "center",
+              justifyContent: "center", gap: 6, borderRadius: 10,
+              boxShadow: active ? "0 1px 6px rgba(0,0,0,0.08)" : "none",
+              color: active ? T.teal : T.textSec, transition: "all 0.15s",
+            }}>
+              <TabIcon size={16} strokeWidth={active ? 2.3 : 1.8} />
+              <span style={{ fontSize: 13, fontWeight: active ? 800 : 600 }}>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+export default function FitnessSection({ onNavigate, activityToggle, onToggleActivity }) {
   const [subScreen,     setSubScreen]     = useState("main");
   const [activities,    setActivities]    = useState([]);
   const [weeklyGoal,    setWeeklyGoal]    = useState(20);
@@ -1683,6 +1717,7 @@ export default function FitnessSection({ onNavigate }) {
 
   return (
     <>
+      <ActivityToggleBar activeTab={activityToggle} onToggle={onToggleActivity} />
       <MainScreen activities={activities} weeklyGoal={weeklyGoal}
         onAdd={openAddWalk} onDelete={handleDelete} onEdit={openEdit}
         onEditGoal={() => setShowGoalModal(true)} onNavigate={handleNavigate}

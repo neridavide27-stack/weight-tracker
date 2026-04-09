@@ -7,7 +7,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContai
 import {
   ChevronLeft, Plus, Check, X, Settings, Timer, Home, Utensils, Dumbbell,
   User, Flame, TrendingUp, Search, Play, Square, RotateCcw, Trash2,
-  Edit3, Copy, ChevronRight, ChevronDown, Clock, Award, Trophy,
+  Edit3, Copy, ChevronRight, ChevronDown, Clock, Award, Trophy, Scale, Activity,
   BarChart3, Target, Zap, Minus, MoreVertical, Pause, Footprints,
   AlertTriangle, CheckCircle2, Bookmark, FolderOpen,
   ChevronUp, Link2, ArrowLeftRight, FileText, GripVertical,
@@ -3543,11 +3543,11 @@ const TABS = [
 
 const GymBottomNav = ({ onAdd, onNavigate }) => {
   const tabs = [
-    { id: "dashboard", Icon: Home,       label: "Home"    },
-    { id: "food",      Icon: Utensils,   label: "Cibo"    },
-    { id: "add",       Icon: null,       label: ""        },
-    { id: "fitness",   Icon: Footprints, label: "Fitness" },
-    { id: "gym",       Icon: Dumbbell,   label: "Gym"     },
+    { id: "dashboard", Icon: Home,       label: "Home"     },
+    { id: "weight",    Icon: Scale,      label: "Peso"     },
+    { id: "add",       Icon: null,       label: ""         },
+    { id: "food",      Icon: Utensils,   label: "Cibo"     },
+    { id: "activity",  Icon: Activity,   label: "Attività" },
   ];
   return (
     <div style={{
@@ -3566,7 +3566,7 @@ const GymBottomNav = ({ onAdd, onNavigate }) => {
             boxShadow:"0 4px 24px rgba(2,128,144,0.35)",transform:"translateY(-14px)",
           }}><Plus size={26} strokeWidth={2.5}/></button>
         );
-        const isActive = tab.id === "gym";
+        const isActive = tab.id === "activity";
         return (
           <button key={tab.id} onClick={() => onNavigate(tab.id)} style={{
             background:"none",border:"none",cursor:"pointer",
@@ -3681,7 +3681,41 @@ const MainScreenWithTabs = (props) => {
    ═══════════════════════════════════════════ */
 const DEFAULT_TIMERS = { rest: 90, warmup: 60, side: 15 };
 
-export default function GymSection({ onNavigate }) {
+const ActivityToggleBar = ({ activeTab, onToggle }) => {
+  if (!onToggle) return null;
+  const tabs = [
+    { id: "fitness", label: "Camminate", Icon: Footprints },
+    { id: "gym",     label: "Palestra",  Icon: Dumbbell },
+  ];
+  return (
+    <div style={{
+      background: T.card, padding: "12px 20px 0", borderBottom: `1px solid ${T.border}`,
+      position: "sticky", top: 0, zIndex: 11,
+    }}>
+      <div style={{ fontSize: 22, fontWeight: 900, color: T.text, lineHeight: 1.1, marginBottom: 12 }}>Attività</div>
+      <div style={{ display: "flex", gap: 6, background: T.bg, borderRadius: 12, padding: 4 }}>
+        {tabs.map(tab => {
+          const TabIcon = tab.Icon;
+          const active = activeTab === tab.id;
+          return (
+            <button key={tab.id} onClick={() => onToggle(tab.id)} style={{
+              flex: 1, padding: "10px 4px", background: active ? T.card : "transparent",
+              border: "none", cursor: "pointer", display: "flex", alignItems: "center",
+              justifyContent: "center", gap: 6, borderRadius: 10,
+              boxShadow: active ? "0 1px 6px rgba(0,0,0,0.08)" : "none",
+              color: active ? T.teal : T.textSec, transition: "all 0.15s",
+            }}>
+              <TabIcon size={16} strokeWidth={active ? 2.3 : 1.8} />
+              <span style={{ fontSize: 13, fontWeight: active ? 800 : 600 }}>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+export default function GymSection({ onNavigate, activityToggle, onToggleActivity }) {
   const [subScreen, setSubScreen] = useState("main");
   const [activeTab, setActiveTab] = useState("allenamento");
   const [workouts, setWorkouts] = useState([]);
@@ -4058,6 +4092,7 @@ export default function GymSection({ onNavigate }) {
       width: "100%", minHeight: "100vh", background: T.bg,
       display: "flex", flexDirection: "column", position: "relative",
     }}>
+      <ActivityToggleBar activeTab={activityToggle} onToggle={onToggleActivity} />
       <MainScreenWithTabs
         activeTab={activeTab}
         setActiveTab={setActiveTab}
