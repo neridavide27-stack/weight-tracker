@@ -20,7 +20,7 @@ const formatDateFull = (d) => new Date(d).toLocaleDateString("it-IT", { day: "nu
 const toISO = (d) => new Date(d).toISOString().split("T")[0];
 const today = () => toISO(new Date());
 
-const calcEMA = (entries, alpha = 0.15) => {
+const calcEMA = (entries, alpha = 0.25) => {
   if (entries.length === 0) return [];
   let ema = entries[0].weight;
   return entries.map((e, i) => {
@@ -135,10 +135,35 @@ const CustomTooltip = ({ active, payload, T }) => {
 
 const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
   const canvasRef = useRef(null);
+  const tooltipRef = useRef(null);
+  const chartGeoRef = useRef(null);
 
+  // Always show Mon-Sun of current week
   const last7 = useMemo(() => {
     if (smoothed.length === 0) return [];
-    return smoothed.slice(-7);
+    // Find current week's Monday
+    const now = new Date();
+    const day = now.getDay() || 7; // Sun=7
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - day + 1);
+    monday.setHours(0, 0, 0, 0);
+
+    const weekData = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const dateStr = toISO(d);
+      // Only include days up to today
+      if (d > now) break;
+      const entry = smoothed.find(e => e.date === dateStr);
+      if (entry) weekData.push(entry);
+      else {
+        // Interpolate trend for missing days
+        const trend = getTrendAtDate(smoothed, dateStr);
+        if (trend != null) weekData.push({ date: dateStr, weight: trend, trend, interpolated: true });
+      }
+    }
+    return weekData;
   }, [smoothed]);
 
   const currentTrend = last7[last7.length - 1]?.trend ?? null;
@@ -146,7 +171,9 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
   const vsYesterday = (currentTrend != null && prevTrendValue != null)
     ? Math.round((currentTrend - prevTrendValue) * 100) / 100 : null;
 
-  // Draw canvas chart — matching preview layout exactly
+  const DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+
+  // Draw canvas — 140px, Lun-Dom, line from bar edge to bar edge, touch
   useEffect(() => {
     if (!canvasRef.current || last7.length === 0) return;
 
@@ -154,24 +181,19 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
     const ctx = canvas.getContext("2d");
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.parentElement.offsetWidth;
-    const h = 130;
+    const h = 140;
     canvas.width = w * dpr; canvas.height = h * dpr;
     canvas.style.width = w + "px"; canvas.style.height = h + "px";
     ctx.scale(dpr, dpr);
 
-    const days = last7.map((e, i) => {
-      if (i === last7.length - 1) return "Oggi";
-      const d = new Date(e.date);
-      return d.toLocaleDateString("it-IT", { weekday: "short" }).replace(".", "");
-    });
     const trends = last7.map(e => e.trend);
     const changes = last7.map((e, i) => i === 0 ? 0 : Math.round((e.weight - last7[i - 1].weight) * 100) / 100);
+    const n = last7.length;
 
     const padL = 10, padR = 10, padTop = 6, padBot = 16;
     const chartW = w - padL - padR;
-    const colW = chartW / last7.length;
-
-    const barValH = 13, barMaxH = 26, dayLabelH = 14;
+    const colW = chartW / n;
+    const barValH = 13, barMaxH = 28, dayLabelH = 14;
     const trendAreaH = h - padTop - padBot - barValH - barMaxH - dayLabelH - 6;
 
     const trendTop = padTop;
@@ -183,23 +205,28 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
     const tMax = Math.max(...trends) + 0.15;
 
     const barCx = (i) => padL + colW * i + colW / 2;
-    const lineLeft = barCx(0);
-    const lineRight = barCx(last7.length - 1);
-    const tx = (i) => lineLeft + (lineRight - lineLeft) * i / (last7.length - 1);
+    const barW = Math.min(colW * 0.5, 24);
+    // Line from LEFT edge of first bar to RIGHT edge of last bar
+    const lineLeft = barCx(0) - barW / 2;
+    const lineRight = barCx(n - 1) + barW / 2;
+    const tx = (i) => n === 1 ? (lineLeft + lineRight) / 2 : lineLeft + (lineRight - lineLeft) * i / (n - 1);
     const ty = (v) => trendTop + ((tMax - v) / (tMax - tMin)) * trendAreaH;
 
-    // Area fill under trend
+    // Store geometry for touch
+    chartGeoRef.current = { tx, ty, trends, n, barCx };
+
+    // Area fill
     ctx.beginPath();
     ctx.moveTo(tx(0), trendTop + trendAreaH);
     trends.forEach((v, i) => ctx.lineTo(tx(i), ty(v)));
-    ctx.lineTo(tx(trends.length - 1), trendTop + trendAreaH);
+    ctx.lineTo(tx(n - 1), trendTop + trendAreaH);
     ctx.closePath();
     const aGrad = ctx.createLinearGradient(0, trendTop, 0, trendTop + trendAreaH);
-    aGrad.addColorStop(0, "rgba(2,128,144,0.1)");
+    aGrad.addColorStop(0, "rgba(2,128,144,0.10)");
     aGrad.addColorStop(1, "rgba(2,128,144,0)");
     ctx.fillStyle = aGrad; ctx.fill();
 
-    // Trend bezier curve
+    // Bezier curve
     ctx.beginPath();
     trends.forEach((v, i) => {
       const x = tx(i), y = ty(v);
@@ -211,10 +238,10 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
     });
     ctx.strokeStyle = "#028090"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
 
-    // Dots on trend
+    // Dots
     trends.forEach((v, i) => {
-      const x = tx(i), y = ty(v), isLast = i === trends.length - 1;
-      ctx.beginPath(); ctx.arc(x, y, isLast ? 4 : 2, 0, Math.PI * 2);
+      const x = tx(i), y = ty(v), isLast = i === n - 1;
+      ctx.beginPath(); ctx.arc(x, y, isLast ? 4 : 2.5, 0, Math.PI * 2);
       ctx.fillStyle = isLast ? "#028090" : "rgba(2,128,144,0.45)"; ctx.fill();
       if (isLast) {
         ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
@@ -222,18 +249,14 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
       }
     });
 
-    // Variation bars
+    // Bars
     const maxAbs = Math.max(...changes.map(Math.abs), 0.05);
-    const barW = Math.min(colW * 0.5, 24);
-
     changes.forEach((ch, i) => {
-      if (i === 0) return; // no bar for first day
       const cx = barCx(i);
       const bx = cx - barW / 2;
       const bH = Math.max(3, (Math.abs(ch) / maxAbs) * barMaxH);
       const by = barTop + (barMaxH - bH);
       const color = ch <= 0 ? "#02C39A" : "#E85D4E";
-
       const r = 4;
       ctx.beginPath();
       ctx.moveTo(bx + r, by); ctx.lineTo(bx + barW - r, by);
@@ -244,82 +267,121 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
       const bGrad = ctx.createLinearGradient(0, by, 0, by + bH);
       bGrad.addColorStop(0, color); bGrad.addColorStop(1, color + "70");
       ctx.fillStyle = bGrad; ctx.fill();
-
       ctx.font = "700 9px Inter, sans-serif";
       ctx.fillStyle = color; ctx.textAlign = "center";
-      ctx.fillText((ch > 0 ? "+" : "") + ch.toFixed(1), cx, by - 3);
+      ctx.fillText((ch > 0 ? "+" : "") + ch.toFixed(2), cx, by - 3);
     });
 
-    // Day labels
+    // Day labels — always Mon-Sun
     ctx.font = "600 9px Inter, sans-serif";
-    days.forEach((d, i) => {
+    last7.forEach((entry, i) => {
       const cx = barCx(i);
-      const isToday = i === days.length - 1;
+      const dayOfWeek = (new Date(entry.date).getDay() + 6) % 7; // 0=Mon
+      const isToday = entry.date === today();
       ctx.fillStyle = isToday ? "#028090" : "#B0B8C8";
       ctx.textAlign = "center";
-      ctx.fillText(d, cx, dayLabelTop + 10);
+      ctx.fillText(isToday ? "Oggi" : DAYS[dayOfWeek], cx, dayLabelTop + 10);
     });
   }, [last7]);
 
+  // Touch / click handler
+  const handleInteraction = useCallback((e) => {
+    if (!canvasRef.current || !chartGeoRef.current || !tooltipRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const x = clientX - rect.left;
+    const { tx, ty, trends, n } = chartGeoRef.current;
+
+    let closest = 0, minDist = Infinity;
+    for (let i = 0; i < n; i++) {
+      const dist = Math.abs(tx(i) - x);
+      if (dist < minDist) { minDist = dist; closest = i; }
+    }
+    if (minDist > 30) { tooltipRef.current.style.opacity = "0"; return; }
+
+    const dayOfWeek = (new Date(last7[closest].date).getDay() + 6) % 7;
+    tooltipRef.current.textContent = trends[closest].toFixed(2) + " kg — " + DAYS[dayOfWeek];
+    tooltipRef.current.style.left = tx(closest) + "px";
+    tooltipRef.current.style.top = ty(trends[closest]) + "px";
+    tooltipRef.current.style.opacity = "1";
+  }, [last7]);
+
+  const hideTooltip = useCallback(() => {
+    if (tooltipRef.current) tooltipRef.current.style.opacity = "0";
+  }, []);
+
   return (
     <div style={{
-      background: "white",
-      borderRadius: 22,
+      background: "white", borderRadius: 22,
       boxShadow: "0 2px 16px rgba(0,0,0,0.05)",
-      overflow: "hidden",
-      marginBottom: 14,
+      overflow: "hidden", marginBottom: 14,
     }}>
       <div style={{ padding: "20px 20px 0" }}>
-        {/* Top row: TREND label + Storico + ? */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        {/* Top row: TREND label (14px, same height as buttons) + Storico + ? */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
           <span style={{
-            fontSize: 11, fontWeight: 700, textTransform: "uppercase",
-            letterSpacing: 0.8, color: "#9CA3AF",
+            fontSize: 14, fontWeight: 800, textTransform: "uppercase",
+            letterSpacing: 0.6, color: "#9CA3AF", lineHeight: "30px",
           }}>Trend</span>
           <span style={{ flex: 1 }} />
           <button onClick={onShowHistory} style={{
             display: "flex", alignItems: "center", gap: 5,
-            padding: "6px 12px", borderRadius: 10, height: 30,
+            padding: "0 13px", height: 30, borderRadius: 10,
             background: "#F0F8F8", border: "none", cursor: "pointer",
             fontFamily: "inherit", fontSize: 11, fontWeight: 700, color: "#028090",
           }}>
-            <Clock size={14} /> Storico
+            <Clock size={13} /> Storico
           </button>
           <button onClick={onShowInfo} style={{
             display: "flex", alignItems: "center", justifyContent: "center",
             width: 30, height: 30, borderRadius: 10,
             background: "#F0F2F5", border: "none", cursor: "pointer",
-            fontSize: 12, fontWeight: 800, color: "#9CA3AF",
+            fontSize: 13, fontWeight: 800, color: "#9CA3AF",
           }}>?</button>
         </div>
 
-        {/* Hero row: big number + kg + diff badge */}
+        {/* Hero: 40px number + kg + badge 13px */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <span style={{
-            fontSize: 48, fontWeight: 900, color: "#1A2030",
-            letterSpacing: -2, lineHeight: 1,
-          }}>
-            {currentTrend ?? "—"}
-          </span>
-          <span style={{ fontSize: 17, fontWeight: 600, color: "#9CA3AF" }}>kg</span>
+            fontSize: 40, fontWeight: 900, color: "#1A2030",
+            letterSpacing: -1.5, lineHeight: 1,
+          }}>{currentTrend ?? "—"}</span>
+          <span style={{ fontSize: 16, fontWeight: 600, color: "#9CA3AF" }}>kg</span>
           {vsYesterday != null && (
             <div style={{
-              display: "inline-flex", alignItems: "center", gap: 3,
+              display: "inline-flex", alignItems: "center", gap: 4,
               padding: "4px 10px", borderRadius: 8, marginLeft: 4,
-              fontSize: 12, fontWeight: 700,
+              fontSize: 13, fontWeight: 700,
               background: vsYesterday < 0 ? "rgba(2,195,154,0.1)" : vsYesterday > 0 ? "rgba(232,93,78,0.1)" : "#F0F0F0",
               color: vsYesterday < 0 ? "#02C39A" : vsYesterday > 0 ? "#E85D4E" : "#9CA3AF",
             }}>
-              {vsYesterday < 0 ? <ArrowDown size={10} /> : vsYesterday > 0 ? <ArrowUp size={10} /> : <Minus size={10} />}
+              {vsYesterday < 0 ? <ArrowDown size={11} /> : vsYesterday > 0 ? <ArrowUp size={11} /> : <Minus size={11} />}
               {Math.abs(vsYesterday)} vs ieri
             </div>
           )}
         </div>
+
+        {/* Separator */}
+        <div style={{ height: 1, background: "#F0F2F5", marginTop: 14 }} />
       </div>
 
-      {/* Canvas chart — full width, edge-to-edge */}
-      <div style={{ marginTop: 10 }}>
+      {/* Canvas chart — full width, edge-to-edge, 140px */}
+      <div style={{ position: "relative" }}
+        onClick={handleInteraction}
+        onTouchStart={handleInteraction}
+        onTouchMove={handleInteraction}
+        onTouchEnd={hideTooltip}
+        onMouseLeave={hideTooltip}
+      >
         <canvas ref={canvasRef} style={{ width: "100%", display: "block" }} />
+        <div ref={tooltipRef} style={{
+          position: "absolute", pointerEvents: "none",
+          background: "#1A2030", color: "#fff", borderRadius: 8,
+          padding: "5px 10px", fontSize: 11, fontWeight: 700,
+          whiteSpace: "nowrap", transform: "translate(-50%, -100%)",
+          marginTop: -8, opacity: 0, transition: "opacity 0.15s",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+        }} />
       </div>
     </div>
   );
@@ -599,15 +661,20 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
       groups[monthKey].entries.push(entry);
     });
 
-    // Calculate monthly variation: trend last day - trend first day of month
+    // Calculate monthly variation: trend at 1st of next month - trend at 1st of current month
+    // Uses getTrendAtDate for interpolation when exact dates are missing
     const groupArr = Object.values(groups);
-    groupArr.forEach((g, gIdx) => {
-      // entries are in reverse order (most recent first), so first = last day, last = first day
-      const lastTrend = g.entries[0]?.trend;
-      // For "first of month" trend: use the first entry of previous month group as boundary,
-      // or the earliest entry in this month
-      const firstTrend = g.entries[g.entries.length - 1]?.trend;
-      g.monthVar = (lastTrend != null && firstTrend != null) ? Math.round((lastTrend - firstTrend) * 100) / 100 : null;
+    groupArr.forEach((g) => {
+      const y = g.month.getFullYear();
+      const m = g.month.getMonth();
+      const firstOfMonth = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+      const nextM = m === 11 ? 0 : m + 1;
+      const nextY = m === 11 ? y + 1 : y;
+      const firstOfNextMonth = `${nextY}-${String(nextM + 1).padStart(2, "0")}-01`;
+      const trendStart = getTrendAtDate(smoothed, firstOfMonth);
+      const trendEnd = getTrendAtDate(smoothed, firstOfNextMonth);
+      g.monthVar = (trendStart != null && trendEnd != null)
+        ? Math.round((trendEnd - trendStart) * 100) / 100 : null;
     });
 
     return groupArr;
@@ -697,16 +764,16 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
 
               {/* Column sub-headers per month */}
               <div style={{
-                display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 1fr",
+                display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 0.7fr",
                 padding: "4px 10px", marginBottom: 2, margin: "0 4px",
               }}>
                 <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5 }}>Data</span>
+                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Peso</span>
                 <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Trend</span>
                 <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Var</span>
-                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Peso</span>
               </div>
 
-              {/* Entries: Data | Trend | Var | Peso */}
+              {/* Entries: Data | Peso | Trend | Var */}
               {group.entries.map((entry, idx) => {
                 const dateObj = new Date(entry.date);
                 const isToday = entry.date === today();
@@ -725,7 +792,7 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
                     key={entry.id || idx}
                     onClick={() => handleRowClick(entry)}
                     style={{
-                      display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 1fr",
+                      display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 0.7fr",
                       alignItems: "center",
                       padding: "10px 10px",
                       background: "#F8F9FA",
@@ -739,6 +806,9 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
                       <div style={{ fontSize: 12, fontWeight: 700, color: "#1A2030" }}>{mainLabel}</div>
                       {subLabel && <div style={{ fontSize: 9, color: "#9CA3AF", fontWeight: 500 }}>{subLabel}</div>}
                     </div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7794", textAlign: "right" }}>
+                      {entry.weight}
+                    </span>
                     <span style={{ fontSize: 13, fontWeight: 800, color: "#028090", textAlign: "right" }}>
                       {entry.trend != null ? entry.trend.toFixed(1) : "—"}
                     </span>
@@ -747,9 +817,6 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
                       color: variation != null ? (variation < 0 ? "#02C39A" : variation > 0 ? "#E85D4E" : "#9CA3AF") : "#9CA3AF",
                     }}>
                       {variation != null ? ((variation > 0 ? "+" : "") + variation.toFixed(2)) : "—"}
-                    </span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7794", textAlign: "right" }}>
-                      {entry.weight}
                     </span>
                   </div>
                 );
@@ -784,6 +851,7 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
             </div>
             <input
               type="number"
+              inputMode="decimal"
               step="0.1"
               value={editWeight}
               onChange={(e) => setEditWeight(e.target.value)}
@@ -838,94 +906,99 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
    OVERLAY: INFO
    ═══════════════════════════════════════════ */
 
-const InfoOverlay = ({ T, show, onClose }) => {
+const InfoOverlay = ({ T, show, onClose, alpha }) => {
   if (!show) return null;
+
+  const a = alpha || 0.25;
+  const oneMinusA = (1 - a).toFixed(2);
 
   return (
     <div onClick={onClose} style={{
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.4)",
-      zIndex: 40,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 20,
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
+      zIndex: 40, display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
     }}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "#fff",
-          borderRadius: 20,
-          padding: "24px 20px",
-          maxWidth: 360,
-          width: "100%",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
-          maxHeight: "80vh",
-          overflow: "auto",
-        }}
-      >
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: "#fff", borderRadius: 22, padding: "24px 22px",
+        maxWidth: 370, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
+        maxHeight: "82vh", overflow: "auto",
+      }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <span style={{ fontSize: 16, fontWeight: 800, color: "#1A2030" }}>Come funziona</span>
-          <button
-            onClick={onClose}
-            style={{
-              background: "#F0F0F0",
-              border: "none",
-              borderRadius: 8,
-              width: 28,
-              height: 28,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-            }}
-          >
-            <X size={14} color="#6B7280" />
-          </button>
+          <span style={{ fontSize: 17, fontWeight: 800, color: "#1A2030" }}>Come leggere questa card</span>
+          <button onClick={onClose} style={{
+            background: "#F0F2F5", border: "none", borderRadius: 8,
+            width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+          }}><X size={14} color="#6B7280" /></button>
         </div>
 
-        {/* Section 1: Cos'è il Trend? */}
+        {/* Cos'è il Trend? */}
         <div style={{ marginBottom: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <TrendingDown size={18} color="#028090" />
-            <span style={{ fontSize: 14, fontWeight: 700, color: "#1A2030" }}>Cos'è il Trend?</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 8, background: "#F0F8F8",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}><TrendingDown size={15} color="#028090" /></div>
+            <span style={{ fontSize: 14, fontWeight: 800, color: "#1A2030" }}>Cos'è il Trend?</span>
           </div>
-          <p style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.5, margin: 0 }}>
-            Il trend è una media mobile esponenziale (EMA) che filtra le fluttuazioni quotidiane e rivela il vero andamento del tuo peso.
+          <p style={{ fontSize: 13, color: "#4A5568", lineHeight: 1.7, margin: 0 }}>
+            Il peso sulla bilancia cambia ogni giorno per idratazione, pasto, stress — anche <strong>0.5–1.5 kg in un giorno</strong>. Il <strong>trend</strong> filtra queste oscillazioni e ti mostra la <strong>direzione reale</strong> del tuo peso.
+          </p>
+        </div>
+
+        {/* Come si calcola? */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 8, background: "#F0F8F8",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}><Activity size={15} color="#028090" /></div>
+            <span style={{ fontSize: 14, fontWeight: 800, color: "#1A2030" }}>Come si calcola?</span>
+          </div>
+          <p style={{ fontSize: 13, color: "#4A5568", lineHeight: 1.7, margin: "0 0 10px" }}>
+            Si usa una <strong>Media Mobile Esponenziale</strong> (EMA) con fattore α = {a.toFixed(2)}. Ogni giorno il nuovo trend combina il peso di oggi con il trend di ieri:
           </p>
           <div style={{
-            background: "#F0F8F8",
-            borderRadius: 12,
-            padding: 12,
-            marginTop: 10,
-            fontSize: 12,
-            color: "#028090",
-            fontFamily: "monospace",
+            background: "#F0F8F8", borderRadius: 12, padding: "14px 16px",
+            fontSize: 12, lineHeight: 1.8,
           }}>
-            trend = peso × 0.15 + trend_ieri × 0.85
+            <div style={{ fontFamily: "monospace", fontWeight: 600, color: "#028090" }}>
+              trend_oggi = α × peso_oggi + (1 − α) × trend_ieri
+            </div>
+            <div style={{ fontFamily: "monospace", fontWeight: 600, color: "#028090" }}>
+              trend_oggi = {a.toFixed(2)} × peso_oggi + {oneMinusA} × trend_ieri
+            </div>
+            <div style={{ fontSize: 11, color: "#6B7794", marginTop: 8, borderTop: "1px solid #E0ECED", paddingTop: 8 }}>
+              <strong>α = {a.toFixed(2)}</strong> → il peso di oggi conta il {Math.round(a * 100)}%, il trend precedente il {Math.round((1 - a) * 100)}%.
+              Il primo giorno il trend parte uguale al peso registrato.
+              Puoi cambiare α nelle impostazioni.
+            </div>
           </div>
         </div>
 
-        {/* Section 2: Perché il trend? */}
+        {/* I grafici */}
         <div style={{ marginBottom: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <Activity size={18} color="#028090" />
-            <span style={{ fontSize: 14, fontWeight: 700, color: "#1A2030" }}>Perché il trend?</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 8, background: "#F0F8F8",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}><BarChart3 size={15} color="#028090" /></div>
+            <span style={{ fontSize: 14, fontWeight: 800, color: "#1A2030" }}>I grafici</span>
           </div>
-          <p style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.5, margin: 0 }}>
-            Il peso varia ogni giorno per tanti motivi: idratazione, cibo, stress. Il trend elimina questo rumore e mostra il progresso reale.
+          <p style={{ fontSize: 13, color: "#4A5568", lineHeight: 1.7, margin: 0 }}>
+            La <strong>linea teal</strong> mostra il trend degli ultimi 7 giorni (lun → dom). Le <strong>barre colorate</strong> mostrano la variazione giornaliera: <strong style={{ color: "#02C39A" }}>verde</strong> = calo, <strong style={{ color: "#E85D4E" }}>rosso</strong> = aumento. Tocca un punto della curva per vedere il valore.
           </p>
         </div>
 
-        {/* Section 3: I grafici */}
+        {/* Perché il trend? */}
         <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <BarChart3 size={18} color="#028090" />
-            <span style={{ fontSize: 14, fontWeight: 700, color: "#1A2030" }}>I grafici</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 8, background: "#F0F8F8",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}><AlertCircle size={15} color="#028090" /></div>
+            <span style={{ fontSize: 14, fontWeight: 800, color: "#1A2030" }}>Perché il trend e non il peso?</span>
           </div>
-          <p style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.5, margin: 0 }}>
-            <strong>Linea teal:</strong> il tuo trend settimanale. <strong>Barre:</strong> variazioni giornaliere (verde = calo, rosso = aumento).
+          <p style={{ fontSize: 13, color: "#4A5568", lineHeight: 1.7, margin: 0 }}>
+            Un singolo giorno di peso anomalo <strong>non cambia quasi nulla</strong> nel trend. Questo ti evita ansie inutili e ti fa concentrare sul progresso reale settimana dopo settimana.
           </p>
         </div>
       </div>
@@ -963,11 +1036,14 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
     showCustomMilestones: settings.showCustomMilestones ?? false,
     milestoneStep: settings.milestoneStep ?? 2,
     showBmiMilestones: settings.showBmiMilestones ?? false,
+    emaAlpha: settings.emaAlpha ?? 0.25,
   });
+  const [showEmaInfo, setShowEmaInfo] = useState(false);
 
   // Core computations
   const sorted = useMemo(() => [...entries].sort((a, b) => a.date.localeCompare(b.date)), [entries]);
-  const smoothed = useMemo(() => calcEMA(sorted), [sorted]);
+  const emaAlpha = settings.emaAlpha || 0.25;
+  const smoothed = useMemo(() => calcEMA(sorted, emaAlpha), [sorted, emaAlpha]);
 
   // Chart data filtered by range
   const chartData = useMemo(() => {
@@ -1362,6 +1438,132 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
                 }}
               />
             </div>
+          </div>
+
+          {/* Calcolo Trend Card */}
+          <div style={{ background: T.card, borderRadius: 20, padding: "20px", marginBottom: 16, boxShadow: T.shadow }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: T.textSec, margin: 0 }}>Calcolo trend</h3>
+              <button
+                onClick={() => setShowEmaInfo(prev => !prev)}
+                style={{
+                  width: 26, height: 26, borderRadius: 8,
+                  background: showEmaInfo ? "#E8F4F6" : "#F0F2F5",
+                  border: "none", cursor: "pointer",
+                  fontSize: 12, fontWeight: 800,
+                  color: showEmaInfo ? "#028090" : "#9CA3AF",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >?</button>
+            </div>
+
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 10 }}>
+                EMA — sensibilità (α)
+              </label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[0.20, 0.25, 0.30].map((a) => (
+                  <button
+                    key={a}
+                    onClick={() => setSettingsForm({ ...settingsForm, emaAlpha: a })}
+                    style={{
+                      flex: 1, padding: "10px 0", borderRadius: 10,
+                      border: settingsForm.emaAlpha === a ? "none" : `1.5px solid ${T.border}`,
+                      background: settingsForm.emaAlpha === a ? T.gradient : T.bg,
+                      color: settingsForm.emaAlpha === a ? "#fff" : T.text,
+                      fontSize: 14, fontWeight: 700,
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >
+                    {a.toFixed(2)}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: T.textMuted, marginTop: 8 }}>
+                {settingsForm.emaAlpha === 0.20 ? "Liscia — meno reattiva, filtra di più le oscillazioni"
+                  : settingsForm.emaAlpha === 0.25 ? "Bilanciata — buon compromesso tra stabilità e reattività"
+                  : "Reattiva — segue più da vicino le variazioni recenti"}
+              </div>
+            </div>
+
+            {/* EMA Info expandable */}
+            {showEmaInfo && (
+              <div style={{
+                background: T.bg, borderRadius: 14, padding: "16px",
+                marginTop: 12, fontSize: 13, color: "#4A5568", lineHeight: 1.7,
+              }}>
+                <div style={{ fontWeight: 800, color: "#1A2030", marginBottom: 8, fontSize: 14 }}>
+                  Cos'è l'EMA?
+                </div>
+                <p style={{ margin: "0 0 10px" }}>
+                  La <strong>Media Mobile Esponenziale</strong> (EMA) filtra le oscillazioni quotidiane del peso (acqua, pasto, stress) e mostra la direzione reale.
+                </p>
+                <div style={{
+                  background: "#F0F8F8", borderRadius: 10, padding: "12px 14px",
+                  marginBottom: 12, fontFamily: "'SF Mono', monospace",
+                  fontSize: 12, color: "#028090", fontWeight: 600,
+                }}>
+                  trend<sub>oggi</sub> = α × peso<sub>oggi</sub> + (1 − α) × trend<sub>ieri</sub>
+                </div>
+                <p style={{ margin: "0 0 10px" }}>
+                  <strong>α</strong> controlla quanto il peso di oggi influenza il trend. Più α è alto, più il trend reagisce al peso odierno.
+                </p>
+
+                {/* Comparison table */}
+                <div style={{ overflowX: "auto", marginTop: 12 }}>
+                  <table style={{
+                    width: "100%", borderCollapse: "collapse", fontSize: 11,
+                    textAlign: "center",
+                  }}>
+                    <thead>
+                      <tr style={{ borderBottom: `2px solid ${T.border}` }}>
+                        <th style={{ padding: "6px 4px", textAlign: "left", fontWeight: 700, color: "#6B7280" }}></th>
+                        <th style={{ padding: "6px 4px", fontWeight: 700, color: settingsForm.emaAlpha === 0.20 ? "#028090" : "#6B7280" }}>α 0.20</th>
+                        <th style={{ padding: "6px 4px", fontWeight: 700, color: settingsForm.emaAlpha === 0.25 ? "#028090" : "#6B7280" }}>α 0.25</th>
+                        <th style={{ padding: "6px 4px", fontWeight: 700, color: settingsForm.emaAlpha === 0.30 ? "#028090" : "#6B7280" }}>α 0.30</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        ["Oggi",     "20.0%", "25.0%", "30.0%"],
+                        ["Ieri",     "16.0%", "18.8%", "21.0%"],
+                        ["2gg fa",   "12.8%", "14.1%", "14.7%"],
+                        ["3gg fa",   "10.2%", "10.5%", "10.3%"],
+                        ["4gg fa",   "8.2%",  "7.9%",  "7.2%"],
+                      ].map(([label, ...vals], i) => (
+                        <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                          <td style={{ padding: "5px 4px", textAlign: "left", fontWeight: 600, color: "#1A2030" }}>{label}</td>
+                          {vals.map((v, j) => (
+                            <td key={j} style={{ padding: "5px 4px", color: "#4A5568" }}>{v}</td>
+                          ))}
+                        </tr>
+                      ))}
+                      <tr style={{ borderBottom: `2px solid ${T.border}`, fontWeight: 700 }}>
+                        <td style={{ padding: "5px 4px", textAlign: "left", color: "#1A2030" }}>Top 5</td>
+                        <td style={{ padding: "5px 4px", color: "#028090" }}>67.2%</td>
+                        <td style={{ padding: "5px 4px", color: "#028090" }}>76.3%</td>
+                        <td style={{ padding: "5px 4px", color: "#028090" }}>83.2%</td>
+                      </tr>
+                      {[
+                        ["7gg",      "79%",   "87%",   "92%"],
+                        ["14gg",     "96%",   "98%",   "99.5%"],
+                        ["Mezza vita", "3.1gg", "2.4gg", "1.9gg"],
+                      ].map(([label, ...vals], i) => (
+                        <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                          <td style={{ padding: "5px 4px", textAlign: "left", fontWeight: 600, color: "#1A2030" }}>{label}</td>
+                          {vals.map((v, j) => (
+                            <td key={j} style={{ padding: "5px 4px", color: "#4A5568" }}>{v}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p style={{ margin: "10px 0 0", fontSize: 11, color: "#9CA3AF" }}>
+                  "Mezza vita" = dopo quanti giorni il 50% del trend è determinato dalle pesate più recenti.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Obiettivo Card */}
@@ -1763,7 +1965,7 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
         entries={entries}
         setEntries={setEntries}
       />
-      <InfoOverlay T={T} show={showInfo} onClose={() => setShowInfo(false)} />
+      <InfoOverlay T={T} show={showInfo} onClose={() => setShowInfo(false)} alpha={emaAlpha} />
     </div>
   );
 }
