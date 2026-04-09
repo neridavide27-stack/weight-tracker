@@ -1,14 +1,14 @@
 "use client";
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine, Area, ComposedChart, ReferenceArea,
+  ResponsiveContainer, ReferenceLine, Area, ComposedChart,
 } from "recharts";
 import {
   Scale, Target, TrendingDown, TrendingUp, Calendar, Plus,
   ChevronLeft, Settings, Trash2, Award, Flame, ArrowDown,
   ArrowUp, Minus, Edit3, Check, X, ChevronRight, Activity,
-  AlertCircle, Info,
+  AlertCircle, Info, Clock, BarChart3, Heart,
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════
@@ -114,199 +114,798 @@ const CircularProgress = ({ percentage, size = 64, strokeWidth = 5, color }) => 
   );
 };
 
-const InfoPopup = ({ show, onClose, title, children }) => {
-  if (!show) return null;
+/* ═══════════════════════════════════════════
+   CARD 1: TREND (with Canvas chart)
+   ═══════════════════════════════════════════ */
+
+const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
+  const canvasRef = useRef(null);
+  const [tooltipData, setTooltipData] = useState(null);
+
+  const last7 = useMemo(() => {
+    if (smoothed.length === 0) return [];
+    return smoothed.slice(-7);
+  }, [smoothed]);
+
+  const currentTrend = last7[last7.length - 1]?.trend ?? null;
+  const prevTrendValue = last7[last7.length - 2]?.trend ?? null;
+  const vsYesterday = (currentTrend != null && prevTrendValue != null)
+    ? Math.round((currentTrend - prevTrendValue) * 100) / 100 : null;
+
+  // Draw canvas chart
+  useEffect(() => {
+    if (!canvasRef.current || last7.length === 0) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.width = canvas.offsetWidth * dpr;
+    canvas.height = canvas.offsetHeight * dpr;
+    ctx.scale(dpr, dpr);
+
+    const width = canvas.offsetWidth;
+    const height = canvas.offsetHeight;
+    const padding = { top: 20, bottom: 30, left: 10, right: 10 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+
+    // Calculate min/max for scaling
+    const weights = last7.map(d => d.trend);
+    const changes = [];
+    for (let i = 1; i < last7.length; i++) {
+      changes.push(last7[i].weight - last7[i - 1].weight);
+    }
+
+    const minWeight = Math.min(...weights);
+    const maxWeight = Math.max(...weights);
+    const weightRange = maxWeight - minWeight || 1;
+    const maxChange = Math.max(...changes.map(Math.abs));
+
+    // Clear canvas
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, width, height);
+
+    // Bar geometry
+    const colW = chartWidth / last7.length;
+    const barDrawW = Math.min(colW * 0.5, 24);
+    const barMaxH = chartHeight * 0.35;
+    const baseY = padding.top + chartHeight * 0.65;
+
+    // Helper: center X of column i
+    const colCx = (i) => padding.left + colW * i + colW / 2;
+    // Trend line: from left edge of first bar to right edge of last bar
+    const firstBarLeft = colCx(0) - barDrawW / 2;
+    const lastBarRight = colCx(last7.length - 1) + barDrawW / 2;
+    const trendX = (i) => firstBarLeft + (lastBarRight - firstBarLeft) * i / (last7.length - 1);
+    const trendY = (v) => {
+      const norm = (v - minWeight) / weightRange;
+      return padding.top + chartHeight * 0.1 + (1 - norm) * (chartHeight * 0.4);
+    };
+
+    // Draw variation bars
+    for (let i = 1; i < last7.length; i++) {
+      const change = last7[i].weight - last7[i - 1].weight;
+      const barH = Math.max(3, (Math.abs(change) / (maxChange || 0.1)) * barMaxH);
+      const bx = colCx(i) - barDrawW / 2;
+      const by = baseY - barH;
+      const isGreen = change <= 0;
+      const color = isGreen ? "#02C39A" : "#E85D4E";
+
+      // Rounded-top bar
+      const r = Math.min(4, barDrawW / 2);
+      ctx.beginPath();
+      ctx.moveTo(bx + r, by); ctx.lineTo(bx + barDrawW - r, by);
+      ctx.quadraticCurveTo(bx + barDrawW, by, bx + barDrawW, by + r);
+      ctx.lineTo(bx + barDrawW, baseY); ctx.lineTo(bx, baseY);
+      ctx.lineTo(bx, by + r); ctx.quadraticCurveTo(bx, by, bx + r, by);
+      ctx.closePath();
+
+      const bGrad = ctx.createLinearGradient(0, by, 0, baseY);
+      bGrad.addColorStop(0, color); bGrad.addColorStop(1, color + "70");
+      ctx.fillStyle = bGrad; ctx.fill();
+
+      // Value label above bar
+      ctx.fillStyle = color;
+      ctx.font = "bold 9px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`${change > 0 ? "+" : ""}${change.toFixed(1)}`, colCx(i), by - 4);
+    }
+
+    // Draw area fill under trend
+    ctx.beginPath();
+    ctx.moveTo(trendX(0), trendY(minWeight));
+    for (let i = 0; i < last7.length; i++) {
+      const x = trendX(i), y = trendY(last7[i].trend);
+      if (i === 0) ctx.moveTo(x, y);
+      else {
+        const px = trendX(i - 1), py = trendY(last7[i - 1].trend);
+        ctx.bezierCurveTo((px + x) / 2, py, (px + x) / 2, y, x, y);
+      }
+    }
+    ctx.lineTo(trendX(last7.length - 1), baseY);
+    ctx.lineTo(trendX(0), baseY);
+    ctx.closePath();
+    const aGrad = ctx.createLinearGradient(0, padding.top, 0, baseY);
+    aGrad.addColorStop(0, "rgba(2,128,144,0.12)");
+    aGrad.addColorStop(1, "rgba(2,128,144,0)");
+    ctx.fillStyle = aGrad; ctx.fill();
+
+    // Draw trend curve
+    ctx.strokeStyle = "#028090";
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    for (let i = 0; i < last7.length; i++) {
+      const x = trendX(i), y = trendY(last7[i].trend);
+      if (i === 0) ctx.moveTo(x, y);
+      else {
+        const px = trendX(i - 1), py = trendY(last7[i - 1].trend);
+        ctx.bezierCurveTo((px + x) / 2, py, (px + x) / 2, y, x, y);
+      }
+    }
+    ctx.stroke();
+
+    // Draw dots on trend
+    for (let i = 0; i < last7.length; i++) {
+      const x = trendX(i), y = trendY(last7[i].trend);
+      const isLast = i === last7.length - 1;
+      ctx.beginPath(); ctx.arc(x, y, isLast ? 4 : 2, 0, Math.PI * 2);
+      ctx.fillStyle = isLast ? "#028090" : "rgba(2,128,144,0.45)"; ctx.fill();
+      if (isLast) {
+        ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(2,128,144,0.18)"; ctx.lineWidth = 2; ctx.stroke();
+      }
+    }
+
+    // Draw day labels
+    const dayNames = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
+    ctx.font = "600 9px Inter, sans-serif";
+    ctx.textAlign = "center";
+    for (let i = 0; i < last7.length; i++) {
+      const isToday = i === last7.length - 1;
+      ctx.fillStyle = isToday ? "#028090" : "#B0B8C8";
+      const label = isToday ? "Oggi" : dayNames[new Date(last7[i].date).getDay()];
+      ctx.fillText(label, colCx(i), height - 8);
+    }
+  }, [last7]);
+
+  // Canvas click/touch handler — find nearest day point
+  const handleCanvasClick = (e) => {
+    if (!canvasRef.current || last7.length === 0) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const x = clientX - rect.left;
+    const w = rect.width;
+    const pad = { left: 10, right: 10 };
+    const cW = w - pad.left - pad.right;
+    const colW = cW / last7.length;
+    const barDrawW = Math.min(colW * 0.5, 24);
+    const colCx = (i) => pad.left + colW * i + colW / 2;
+    const fbl = colCx(0) - barDrawW / 2;
+    const lbr = colCx(last7.length - 1) + barDrawW / 2;
+    const trendXForIdx = (i) => fbl + (lbr - fbl) * i / (last7.length - 1);
+
+    let closestIdx = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < last7.length; i++) {
+      const dist = Math.abs(x - trendXForIdx(i));
+      if (dist < minDist) { minDist = dist; closestIdx = i; }
+    }
+
+    setTooltipData(closestIdx);
+    // Auto-dismiss after 2s
+    setTimeout(() => setTooltipData(null), 2000);
+  };
+
   return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 50, padding: 24,
+    <div style={{
+      background: "white",
+      borderRadius: 22,
+      padding: "20px 20px 16px",
+      boxShadow: T.shadow,
+      marginBottom: 16,
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: "#fff", borderRadius: 20, padding: "24px 20px",
-        maxWidth: 360, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <span style={{ fontSize: 16, fontWeight: 800, color: "#1A2030" }}>{title}</span>
-          <button onClick={onClose} style={{
-            background: "#F0F0F0", border: "none", borderRadius: 8, width: 28, height: 28,
-            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
-          }}><X size={14} color="#6B7280" /></button>
+      {/* Header row */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, height: 30 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: "#9CA3AF", textTransform: "uppercase" }}>TREND</span>
+        <div style={{ flex: 1 }} />
+        <button onClick={onShowHistory} style={{
+          background: "#F0F8F8",
+          color: "#028090",
+          border: "none",
+          borderRadius: 15,
+          padding: "6px 12px",
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          height: 30,
+        }}>
+          <Clock size={14} />
+          Storico
+        </button>
+        <button onClick={onShowInfo} style={{
+          background: "#F0F2F5",
+          border: "none",
+          borderRadius: 8,
+          width: 30,
+          height: 30,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginLeft: 8,
+        }}>
+          <Info size={16} color="#6B7280" />
+        </button>
+      </div>
+
+      {/* Hero row */}
+      {currentTrend != null ? (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
+            <span style={{ fontSize: 48, fontWeight: 900, color: "#1A2030" }}>
+              {currentTrend.toFixed(1)}
+            </span>
+            <span style={{ fontSize: 17, color: "#6B7280" }}>kg</span>
+          </div>
+          {vsYesterday != null && (
+            <div style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "4px 10px",
+              borderRadius: 8,
+              background: vsYesterday < 0 ? "#02C39A12" : "#E85D4E12",
+              color: vsYesterday < 0 ? "#02C39A" : "#E85D4E",
+              fontSize: 13,
+              fontWeight: 700,
+            }}>
+              {vsYesterday < 0 ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
+              {Math.abs(vsYesterday).toFixed(1)} vs ieri
+            </div>
+          )}
         </div>
-        {children}
+      ) : (
+        <div style={{ color: T.textMuted, marginBottom: 16 }}>Nessun dato disponibile</div>
+      )}
+
+      {/* Canvas chart */}
+      <div style={{ position: "relative", marginBottom: 8 }}>
+        <canvas
+          ref={canvasRef}
+          onClick={handleCanvasClick}
+          onTouchStart={handleCanvasClick}
+          style={{
+            width: "100%",
+            height: 130,
+            cursor: "pointer",
+            display: "block",
+          }}
+        />
+        {tooltipData != null && last7[tooltipData] && (
+          <div style={{
+            position: "absolute",
+            top: 15,
+            left: `${(tooltipData / (last7.length - 1)) * 100}%`,
+            transform: "translateX(-50%)",
+            background: "white",
+            borderRadius: 8,
+            padding: "6px 10px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            fontSize: 12,
+            fontWeight: 600,
+            color: "#028090",
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+          }}>
+            <span style={{ color: "#9CA3AF", fontSize: 10 }}>{formatDate(last7[tooltipData].date)}</span>{" "}
+            <strong>{last7[tooltipData].trend.toFixed(1)}</strong> kg
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-const CustomTooltip = ({ active, payload, T }) => {
-  if (!active || !payload?.length) return null;
-  const d = payload[0]?.payload;
+/* ═══════════════════════════════════════════
+   CARD 2: OBIETTIVO (Goal tracking)
+   ═══════════════════════════════════════════ */
+
+const GoalCard = ({ T, smoothed, settings, sorted }) => {
+  if (!settings.goalWeight || !settings.startWeight) {
+    return null;
+  }
+
+  const currentWeight = sorted[sorted.length - 1]?.weight;
+  const currentTrend = smoothed[smoothed.length - 1]?.trend;
+
+  if (!currentWeight || !currentTrend) return null;
+
+  // Calculate progress
+  const total = Math.abs(settings.startWeight - settings.goalWeight);
+  const done = Math.abs(settings.startWeight - currentWeight);
+  const progressPct = total > 0 ? Math.min(Math.max((done / total) * 100, 0), 100) : 0;
+
+  // kg remaining
+  const kgMancanti = Math.abs(Math.round((currentWeight - settings.goalWeight) * 10) / 10);
+
+  // kg lost
+  const kgPersi = Math.abs(Math.round((sorted[0].weight - currentWeight) * 100) / 100);
+
+  // Weekly rate
+  const recent = smoothed.slice(-14);
+  const reg = linearRegression(recent);
+  const weeklyRate = reg ? Math.round(reg.slope * 7 * 100) / 100 : null;
+
+  // Predicted date
+  let predictedDate = null;
+  if (reg && reg.slope < 0 && settings.goalWeight) {
+    const currentTrendEnd = reg.intercept + reg.slope * (recent.length - 1);
+    const daysToGoal = (settings.goalWeight - currentTrendEnd) / reg.slope;
+    if (daysToGoal > 0 && daysToGoal < 730) {
+      const pd = new Date();
+      pd.setDate(pd.getDate() + Math.round(daysToGoal));
+      predictedDate = formatDateFull(pd);
+    }
+  }
+
+  // Trajectory chart data
+  const chartDataRaw = [...smoothed];
+  if (reg && chartDataRaw.length > 0) {
+    const lastEntry = chartDataRaw[chartDataRaw.length - 1];
+    const lastDate = new Date(lastEntry.date);
+    const startDate = new Date(chartDataRaw[0].date);
+    const daysElapsed = (lastDate - startDate) / 86400000;
+
+    for (let i = 0; i < 60; i++) {
+      const futureDate = new Date(lastDate);
+      futureDate.setDate(futureDate.getDate() + i);
+      const daysSinceStart = daysElapsed + i;
+      const projectedValue = reg.intercept + reg.slope * daysSinceStart;
+      chartDataRaw.push({
+        date: toISO(futureDate),
+        trend: projectedValue,
+        projected: true,
+        dateLabel: formatDate(futureDate),
+      });
+    }
+  }
+
   return (
     <div style={{
-      background: T.card, borderRadius: 12, padding: "10px 14px",
-      boxShadow: T.shadowLg, border: `1px solid ${T.tealLight}`,
+      background: "white",
+      borderRadius: 22,
+      padding: "20px",
+      boxShadow: T.shadow,
+      marginBottom: 16,
     }}>
-      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>{formatDateFull(d.date)}</div>
-      {d.weight != null && <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Peso: {d.weight} kg</div>}
-      {d.trend != null && <div style={{ fontSize: 12, color: T.teal, fontWeight: 600 }}>Trend: {d.trend} kg</div>}
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#6B7280" }}>Obiettivo</span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: "#028090" }}>{settings.goalWeight} kg</span>
+      </div>
+
+      {/* Progress ring + stats */}
+      <div style={{ display: "flex", gap: 20, marginBottom: 24 }}>
+        <div style={{ flex: "0 0 auto" }}>
+          <CircularProgress percentage={progressPct} size={80} strokeWidth={5} color="#028090" />
+        </div>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 600 }}>Mancanti</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#1A2030" }}>{kgMancanti} kg</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 600 }}>Persi</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#028090" }}>{kgPersi} kg</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 600 }}>Ritmo settimanale</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#1A2030" }}>
+              {weeklyRate != null ? `${weeklyRate.toFixed(2)} kg` : "—"}
+            </div>
+          </div>
+          {predictedDate && (
+            <div>
+              <div style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 600 }}>Data prevista</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#028090" }}>{predictedDate}</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Trajectory chart */}
+      <ResponsiveContainer width="100%" height={200}>
+        <ComposedChart data={chartDataRaw}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+          <XAxis dataKey="dateLabel" tick={{ fontSize: 11 }} interval={Math.floor(chartDataRaw.length / 6)} />
+          <YAxis domain={["dataMin - 1", "dataMax + 1"]} tick={{ fontSize: 11 }} />
+          <Tooltip
+            contentStyle={{
+              background: T.card,
+              borderRadius: 12,
+              boxShadow: T.shadowLg,
+              border: `1px solid ${T.tealLight}`,
+            }}
+            cursor={false}
+          />
+          <ReferenceLine y={settings.goalWeight} stroke="#028090" strokeDasharray="4 4" name="Obiettivo" />
+          <Line type="monotone" dataKey="trend" stroke="#028090" strokeWidth={2} dot={false} isAnimationActive={false} />
+          <Line
+            type="monotone"
+            dataKey="trend"
+            stroke="#028090"
+            strokeWidth={2}
+            strokeDasharray="5 5"
+            dot={false}
+            isAnimationActive={false}
+            data={chartDataRaw.filter(d => d.projected)}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   WEIGHT SECTION COMPONENT
+   BOTTOM SHEET: HISTORY
    ═══════════════════════════════════════════ */
 
-export default function WeightSection({ T, entries, setEntries, settings, goTo }) {
-  // Internal screen: main | add | history
+const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEntries }) => {
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [editWeight, setEditWeight] = useState("");
+
+  // Group by month
+  const groupedByMonth = useMemo(() => {
+    const groups = {};
+    [...smoothed].reverse().forEach(entry => {
+      const dateObj = new Date(entry.date);
+      const monthKey = `${dateObj.getFullYear()}-${dateObj.getMonth()}`;
+      if (!groups[monthKey]) {
+        groups[monthKey] = { month: dateObj, entries: [] };
+      }
+      groups[monthKey].entries.push(entry);
+    });
+    return Object.values(groups);
+  }, [smoothed]);
+
+  const handleDelete = (id) => {
+    setEntries(entries.filter(e => e.id !== id));
+  };
+
+  if (!show) return null;
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.4)",
+      zIndex: 40,
+      display: "flex",
+      alignItems: "flex-end",
+    }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "white",
+          borderRadius: "24px 24px 0 0",
+          width: "100%",
+          maxHeight: "82vh",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {/* Handle + Header */}
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
+          <div style={{
+            width: 36,
+            height: 4,
+            borderRadius: 2,
+            background: "#D1D5DB",
+            margin: "0 auto 12px",
+          }} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 18, fontWeight: 800, color: "#1A2030" }}>Storico</span>
+            <button onClick={onClose} style={{
+              background: "#F0F2F5",
+              border: "none",
+              borderRadius: 8,
+              width: 32,
+              height: 32,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}>
+              <X size={16} color="#6B7280" />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable content */}
+        <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
+          {groupedByMonth.map((group, gIdx) => (
+            <div key={gIdx} style={{ marginBottom: 24 }}>
+              {/* Month header with variation summary */}
+              {(() => {
+                const monthEntries = group.entries;
+                const firstTrend = monthEntries.length > 0 ? monthEntries[monthEntries.length - 1].trend : null;
+                const lastTrend = monthEntries.length > 0 ? monthEntries[0].trend : null;
+                const monthVar = (firstTrend != null && lastTrend != null)
+                  ? Math.round((lastTrend - firstTrend) * 100) / 100 : null;
+                return (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px" }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "#1A2030", textTransform: "capitalize" }}>
+                      {group.month.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}
+                    </span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: T.textMuted }}>
+                      {monthVar != null && (
+                        <span style={{ color: monthVar <= 0 ? "#02C39A" : "#E85D4E", fontWeight: 700 }}>
+                          {monthVar > 0 ? "+" : ""}{monthVar} kg
+                        </span>
+                      )}
+                      {" · "}{monthEntries.length} pesate
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* Column headers */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "1.2fr 1fr 1fr 1fr",
+                gap: 8,
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#9CA3AF",
+                paddingBottom: 8,
+                marginBottom: 8,
+                borderBottom: `1px solid ${T.border}`,
+              }}>
+                <div>Data</div>
+                <div>Peso</div>
+                <div>Trend</div>
+                <div>Var</div>
+              </div>
+
+              {/* Entries — click row to edit */}
+              {group.entries.map((entry, eIdx) => {
+                const rawEntry = entries.find(e => e.date === entry.date);
+                const prevEntry = eIdx < group.entries.length - 1 ? group.entries[eIdx + 1] : null;
+                const variation = prevEntry
+                  ? Math.round((entry.trend - prevEntry.trend) * 100) / 100
+                  : null;
+
+                return (
+                  <div key={entry.date} onClick={() => {
+                    if (rawEntry) {
+                      setEditingEntry(entry.date);
+                      setEditWeight(String(rawEntry.weight));
+                    }
+                  }} style={{
+                    display: "grid",
+                    gridTemplateColumns: "1.2fr 1fr 1fr 1fr",
+                    gap: 8,
+                    alignItems: "center",
+                    padding: "10px 8px",
+                    marginBottom: 3,
+                    background: "#F8F9FA",
+                    borderRadius: 11,
+                    fontSize: 13,
+                    cursor: rawEntry ? "pointer" : "default",
+                    transition: "background 0.15s",
+                  }}>
+                    <div style={{ color: "#1A2030", fontWeight: 600 }}>
+                      {new Date(entry.date).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
+                    </div>
+                    <div style={{ color: "#1A2030", fontWeight: 700 }}>{rawEntry?.weight ?? entry.trend.toFixed(1)}</div>
+                    <div style={{ color: T.teal, fontWeight: 700 }}>{entry.trend.toFixed(1)}</div>
+                    <div style={{
+                      color: variation == null ? T.textMuted : variation < 0 ? "#02C39A" : "#E85D4E",
+                      fontWeight: 700,
+                    }}>
+                      {variation == null ? "—" : `${variation > 0 ? "+" : ""}${variation.toFixed(2)}`}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Edit sub-sheet */}
+      {editingEntry && (() => {
+        const rawEntry = entries.find(e => e.date === editingEntry);
+        if (!rawEntry) return null;
+        const dateLabel = new Date(editingEntry).toLocaleDateString("it-IT", { day: "numeric", month: "long" });
+        return (
+          <div onClick={() => setEditingEntry(null)} style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)",
+            zIndex: 45, display: "flex", alignItems: "flex-end",
+          }}>
+            <div onClick={e => e.stopPropagation()} style={{
+              background: "#fff", borderRadius: "20px 20px 0 0", width: "100%",
+              padding: "16px 20px 28px",
+              boxShadow: "0 -4px 20px rgba(0,0,0,0.1)",
+            }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: "#D1D5DB", margin: "0 auto 16px" }} />
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#1A2030", marginBottom: 16 }}>Modifica — {dateLabel}</div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#9CA3AF", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 }}>Peso (kg)</div>
+                <input type="number" step="0.1" value={editWeight} onChange={e => setEditWeight(e.target.value)}
+                  style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1.5px solid #E8ECEF", fontFamily: "inherit", fontSize: 18, fontWeight: 800, color: "#1A2030", textAlign: "center" }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+                <button onClick={() => { handleDelete(rawEntry.id); setEditingEntry(null); }} style={{
+                  flex: 1, padding: 13, borderRadius: 12, border: "none", fontFamily: "inherit",
+                  fontSize: 14, fontWeight: 700, cursor: "pointer", background: "#FEF2F2", color: "#E85D4E",
+                }}>Elimina</button>
+                <button onClick={() => setEditingEntry(null)} style={{
+                  flex: 1, padding: 13, borderRadius: 12, border: "none", fontFamily: "inherit",
+                  fontSize: 14, fontWeight: 700, cursor: "pointer", background: "#F0F2F5", color: "#6B7794",
+                }}>Annulla</button>
+                <button onClick={() => {
+                  const w = parseFloat(editWeight);
+                  if (!isNaN(w) && w >= 20 && w <= 300) {
+                    setEntries(entries.map(e => e.id === rawEntry.id ? { ...e, weight: w } : e));
+                  }
+                  setEditingEntry(null);
+                }} style={{
+                  flex: 1, padding: 13, borderRadius: 12, border: "none", fontFamily: "inherit",
+                  fontSize: 14, fontWeight: 700, cursor: "pointer",
+                  background: "linear-gradient(135deg, #028090, #02A4B5)", color: "#fff",
+                  boxShadow: "0 3px 12px rgba(2,128,144,0.25)",
+                }}>Salva</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   INFO OVERLAY
+   ═══════════════════════════════════════════ */
+
+const InfoOverlay = ({ T, show, onClose }) => {
+  if (!show) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.4)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 50,
+        padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          borderRadius: 20,
+          padding: "24px 20px",
+          maxWidth: 360,
+          width: "100%",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
+          maxHeight: "80vh",
+          overflow: "auto",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: "#1A2030" }}>Come funziona</span>
+          <button
+            onClick={onClose}
+            style={{
+              background: "#F0F0F0",
+              border: "none",
+              borderRadius: 8,
+              width: 28,
+              height: 28,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            <X size={14} color="#6B7280" />
+          </button>
+        </div>
+
+        {/* Section 1: Cos'è il Trend? */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <TrendingDown size={18} color="#028090" />
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#1A2030" }}>Cos'è il Trend?</span>
+          </div>
+          <p style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.5, margin: 0 }}>
+            Il trend è una media mobile esponenziale (EMA) che filtro le fluttuazioni quotidiane e rivela il vero andamento del tuo peso.
+          </p>
+          <div style={{
+            background: "#F0F8F8",
+            borderRadius: 12,
+            padding: 12,
+            marginTop: 10,
+            fontSize: 12,
+            color: "#028090",
+            fontFamily: "monospace",
+          }}>
+            trend = peso × 0.15 + trend_ieri × 0.85
+          </div>
+        </div>
+
+        {/* Section 2: Perché il trend? */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <Activity size={18} color="#028090" />
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#1A2030" }}>Perché il trend?</span>
+          </div>
+          <p style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.5, margin: 0 }}>
+            Il peso varia ogni giorno per tanti motivi: idratazione, cibo, stress. Il trend elimina questo rumore e mostra il progresso reale.
+          </p>
+        </div>
+
+        {/* Section 3: I grafici */}
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <BarChart3 size={18} color="#028090" />
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#1A2030" }}>I grafici</span>
+          </div>
+          <p style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.5, margin: 0 }}>
+            <strong>Linea teal:</strong> il tuo trend settimanale. <strong>Barre:</strong> variazioni giornaliere (verde = calo, rosso = aumento).
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════
+   WEIGHT SECTION COMPONENT (Main)
+   ═══════════════════════════════════════════ */
+
+export default function WeightSection({ T, entries, setEntries, settings, setSettings, goTo, onAddRef }) {
   const [screen, setScreen] = useState("main");
+
+  // Expose a way for parent to trigger "add" screen
+  useEffect(() => {
+    if (onAddRef) {
+      onAddRef.current = () => setScreen("add");
+    }
+  }, [onAddRef]);
   const [newWeight, setNewWeight] = useState("");
   const [newNote, setNewNote] = useState("");
   const [newDate, setNewDate] = useState(today());
-  const [editingEntry, setEditingEntry] = useState(null);
-  const [editWeight, setEditWeight] = useState("");
-  const [showConfirmDelete, setShowConfirmDelete] = useState(null);
-  const [chartRange, setChartRange] = useState("1M");
-  const [chartSettings, setChartSettings] = useState({
-    showObjective: true, showBMIZones: false, showScale: true, showTrend: true,
+  const [showInfo, setShowInfo] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({
+    name: settings.name || "",
+    height: settings.height || "",
+    startWeight: settings.startWeight || "",
+    goalWeight: settings.goalWeight || "",
+    showCustomMilestones: settings.showCustomMilestones ?? false,
+    milestoneStep: settings.milestoneStep ?? 2,
+    showBmiMilestones: settings.showBmiMilestones ?? false,
   });
-  const [showChartSettings, setShowChartSettings] = useState(false);
-  const [compTab, setCompTab] = useState("week");
-  const [showTrendInfo, setShowTrendInfo] = useState(false);
-  const [showPredInfo, setShowPredInfo] = useState(false);
 
   // Core computations
   const sorted = useMemo(() => [...entries].sort((a, b) => a.date.localeCompare(b.date)), [entries]);
   const smoothed = useMemo(() => calcEMA(sorted), [sorted]);
-
-  const chartData = useMemo(() => {
-    const now = new Date();
-    const cutoff = new Date();
-    if (chartRange === "1W") cutoff.setDate(now.getDate() - 7);
-    else if (chartRange === "1M") cutoff.setDate(now.getDate() - 30);
-    else if (chartRange === "3M") cutoff.setMonth(now.getMonth() - 3);
-    else if (chartRange === "6M") cutoff.setMonth(now.getMonth() - 6);
-    else cutoff.setFullYear(2000);
-    return smoothed.filter(e => new Date(e.date) >= cutoff).map(e => ({ ...e, dateLabel: formatDate(e.date) }));
-  }, [smoothed, chartRange]);
-
-  const metrics = useMemo(() => {
-    if (sorted.length === 0) return {};
-    const latest = sorted[sorted.length - 1];
-    const latestSmoothed = smoothed[smoothed.length - 1];
-    const bmi = calcBMI(latest.weight, settings.height);
-
-    let streak = 0;
-    const d = new Date();
-    for (let i = 0; i < 365; i++) {
-      const check = toISO(d);
-      if (sorted.some(e => e.date === check)) { streak++; d.setDate(d.getDate() - 1); }
-      else if (i === 0) { d.setDate(d.getDate() - 1); }
-      else break;
-    }
-
-    const recent = smoothed.slice(-14);
-    const reg = linearRegression(recent);
-    let predictedDate = null;
-    let daysToGoal = null;
-    if (reg && reg.slope < 0 && settings.goalWeight) {
-      const currentTrendEnd = reg.intercept + reg.slope * (recent.length - 1);
-      daysToGoal = (settings.goalWeight - currentTrendEnd) / reg.slope;
-      if (daysToGoal > 0 && daysToGoal < 730) {
-        const pd = new Date(); pd.setDate(pd.getDate() + Math.round(daysToGoal));
-        predictedDate = formatDateFull(pd);
-      }
-    }
-    const weeklyRate = reg ? Math.round(reg.slope * 7 * 100) / 100 : null;
-    const weeksToGoal = daysToGoal ? Math.round(daysToGoal / 7) : null;
-
-    const todayEntry = sorted.find(e => e.date === today());
-    const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterdayEntry = sorted.find(e => e.date === toISO(yesterdayDate));
-    const vsYesterday = (todayEntry != null && yesterdayEntry != null)
-      ? Math.round((todayEntry.weight - yesterdayEntry.weight) * 100) / 100 : null;
-
-    const totalChange = Math.round((latest.weight - sorted[0].weight) * 100) / 100;
-
-    return {
-      current: latest.weight, trend: latestSmoothed?.trend ?? null, bmi, streak,
-      predictedDate, weeklyRate, weeksToGoal, totalChange,
-      totalEntries: sorted.length, todayLogged: todayEntry != null, vsYesterday,
-    };
-  }, [sorted, smoothed, settings]);
-
-  const weightDomain = useMemo(() => {
-    if (chartData.length === 0) return [60, 90];
-    const weights = chartData.flatMap(d => [d.weight, d.trend].filter(v => v != null));
-    return [Math.floor(Math.min(...weights) - 1), Math.ceil(Math.max(...weights) + 1)];
-  }, [chartData]);
-
-  const bmiZones = useMemo(() => {
-    if (!settings.height) return [];
-    const h = settings.height / 100;
-    const h2 = h * h;
-    return [
-      { name: "Sottopeso", y1: 0, y2: Math.round(18.5 * h2 * 10) / 10, color: "#3B82F6" },
-      { name: "Normopeso", y1: Math.round(18.5 * h2 * 10) / 10, y2: Math.round(25 * h2 * 10) / 10, color: "#02C39A" },
-      { name: "Sovrappeso", y1: Math.round(25 * h2 * 10) / 10, y2: Math.round(30 * h2 * 10) / 10, color: "#F0B429" },
-      { name: "Obesità", y1: Math.round(30 * h2 * 10) / 10, y2: 200, color: "#E85D4E" },
-    ];
-  }, [settings.height]);
-
-  const comparisons = useMemo(() => {
-    const mondays = getMondays(4);
-    const firsts = getFirstOfMonths(4);
-    const weeklyData = mondays.map((date, i) => {
-      const end = new Date(date); end.setDate(end.getDate() + 6);
-      const trend = getTrendAtDate(smoothed, date);
-      const prevTrend = i < mondays.length - 1 ? getTrendAtDate(smoothed, mondays[i + 1]) : null;
-      const diff = (trend != null && prevTrend != null) ? Math.round((trend - prevTrend) * 100) / 100 : null;
-      const label = i === 0 ? "Questa settimana" : i === 1 ? "Settimana scorsa" : `-${i} settimane`;
-      const dl = `${formatDate(date)} — ${formatDate(toISO(end))}`;
-      return { date, dateLabel: dl, trend: trend != null ? Math.round(trend * 10) / 10 : null, diff, label, isCurrent: i === 0 };
-    });
-    const monthlyData = firsts.map((date, i) => {
-      const trend = getTrendAtDate(smoothed, date);
-      const prevTrend = i < firsts.length - 1 ? getTrendAtDate(smoothed, firsts[i + 1]) : null;
-      const diff = (trend != null && prevTrend != null) ? Math.round((trend - prevTrend) * 100) / 100 : null;
-      const mName = new Date(date).toLocaleDateString("it-IT", { month: "long" });
-      const label = i === 0 ? `${mName} (corrente)` : mName;
-      return { date, dateLabel: formatDate(date), trend: trend != null ? Math.round(trend * 10) / 10 : null, diff, label, isCurrent: i === 0 };
-    });
-    return { weeklyData, monthlyData };
-  }, [smoothed]);
-
-  const recentWithRitmo = useMemo(() => {
-    const recent = [...sorted].reverse().slice(0, 5);
-    return recent.map((entry, idx) => {
-      const smoothedIdx = smoothed.findIndex(e => e.date === entry.date);
-      let ritmo = null;
-      if (smoothedIdx > 0) {
-        const curr = smoothed[smoothedIdx];
-        const prev = smoothed[smoothedIdx - 1];
-        if (curr && prev) {
-          const dBetween = Math.max(1, (new Date(curr.date) - new Date(prev.date)) / 86400000);
-          ritmo = Math.round((curr.trend - prev.trend) / dBetween * 7 * 100) / 100;
-        }
-      }
-      const next = idx < recent.length - 1 ? recent[idx + 1] : null;
-      const diff = next != null ? Math.round((entry.weight - next.weight) * 100) / 100 : null;
-      return { ...entry, ritmo, diff };
-    });
-  }, [sorted, smoothed]);
-
-  // Progress
-  const progressPct = (() => {
-    if (!settings.goalWeight || !settings.startWeight || metrics.current == null) return 0;
-    const total = Math.abs(settings.startWeight - settings.goalWeight);
-    const done = Math.abs(settings.startWeight - metrics.current);
-    return total > 0 ? Math.min(Math.max((done / total) * 100, 0), 100) : 0;
-  })();
-
-  const kgMancanti = (metrics.current != null && settings.goalWeight)
-    ? Math.abs(Math.round((metrics.current - settings.goalWeight) * 10) / 10) : null;
-  const kgPersi = (metrics.totalChange != null) ? Math.abs(metrics.totalChange) : null;
 
   // Entry actions
   const addEntry = useCallback(() => {
@@ -320,20 +919,24 @@ export default function WeightSection({ T, entries, setEntries, settings, goTo }
     } else {
       setEntries([...entries, { id: Date.now(), date: newDate, weight: w, note: newNote }]);
     }
-    setNewWeight(""); setNewNote(""); setNewDate(today());
+    setNewWeight("");
+    setNewNote("");
+    setNewDate(today());
     setScreen("main");
   }, [entries, newWeight, newNote, newDate, setEntries]);
 
-  const deleteEntry = useCallback((id) => {
-    setEntries(entries.filter(e => e.id !== id));
-    setShowConfirmDelete(null);
-  }, [entries, setEntries]);
+  const saveSettings = useCallback(() => {
+    if (setSettings) {
+      setSettings(prev => ({ ...prev, ...settingsForm }));
+    }
+    setScreen("main");
+  }, [settingsForm, setSettings]);
 
   /* ═══════════════════════════════════════
      SCREEN: ADD WEIGHT
      ═══════════════════════════════════════ */
   if (screen === "add") {
-    const currentWeight = metrics.current;
+    const currentWeight = sorted.length > 0 ? sorted[sorted.length - 1].weight : null;
     const parsedNew = parseFloat(newWeight.replace(",", "."));
     const validNew = !isNaN(parsedNew) && parsedNew >= 20 && parsedNew <= 300;
     const diff = (validNew && currentWeight) ? Math.round((parsedNew - currentWeight) * 100) / 100 : null;
@@ -343,11 +946,24 @@ export default function WeightSection({ T, entries, setEntries, settings, goTo }
         <div style={{ padding: "16px 20px 8px", background: T.bg, position: "sticky", top: 0, zIndex: 10 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={() => setScreen("main")} style={{
-                background: T.card, border: "none", cursor: "pointer", padding: 8,
-                borderRadius: 10, display: "flex", alignItems: "center", boxShadow: T.shadow,
-              }}><ChevronLeft size={20} color={T.teal} /></button>
-              <h1 style={{ fontSize: 24, fontWeight: 800, color: T.text, margin: 0, letterSpacing: -0.5 }}>Nuovo Peso</h1>
+              <button
+                onClick={() => setScreen("main")}
+                style={{
+                  background: T.card,
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 8,
+                  borderRadius: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  boxShadow: T.shadow,
+                }}
+              >
+                <ChevronLeft size={20} color={T.teal} />
+              </button>
+              <h1 style={{ fontSize: 24, fontWeight: 800, color: T.text, margin: 0, letterSpacing: -0.5 }}>
+                Nuovo Peso
+              </h1>
             </div>
           </div>
         </div>
@@ -355,27 +971,74 @@ export default function WeightSection({ T, entries, setEntries, settings, goTo }
           {currentWeight != null && (
             <div style={{ textAlign: "center", marginBottom: 24 }}>
               <div style={{ fontSize: 12, color: T.textMuted }}>Peso attuale</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: T.text }}>{currentWeight} <span style={{ fontSize: 14, color: T.textMuted }}>kg</span></div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: T.text }}>
+                {currentWeight} <span style={{ fontSize: 14, color: T.textMuted }}>kg</span>
+              </div>
             </div>
           )}
           <div style={{ background: T.card, borderRadius: 20, padding: "24px 20px", boxShadow: T.shadow }}>
             <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>Data</label>
-              <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)}
-                style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.border}`, fontSize: 15, fontWeight: 600, color: T.text, fontFamily: "inherit", background: T.bg }} />
+              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>
+                Data
+              </label>
+              <input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1.5px solid ${T.border}`,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: T.text,
+                  fontFamily: "inherit",
+                  background: T.bg,
+                }}
+              />
             </div>
             <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>Peso (kg)</label>
-              <input type="number" step="0.1" min="20" max="300" value={newWeight} onChange={(e) => setNewWeight(e.target.value)}
-                placeholder="es. 83.5" autoFocus
-                style={{ width: "100%", padding: "14px", borderRadius: 12, border: `1.5px solid ${validNew && newWeight ? T.teal : T.border}`, fontSize: 22, fontWeight: 800, textAlign: "center", color: T.text, fontFamily: "inherit", background: T.bg }} />
+              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>
+                Peso (kg)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="20"
+                max="300"
+                value={newWeight}
+                onChange={(e) => setNewWeight(e.target.value)}
+                placeholder="es. 83.5"
+                autoFocus
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  borderRadius: 12,
+                  border: `1.5px solid ${validNew && newWeight ? T.teal : T.border}`,
+                  fontSize: 22,
+                  fontWeight: 800,
+                  textAlign: "center",
+                  color: T.text,
+                  fontFamily: "inherit",
+                  background: T.bg,
+                }}
+              />
               {diff != null && (
                 <div style={{ textAlign: "center", marginTop: 10 }}>
-                  <span style={{
-                    display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 14px", borderRadius: 10,
-                    background: diff < 0 ? "#02C39A12" : diff > 0 ? "#E85D4E12" : "#F0F0F0",
-                    color: diff < 0 ? T.mint : diff > 0 ? T.coral : T.textMuted, fontSize: 13, fontWeight: 700,
-                  }}>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "4px 14px",
+                      borderRadius: 10,
+                      background: diff < 0 ? "#02C39A12" : diff > 0 ? "#E85D4E12" : "#F0F0F0",
+                      color: diff < 0 ? T.mint : diff > 0 ? T.coral : T.textMuted,
+                      fontSize: 13,
+                      fontWeight: 700,
+                    }}
+                  >
                     {diff < 0 ? <ArrowDown size={14} /> : diff > 0 ? <ArrowUp size={14} /> : <Minus size={14} />}
                     {diff > 0 ? "+" : ""}{diff} kg rispetto ad adesso
                   </span>
@@ -383,18 +1046,43 @@ export default function WeightSection({ T, entries, setEntries, settings, goTo }
               )}
             </div>
             <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>Note (opzionale)</label>
-              <input type="text" value={newNote} onChange={(e) => setNewNote(e.target.value)}
+              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>
+                Note (opzionale)
+              </label>
+              <input
+                type="text"
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
                 placeholder="Come ti senti oggi?"
-                style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.border}`, fontSize: 14, color: T.text, fontFamily: "inherit", background: T.bg }} />
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1.5px solid ${T.border}`,
+                  fontSize: 14,
+                  color: T.text,
+                  fontFamily: "inherit",
+                  background: T.bg,
+                }}
+              />
             </div>
-            <button onClick={addEntry} disabled={!validNew}
+            <button
+              onClick={addEntry}
+              disabled={!validNew}
               style={{
-                width: "100%", padding: "14px", borderRadius: 14, border: "none",
-                background: validNew ? T.gradient : "#D1D5DB", color: "#fff",
-                fontSize: 16, fontWeight: 800, cursor: validNew ? "pointer" : "not-allowed",
-                fontFamily: "inherit", boxShadow: validNew ? "0 4px 16px rgba(2,128,144,0.3)" : "none",
-              }}>
+                width: "100%",
+                padding: "14px",
+                borderRadius: 14,
+                border: "none",
+                background: validNew ? T.gradient : "#D1D5DB",
+                color: "#fff",
+                fontSize: 16,
+                fontWeight: 800,
+                cursor: validNew ? "pointer" : "not-allowed",
+                fontFamily: "inherit",
+                boxShadow: validNew ? "0 4px 16px rgba(2,128,144,0.3)" : "none",
+              }}
+            >
               Registra peso
             </button>
           </div>
@@ -404,445 +1092,311 @@ export default function WeightSection({ T, entries, setEntries, settings, goTo }
   }
 
   /* ═══════════════════════════════════════
-     SCREEN: HISTORY
+     SCREEN: SETTINGS
      ═══════════════════════════════════════ */
-  if (screen === "history") {
-    const reversed = [...sorted].reverse();
+  if (screen === "settings") {
     return (
       <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
         <div style={{ padding: "16px 20px 8px", background: T.bg, position: "sticky", top: 0, zIndex: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => setScreen("main")} style={{
-              background: T.card, border: "none", cursor: "pointer", padding: 8,
-              borderRadius: 10, display: "flex", alignItems: "center", boxShadow: T.shadow,
-            }}><ChevronLeft size={20} color={T.teal} /></button>
-            <div>
-              <div style={{ fontSize: 12, color: T.textMuted, fontWeight: 500 }}>Peso</div>
-              <h1 style={{ fontSize: 24, fontWeight: 800, color: T.text, margin: 0 }}>Cronologia</h1>
-            </div>
+            <button
+              onClick={() => setScreen("main")}
+              style={{
+                background: T.card,
+                border: "none",
+                cursor: "pointer",
+                padding: 8,
+                borderRadius: 10,
+                display: "flex",
+                alignItems: "center",
+                boxShadow: T.shadow,
+              }}
+            >
+              <ChevronLeft size={20} color={T.teal} />
+            </button>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: T.text, margin: 0 }}>Impostazioni</h1>
           </div>
         </div>
-        <div style={{ padding: "8px 16px 120px" }}>
-          {reversed.map((entry, idx) => {
-            const prev = idx < reversed.length - 1 ? reversed[idx + 1] : null;
-            const diff = prev ? Math.round((entry.weight - prev.weight) * 100) / 100 : null;
-            const isEditing = editingEntry === entry.id;
-            return (
-              <div key={entry.id} style={{
-                background: T.card, borderRadius: 14, padding: "12px 16px", marginBottom: 6,
-                boxShadow: T.shadow, display: "flex", alignItems: "center", justifyContent: "space-between",
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{formatDateFull(entry.date)}</div>
-                  {entry.note && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{entry.note}</div>}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {diff != null && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6,
-                      background: diff < 0 ? "#02C39A12" : diff > 0 ? "#E85D4E12" : "#F0F0F0",
-                      color: diff < 0 ? T.mint : diff > 0 ? T.coral : T.textMuted,
-                    }}>{diff > 0 ? "+" : ""}{diff}</span>
-                  )}
-                  {isEditing ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <input type="number" step="0.1" value={editWeight}
-                        onChange={(e) => setEditWeight(e.target.value)}
-                        style={{ width: 60, padding: "4px 6px", borderRadius: 8, border: `1px solid ${T.teal}`, fontSize: 13, fontWeight: 700, textAlign: "center", fontFamily: "inherit" }} />
-                      <button onClick={() => {
-                        const w = parseFloat(editWeight);
-                        if (!isNaN(w) && w >= 20 && w <= 300) {
-                          setEntries(entries.map(e => e.id === entry.id ? { ...e, weight: w } : e));
-                        }
-                        setEditingEntry(null);
-                      }} style={{ background: T.mint, border: "none", borderRadius: 6, padding: 4, cursor: "pointer" }}>
-                        <Check size={14} color="#fff" />
-                      </button>
-                      <button onClick={() => setEditingEntry(null)} style={{ background: "#E8ECEF", border: "none", borderRadius: 6, padding: 4, cursor: "pointer" }}>
-                        <X size={14} color={T.textMuted} />
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <span style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{entry.weight} <span style={{ fontSize: 11, color: T.textMuted }}>kg</span></span>
-                      <button onClick={() => { setEditingEntry(entry.id); setEditWeight(String(entry.weight)); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
-                        <Edit3 size={14} color={T.textMuted} />
-                      </button>
-                      {showConfirmDelete === entry.id ? (
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button onClick={() => deleteEntry(entry.id)} style={{ background: T.coral, border: "none", borderRadius: 6, padding: "3px 8px", fontSize: 10, fontWeight: 700, color: "#fff", cursor: "pointer" }}>Elimina</button>
-                          <button onClick={() => setShowConfirmDelete(null)} style={{ background: "#E8ECEF", border: "none", borderRadius: 6, padding: "3px 8px", fontSize: 10, fontWeight: 700, color: T.textMuted, cursor: "pointer" }}>No</button>
-                        </div>
-                      ) : (
-                        <button onClick={() => setShowConfirmDelete(entry.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
-                          <Trash2 size={14} color={T.textMuted} />
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
+        <div style={{ padding: "20px" }}>
+          {/* Profilo Card */}
+          <div style={{ background: T.card, borderRadius: 20, padding: "20px", marginBottom: 16, boxShadow: T.shadow }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: T.textSec, marginBottom: 16 }}>Profilo</h3>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>
+                Nome
+              </label>
+              <input
+                type="text"
+                value={settingsForm.name}
+                onChange={(e) => setSettingsForm({ ...settingsForm, name: e.target.value })}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1.5px solid ${T.border}`,
+                  fontSize: 14,
+                  color: T.text,
+                  fontFamily: "inherit",
+                  background: T.bg,
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>
+                Altezza (cm)
+              </label>
+              <input
+                type="number"
+                value={settingsForm.height}
+                onChange={(e) => setSettingsForm({ ...settingsForm, height: parseInt(e.target.value) || 0 })}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1.5px solid ${T.border}`,
+                  fontSize: 14,
+                  color: T.text,
+                  fontFamily: "inherit",
+                  background: T.bg,
+                }}
+              />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>
+                Peso iniziale (kg)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={settingsForm.startWeight}
+                onChange={(e) => setSettingsForm({ ...settingsForm, startWeight: parseFloat(e.target.value) || 0 })}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1.5px solid ${T.border}`,
+                  fontSize: 14,
+                  color: T.text,
+                  fontFamily: "inherit",
+                  background: T.bg,
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: T.textSec, display: "block", marginBottom: 8 }}>
+                Peso obiettivo (kg)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                value={settingsForm.goalWeight}
+                onChange={(e) => setSettingsForm({ ...settingsForm, goalWeight: parseFloat(e.target.value) || 0 })}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: `1.5px solid ${T.border}`,
+                  fontSize: 14,
+                  color: T.text,
+                  fontFamily: "inherit",
+                  background: T.bg,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Obiettivo Card */}
+          <div style={{ background: T.card, borderRadius: 20, padding: "20px", marginBottom: 16, boxShadow: T.shadow }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: T.textSec, marginBottom: 16 }}>Obiettivo</h3>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Tappe intermedie</span>
+                <input
+                  type="checkbox"
+                  checked={settingsForm.showCustomMilestones}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, showCustomMilestones: e.target.checked })}
+                  style={{ width: 18, height: 18, cursor: "pointer" }}
+                />
               </div>
-            );
-          })}
+              {settingsForm.showCustomMilestones && (
+                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                  {[1, 2, 3, 5].map((step) => (
+                    <button
+                      key={step}
+                      onClick={() => setSettingsForm({ ...settingsForm, milestoneStep: step })}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: 8,
+                        border: settingsForm.milestoneStep === step ? "none" : `1.5px solid ${T.border}`,
+                        background: settingsForm.milestoneStep === step ? T.gradient : T.bg,
+                        color: settingsForm.milestoneStep === step ? "#fff" : T.text,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {step} kg
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Traguardi BMI</span>
+                <input
+                  type="checkbox"
+                  checked={settingsForm.showBmiMilestones}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, showBmiMilestones: e.target.checked })}
+                  style={{ width: 18, height: 18, cursor: "pointer" }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Reminders Card */}
+          <div style={{ background: T.card, borderRadius: 20, padding: "20px", marginBottom: 24, boxShadow: T.shadow }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: T.textSec }}>Promemoria</h3>
+            <p style={{ fontSize: 12, color: T.textMuted, margin: "8px 0 0 0" }}>
+              Impostazioni per i promemoria saranno disponibili presto.
+            </p>
+          </div>
+
+          {/* Save Button */}
+          <button
+            onClick={saveSettings}
+            style={{
+              width: "100%",
+              padding: "14px",
+              borderRadius: 14,
+              border: "none",
+              background: T.gradient,
+              color: "#fff",
+              fontSize: 16,
+              fontWeight: 800,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              boxShadow: "0 4px 16px rgba(2,128,144,0.3)",
+            }}
+          >
+            Salva
+          </button>
         </div>
       </div>
     );
   }
 
   /* ═══════════════════════════════════════
-     SCREEN: MAIN (Weight Dashboard)
+     SCREEN: MAIN (Dashboard)
      ═══════════════════════════════════════ */
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
-
       {/* HEADER */}
       <div style={{ padding: "16px 16px 0", background: T.bg, position: "sticky", top: 0, zIndex: 10 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 12, background: T.gradient,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 12,
+                background: T.gradient,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
               <Scale size={18} color="#fff" />
             </div>
-            <span style={{ fontSize: 18, fontWeight: 800, color: T.text }}>Peso</span>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: T.text, margin: 0 }}>Peso</h1>
           </div>
-          <button onClick={() => setScreen("add")} style={{
-            background: T.gradient, border: "none", borderRadius: 12,
-            padding: "8px 16px", cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 6,
-            boxShadow: "0 3px 12px rgba(2,128,144,0.25)",
-          }}>
-            <Plus size={16} color="#fff" strokeWidth={2.5} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", fontFamily: "inherit" }}>Registra</span>
+          <button
+            onClick={() => setScreen("settings")}
+            style={{
+              background: T.card,
+              border: "none",
+              cursor: "pointer",
+              padding: 8,
+              borderRadius: 10,
+              display: "flex",
+              alignItems: "center",
+              boxShadow: T.shadow,
+            }}
+          >
+            <Settings size={20} color={T.teal} />
           </button>
         </div>
       </div>
 
-      <div style={{ padding: "14px 16px 120px", display: "flex", flexDirection: "column", gap: 12 }}>
-
-        {/* CHECK-IN or CONFIRMED */}
-        {!metrics.todayLogged ? (
-          <div onClick={() => setScreen("add")} style={{
-            background: `linear-gradient(135deg, ${T.coral}12, ${T.gold}12)`,
-            borderRadius: 16, padding: "14px 16px", border: `1px dashed ${T.gold}70`, cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 12,
-          }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: `${T.gold}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Scale size={20} color={T.gold} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Non ti sei ancora pesato oggi</div>
-              <div style={{ fontSize: 11, color: T.textSec, marginTop: 2 }}>Tocca per registrare il peso di oggi</div>
-            </div>
-            <ChevronRight size={16} color={T.textMuted} />
-          </div>
-        ) : (
-          <div style={{
-            background: `${T.mint}10`, borderRadius: 14, padding: "10px 16px",
-            display: "flex", alignItems: "center", gap: 10, border: `1px solid ${T.mint}30`,
-          }}>
-            <Check size={16} color={T.mint} />
-            <span style={{ fontSize: 12, fontWeight: 600, color: T.mint }}>Pesato oggi — {metrics.current} kg</span>
-            {metrics.vsYesterday != null && (
-              <span style={{ fontSize: 11, fontWeight: 700, color: metrics.vsYesterday <= 0 ? T.mint : T.coral, marginLeft: "auto" }}>
-                {metrics.vsYesterday > 0 ? "+" : ""}{metrics.vsYesterday} kg
-              </span>
-            )}
-          </div>
+      {/* MAIN CONTENT */}
+      <div style={{ padding: "16px" }}>
+        {/* Card 1: Trend */}
+        {smoothed.length > 0 && (
+          <TrendCard
+            T={T}
+            smoothed={smoothed}
+            settings={settings}
+            onShowHistory={() => setShowHistory(true)}
+            onShowInfo={() => setShowInfo(true)}
+          />
         )}
 
-        {/* CARD PRINCIPALE */}
-        <div style={{ background: T.gradient, borderRadius: 20, padding: "20px", boxShadow: "0 4px 24px rgba(2,128,144,0.2)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>Peso attuale</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginTop: 4 }}>
-                <span style={{ fontSize: 38, fontWeight: 900, color: "#fff" }}>{metrics.current != null ? metrics.current : "—"}</span>
-                <span style={{ fontSize: 15, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>kg</span>
-              </div>
-              {metrics.trend != null && (
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 2, fontWeight: 500, display: "flex", alignItems: "center", gap: 3 }}>
-                  Trend: <span style={{ color: "rgba(255,255,255,0.9)", fontWeight: 700 }}>{metrics.trend} kg</span>
-                  <button onClick={() => setShowTrendInfo(true)} style={{
-                    width: 15, height: 15, borderRadius: "50%", background: "rgba(255,255,255,0.25)", border: "none",
-                    color: "rgba(255,255,255,0.85)", fontSize: 9, fontWeight: 800, cursor: "pointer",
-                    display: "inline-flex", alignItems: "center", justifyContent: "center", marginLeft: 2, flexShrink: 0,
-                  }}>i</button>
-                </div>
-              )}
-              {metrics.vsYesterday != null && (
-                <div style={{
-                  display: "inline-flex", alignItems: "center", gap: 4, marginTop: 6,
-                  background: "rgba(255,255,255,0.18)", padding: "3px 10px", borderRadius: 8,
-                }}>
-                  {metrics.vsYesterday < 0 ? <ArrowDown size={11} color="#fff" />
-                    : metrics.vsYesterday > 0 ? <ArrowUp size={11} color="#fff" />
-                    : <Minus size={11} color="#fff" />}
-                  <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>{Math.abs(metrics.vsYesterday)} kg vs ieri</span>
-                </div>
-              )}
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ position: "relative", width: 76, height: 76 }}>
-                <CircularProgress percentage={Math.round(progressPct)} size={76} strokeWidth={5} color="#fff" />
-                <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}>
-                  <div style={{ fontSize: 15, fontWeight: 900, color: "#fff" }}>{Math.round(progressPct)}%</div>
-                </div>
-              </div>
-              {settings.goalWeight && (
-                <div style={{ marginTop: 4 }}>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", fontWeight: 500 }}>
-                    Obiettivo <strong style={{ color: "rgba(255,255,255,0.9)" }}>{settings.goalWeight} kg</strong>
-                  </div>
-                  {kgMancanti != null && (
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.85)", fontWeight: 700, marginTop: 2 }}>-{kgMancanti} kg al traguardo</div>
-                  )}
-                  {kgPersi != null && (
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.65)", fontWeight: 600, marginTop: 1 }}>
-                      {metrics.totalChange != null && metrics.totalChange < 0 ? `-${kgPersi} kg persi` : `+${kgPersi} kg`}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-          <div style={{ height: 1, background: "rgba(255,255,255,0.15)", margin: "14px 0 12px" }} />
-          {metrics.predictedDate ? (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
-                  <Target size={13} color="rgba(255,255,255,0.75)" />
-                  <span style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", fontWeight: 600 }}>
-                    Raggiungerai {settings.goalWeight} kg il <strong style={{ color: "#fff" }}>{metrics.predictedDate}</strong>
-                  </span>
-                </div>
-                <button onClick={() => setShowPredInfo(true)} style={{
-                  width: 18, height: 18, borderRadius: "50%", background: "rgba(255,255,255,0.25)", border: "none",
-                  color: "rgba(255,255,255,0.85)", fontSize: 10, fontWeight: 800, cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginLeft: 6,
-                }}>i</button>
-              </div>
-              {metrics.weeklyRate != null && (
-                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", marginTop: 4, paddingLeft: 21 }}>
-                  Al ritmo di {metrics.weeklyRate > 0 ? "+" : ""}{metrics.weeklyRate} kg/settimana
-                </div>
-              )}
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", fontWeight: 500 }}>Aggiungi più dati per vedere la previsione</div>
-          )}
-        </div>
+        {/* Card 2: Goal */}
+        {sorted.length > 0 && (
+          <GoalCard T={T} smoothed={smoothed} settings={settings} sorted={sorted} />
+        )}
 
-        {/* GRAFICO */}
-        <div style={{ background: T.card, borderRadius: 18, padding: "16px 14px 8px", boxShadow: T.shadow }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, padding: "0 4px" }}>
-            <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Andamento</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ display: "flex", gap: 3 }}>
-                {["1W", "1M", "3M", "ALL"].map(r => (
-                  <button key={r} onClick={() => setChartRange(r)} style={{
-                    padding: "4px 9px", borderRadius: 7, border: "none", fontSize: 10, fontWeight: 700,
-                    background: chartRange === r ? T.teal : T.tealLight, color: chartRange === r ? "#fff" : T.teal,
-                    cursor: "pointer", fontFamily: "'Inter', sans-serif",
-                  }}>{r}</button>
-                ))}
-              </div>
-              <button onClick={() => setShowChartSettings(p => !p)} style={{
-                width: 28, height: 28, borderRadius: 8, border: "none",
-                background: showChartSettings ? T.tealLight : T.bg, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}><Settings size={14} color={showChartSettings ? T.teal : T.textMuted} /></button>
-            </div>
-          </div>
-          {showChartSettings && (
-            <div style={{ background: T.bg, borderRadius: 12, padding: "2px 14px", margin: "8px 4px" }}>
-              {[
-                { key: "showObjective", label: "Mostra obiettivo" },
-                { key: "showBMIZones", label: "Mostra zone BMI" },
-                { key: "showScale", label: "Mostra peso bilancia" },
-                { key: "showTrend", label: "Mostra trend" },
-              ].map(({ key, label }, i, arr) => (
-                <div key={key} style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                  padding: "9px 0", borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : "none",
-                }}>
-                  <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{label}</span>
-                  <button onClick={() => setChartSettings(prev => ({ ...prev, [key]: !prev[key] }))} style={{
-                    width: 40, height: 22, borderRadius: 11, border: "none",
-                    background: chartSettings[key] ? T.teal : "#D1D5DB", position: "relative", cursor: "pointer", flexShrink: 0,
-                  }}>
-                    <div style={{
-                      position: "absolute", top: 2, left: chartSettings[key] ? 20 : 2,
-                      width: 18, height: 18, borderRadius: 9, background: "#fff",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.15)", transition: "left 0.2s",
-                    }} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div style={{ fontSize: 10, color: T.textMuted, padding: "4px 4px 8px" }}>
-            {[
-              chartSettings.showScale ? "Grigio = bilancia" : null,
-              chartSettings.showTrend ? "Teal = trend" : null,
-              chartSettings.showObjective && settings.goalWeight ? "Verde = obiettivo" : null,
-            ].filter(Boolean).join("  ·  ")}
-          </div>
-          <ResponsiveContainer width="100%" height={190}>
-            <ComposedChart data={chartData} margin={{ top: 5, right: 8, left: -15, bottom: 5 }}>
-              <defs>
-                <linearGradient id="areaGradWeight" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={T.teal} stopOpacity={0.12} />
-                  <stop offset="95%" stopColor={T.teal} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E8ECEF" vertical={false} />
-              <XAxis dataKey="dateLabel" tick={{ fontSize: 9, fill: T.textMuted }} tickLine={false} axisLine={false} />
-              <YAxis domain={weightDomain} tick={{ fontSize: 9, fill: T.textMuted }} tickLine={false} axisLine={false} />
-              <Tooltip content={<CustomTooltip T={T} />} />
-              {chartSettings.showBMIZones && settings.height && bmiZones.map(zone => (
-                <ReferenceArea key={zone.name} y1={zone.y1} y2={zone.y2} fill={zone.color} fillOpacity={0.07} />
-              ))}
-              {chartSettings.showObjective && settings.goalWeight && (
-                <ReferenceLine y={settings.goalWeight} stroke={T.mint} strokeDasharray="6 4" strokeWidth={1.5} />
-              )}
-              {chartSettings.showTrend && <Area type="monotone" dataKey="trend" fill="url(#areaGradWeight)" stroke="none" />}
-              {chartSettings.showScale && (
-                <Line type="monotone" dataKey="weight" stroke="#C5D0D0" strokeWidth={1.5}
-                  dot={{ r: 2.5, fill: "#C5D0D0", strokeWidth: 0 }} activeDot={{ r: 5, fill: T.teal }} />
-              )}
-              {chartSettings.showTrend && <Line type="monotone" dataKey="trend" stroke={T.teal} strokeWidth={2.5} dot={false} />}
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
+        {/* Add Weight Button */}
+        <button
+          onClick={() => setScreen("add")}
+          style={{
+            width: "100%",
+            padding: "16px",
+            borderRadius: 16,
+            border: "none",
+            background: T.gradient,
+            color: "#fff",
+            fontSize: 16,
+            fontWeight: 800,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            boxShadow: "0 4px 16px rgba(2,128,144,0.3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            marginBottom: 20,
+          }}
+        >
+          <Plus size={20} />
+          Registra Peso
+        </button>
 
-        {/* CONFRONTI */}
-        <div style={{ background: T.card, borderRadius: 18, padding: "16px", boxShadow: T.shadow }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 12 }}>Confronti</div>
-          <div style={{ display: "flex", gap: 0, background: "#E8ECEF", borderRadius: 10, padding: 3, marginBottom: 14 }}>
-            {[["week", "Settimane"], ["month", "Mesi"]].map(([key, label]) => (
-              <button key={key} onClick={() => setCompTab(key)} style={{
-                flex: 1, padding: "7px 0", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
-                background: compTab === key ? "#fff" : "transparent", color: compTab === key ? T.teal : T.textMuted,
-                boxShadow: compTab === key ? "0 1px 4px rgba(0,0,0,0.08)" : "none", transition: "all 0.2s", fontFamily: "'Inter', sans-serif",
-              }}>{label}</button>
-            ))}
-          </div>
-          {(compTab === "week" ? comparisons.weeklyData : comparisons.monthlyData).slice(0, 3).map((w, i) => (
-            <div key={w.date} style={{
-              background: T.card, borderRadius: 14, padding: "14px 16px", boxShadow: "0 1px 8px rgba(0,0,0,0.04)",
-              display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8,
-              borderLeft: w.isCurrent ? `3px solid ${T.teal}` : "3px solid transparent",
-            }}>
-              <div>
-                <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>{w.label}</div>
-                {w.trend != null ? (
-                  <>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 3 }}>
-                      <span style={{ fontSize: 20, fontWeight: 900, color: T.text }}>{w.trend}</span>
-                      <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 500 }}>kg trend</span>
-                    </div>
-                    <div style={{ fontSize: 9, color: T.textMuted, marginTop: 1 }}>{w.dateLabel}</div>
-                  </>
-                ) : <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>Dati non disponibili</div>}
-              </div>
-              <div style={{ textAlign: "right" }}>
-                {w.diff != null ? (
-                  <div style={{
-                    fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8,
-                    display: "inline-flex", alignItems: "center", gap: 3,
-                    background: w.diff <= 0 ? "#02C39A12" : "#E85D4E12", color: w.diff <= 0 ? T.mint : T.coral,
-                  }}>{w.diff <= 0 ? "↓" : "↑"} {w.diff > 0 ? "+" : ""}{w.diff} kg</div>
-                ) : null}
-              </div>
-            </div>
-          ))}
-          <button onClick={() => setScreen("history")} style={{
-            width: "100%", padding: "10px", border: `1px dashed ${T.border}`, borderRadius: 12,
-            background: "transparent", fontSize: 12, fontWeight: 700, color: T.teal,
-            cursor: "pointer", fontFamily: "'Inter', sans-serif",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 2,
+        {/* Empty state */}
+        {sorted.length === 0 && (
+          <div style={{
+            textAlign: "center",
+            padding: "40px 20px",
+            color: T.textMuted,
           }}>
-            Vedi cronologia <ChevronRight size={13} />
-          </button>
-        </div>
-
-        {/* ULTIME REGISTRAZIONI */}
-        <div style={{ background: T.card, borderRadius: 18, padding: "14px 16px", boxShadow: T.shadow }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Ultime registrazioni</span>
-            <button onClick={() => setScreen("history")} style={{
-              background: T.tealLight, border: "none", fontSize: 11, color: T.teal, fontWeight: 700, cursor: "pointer",
-              padding: "5px 12px", borderRadius: 8, display: "flex", alignItems: "center", gap: 3, fontFamily: "'Inter', sans-serif",
-            }}>Tutte <ChevronRight size={13} /></button>
+            <Scale size={48} style={{ margin: "0 auto 16px", opacity: 0.5 }} />
+            <p style={{ fontSize: 16, fontWeight: 600, margin: "0 0 8px 0" }}>Nessun dato</p>
+            <p style={{ fontSize: 13, margin: 0 }}>Registra il tuo peso per iniziare</p>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 6, marginBottom: 2 }}>
-            <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: "uppercase" }}>Data</span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", width: 44, textAlign: "center" }}>Diff</span>
-              <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", width: 50, textAlign: "center" }}>Ritmo</span>
-              <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", width: 60, textAlign: "right" }}>Peso</span>
-            </div>
-          </div>
-          {recentWithRitmo.map((entry) => {
-            const isToday = entry.date === today();
-            const isYesterday = (() => { const y = new Date(); y.setDate(y.getDate() - 1); return entry.date === toISO(y); })();
-            const dateLabel = isToday ? "Oggi" : isYesterday ? "Ieri" : formatDate(entry.date);
-            return (
-              <div key={entry.id} style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                padding: "8px 0", borderTop: `1px solid ${T.border}`,
-                background: isToday ? `${T.teal}06` : "transparent", margin: isToday ? "0 -4px" : 0, padding: isToday ? "8px 4px" : "8px 0", borderRadius: isToday ? 8 : 0,
-              }}>
-                <div>
-                  <span style={{ fontSize: 12, color: isToday ? T.teal : T.text, fontWeight: isToday ? 700 : 600 }}>{dateLabel}</span>
-                  {(isToday || isYesterday) && <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 4 }}>{formatDate(entry.date)}</span>}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ width: 44, display: "flex", justifyContent: "center" }}>
-                    {entry.diff != null ? (
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6,
-                        background: entry.diff < 0 ? "#02C39A12" : entry.diff > 0 ? "#E85D4E12" : "#F0F0F0",
-                        color: entry.diff < 0 ? T.mint : entry.diff > 0 ? T.coral : T.textMuted,
-                      }}>{entry.diff > 0 ? "+" : ""}{entry.diff}</span>
-                    ) : <span style={{ fontSize: 10, color: T.textMuted }}>—</span>}
-                  </div>
-                  <div style={{ width: 50, textAlign: "center" }}>
-                    {entry.ritmo != null ? (
-                      <span style={{ fontSize: 10, fontWeight: 700, color: entry.ritmo < 0 ? T.mint : entry.ritmo > 0 ? T.coral : T.textMuted }}>
-                        {entry.ritmo > 0 ? "+" : ""}{entry.ritmo}
-                      </span>
-                    ) : <span style={{ fontSize: 10, color: T.textMuted }}>—</span>}
-                  </div>
-                  <div style={{ width: 60, textAlign: "right" }}>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>{entry.weight} kg</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
+        )}
       </div>
 
-      {/* INFO POPUPS */}
-      <InfoPopup show={showTrendInfo} onClose={() => setShowTrendInfo(false)} title="Cos'è il Trend?">
-        <div style={{ fontSize: 13, color: T.text, lineHeight: 1.7 }}>
-          Il peso sulla bilancia cambia ogni giorno per molte ragioni: quanta acqua hai bevuto, cosa hai mangiato, se hai fatto attività fisica. Queste oscillazioni possono essere di <strong>0.5–1.5 kg in un solo giorno</strong>.<br /><br />
-          Il <strong>trend</strong> filtra queste oscillazioni e ti mostra la direzione reale del tuo peso.<br /><br />
-          <span style={{ color: T.textMuted, fontSize: 12 }}>Tecnicamente usiamo una media mobile esponenziale (EMA) che pesa di più i giorni recenti.</span>
-        </div>
-      </InfoPopup>
-      <InfoPopup show={showPredInfo} onClose={() => setShowPredInfo(false)} title="Come calcoliamo la previsione">
-        <div style={{ fontSize: 13, color: T.text, lineHeight: 1.7 }}>
-          Guardiamo il tuo <strong>trend degli ultimi 14 giorni</strong> e calcoliamo quanto peso perdi in media a settimana.
-          {metrics.weeklyRate != null && <><br /><br />Ritmo attuale: <strong>{metrics.weeklyRate} kg/settimana</strong></>}
-          {metrics.weeksToGoal != null && <><br />Stima: <strong>~{metrics.weeksToGoal} settimane</strong> per raggiungere l'obiettivo</>}
-        </div>
-      </InfoPopup>
+      {/* Overlays */}
+      <HistoryBottomSheet
+        T={T}
+        show={showHistory}
+        onClose={() => setShowHistory(false)}
+        smoothed={smoothed}
+        sorted={sorted}
+        entries={entries}
+        setEntries={setEntries}
+      />
+      <InfoOverlay T={T} show={showInfo} onClose={() => setShowInfo(false)} />
     </div>
   );
 }

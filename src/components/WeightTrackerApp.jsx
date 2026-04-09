@@ -413,7 +413,7 @@ const Toggle = ({ on, onToggle, label }) => (
    BOTTOM NAVIGATION
    ═══════════════════════════════════════════ */
 
-const BottomNav = ({ active, onNavigate, onAdd, showAddMenu, setShowAddMenu }) => {
+const BottomNav = ({ active, onNavigate, onAdd, onDirectAdd, showAddMenu, setShowAddMenu }) => {
   const tabs = [
     { id: "dashboard", icon: Home, label: "Home" },
     { id: "weight", icon: Scale, label: "Peso" },
@@ -422,9 +422,27 @@ const BottomNav = ({ active, onNavigate, onAdd, showAddMenu, setShowAddMenu }) =
     { id: "activity", icon: Activity, label: "Attività" },
   ];
 
+  const handlePlusClick = () => {
+    // On specific sections, directly trigger the add action for that section
+    if (active === "weight" && onDirectAdd) {
+      onDirectAdd("weight");
+      return;
+    }
+    if (active === "food" && onDirectAdd) {
+      onDirectAdd("food");
+      return;
+    }
+    if (active === "activity" && onDirectAdd) {
+      onDirectAdd("activity");
+      return;
+    }
+    // On dashboard/home, show the quick-action menu
+    onAdd();
+  };
+
   return (
     <>
-      {/* Quick-action overlay */}
+      {/* Quick-action overlay — only shown on dashboard */}
       {showAddMenu && (
         <div
           onClick={() => setShowAddMenu(false)}
@@ -481,7 +499,7 @@ const BottomNav = ({ active, onNavigate, onAdd, showAddMenu, setShowAddMenu }) =
         {tabs.map(tab => {
           if (tab.id === "add") {
             return (
-              <button key="add" onClick={onAdd} style={{
+              <button key="add" onClick={handlePlusClick} style={{
                 width: 54, height: 54, borderRadius: "50%", border: "none",
                 background: showAddMenu ? T.coral : T.gradient, color: "#fff", cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -816,6 +834,7 @@ export default function WeightTrackerApp() {
   const [entries, setEntries] = useState(generateSampleData);
   const [screen, setScreen] = useState("dashboard");
   const foodSectionRef = useRef(null);
+  const weightAddRef = useRef(null);
   const [settings, setSettings] = useState({
     height: 175, goalWeight: 78, startWeight: 85.5, name: "Davide",
   });
@@ -1038,6 +1057,17 @@ export default function WeightTrackerApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
+  const handleDirectAdd = useCallback((section) => {
+    if (section === "weight" && weightAddRef.current) {
+      weightAddRef.current();
+    } else if (section === "food") {
+      // Food section: navigate to food which triggers add
+      goTo("food");
+    } else if (section === "activity") {
+      goTo("activity");
+    }
+  }, [goTo]);
+
   const activeTab = ["dashboard", "weight", "food", "activity"].includes(screen) ? screen : "dashboard";
 
   /* ═══════════════════════════════════════
@@ -1046,8 +1076,8 @@ export default function WeightTrackerApp() {
   if (screen === "weight") {
     return (
       <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
-        <WeightSection T={T} entries={entries} setEntries={setEntries} settings={settings} goTo={goTo} />
-        <BottomNav active="weight" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} />
+        <WeightSection T={T} entries={entries} setEntries={setEntries} settings={settings} setSettings={setSettings} goTo={goTo} onAddRef={weightAddRef} />
+        <BottomNav active="weight" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} onDirectAdd={handleDirectAdd} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} onDirectAdd={handleDirectAdd} />
       </div>
     );
   }
@@ -1102,7 +1132,7 @@ export default function WeightTrackerApp() {
             />
           )}
         />
-        <BottomNav active="food" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} />
+        <BottomNav active="food" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} onDirectAdd={handleDirectAdd} />
         <style>{`@keyframes fadeInDown { from { opacity: 0; transform: translateX(-50%) translateY(-20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }`}</style>
       </div>
     );
@@ -1136,7 +1166,7 @@ export default function WeightTrackerApp() {
           goalHistory={goalHistory}
           goTo={goTo}
         />
-        <BottomNav active="dashboard" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} />
+        <BottomNav active="dashboard" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} onDirectAdd={handleDirectAdd} />
       </div>
     );
   }
@@ -1642,7 +1672,7 @@ export default function WeightTrackerApp() {
             </div>
           </div>
         </div>
-        <BottomNav active="dashboard" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} />
+        <BottomNav active="dashboard" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} onDirectAdd={handleDirectAdd} />
       </div>
     );
   }
@@ -1879,7 +1909,7 @@ export default function WeightTrackerApp() {
 
       </div>
 
-      <BottomNav active="dashboard" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} />
+      <BottomNav active="dashboard" onNavigate={goTo} onAdd={() => setShowAddMenu(!showAddMenu)} showAddMenu={showAddMenu} setShowAddMenu={setShowAddMenu} onDirectAdd={handleDirectAdd} />
     </div>
   );
 }
