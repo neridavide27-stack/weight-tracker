@@ -135,7 +135,6 @@ const CustomTooltip = ({ active, payload, T }) => {
 
 const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
   const canvasRef = useRef(null);
-  const [tooltipData, setTooltipData] = useState(null);
 
   const last7 = useMemo(() => {
     if (smoothed.length === 0) return [];
@@ -143,185 +142,184 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
   }, [smoothed]);
 
   const currentTrend = last7[last7.length - 1]?.trend ?? null;
-  const prevTrendValue = last7[last7.length - 2]?.trend ?? null;
+  const prevTrendValue = last7.length >= 2 ? last7[last7.length - 2]?.trend : null;
   const vsYesterday = (currentTrend != null && prevTrendValue != null)
     ? Math.round((currentTrend - prevTrendValue) * 100) / 100 : null;
 
-  // Draw canvas chart
+  // Draw canvas chart — matching preview layout exactly
   useEffect(() => {
     if (!canvasRef.current || last7.length === 0) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     const dpr = window.devicePixelRatio || 1;
-
-    canvas.width = canvas.offsetWidth * dpr;
-    canvas.height = canvas.offsetHeight * dpr;
+    const w = canvas.parentElement.offsetWidth;
+    const h = 130;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    canvas.style.width = w + "px"; canvas.style.height = h + "px";
     ctx.scale(dpr, dpr);
 
-    const width = canvas.offsetWidth;
-    const height = canvas.offsetHeight;
-    const padding = { top: 20, bottom: 30, left: 10, right: 10 };
-    const chartWidth = width - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
+    const days = last7.map((e, i) => {
+      if (i === last7.length - 1) return "Oggi";
+      const d = new Date(e.date);
+      return d.toLocaleDateString("it-IT", { weekday: "short" }).replace(".", "");
+    });
+    const trends = last7.map(e => e.trend);
+    const changes = last7.map((e, i) => i === 0 ? 0 : Math.round((e.weight - last7[i - 1].weight) * 100) / 100);
 
-    // Calculate min/max for scaling
-    const weights = last7.map(d => d.trend);
-    const changes = [];
-    for (let i = 1; i < last7.length; i++) {
-      changes.push(last7[i].weight - last7[i - 1].weight);
-    }
+    const padL = 10, padR = 10, padTop = 6, padBot = 16;
+    const chartW = w - padL - padR;
+    const colW = chartW / last7.length;
 
-    const minWeight = Math.min(...weights);
-    const maxWeight = Math.max(...weights);
-    const weightRange = maxWeight - minWeight || 1;
-    const maxChange = Math.max(...changes.map(Math.abs));
+    const barValH = 13, barMaxH = 26, dayLabelH = 14;
+    const trendAreaH = h - padTop - padBot - barValH - barMaxH - dayLabelH - 6;
 
-    // Clear canvas
-    ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, width, height);
+    const trendTop = padTop;
+    const barValTop = trendTop + trendAreaH + 2;
+    const barTop = barValTop + barValH;
+    const dayLabelTop = barTop + barMaxH + 2;
 
-    // Bar geometry
-    const colW = chartWidth / last7.length;
-    const barDrawW = Math.min(colW * 0.5, 24);
-    const barMaxH = chartHeight * 0.35;
-    const baseY = padding.top + chartHeight * 0.65;
+    const tMin = Math.min(...trends) - 0.15;
+    const tMax = Math.max(...trends) + 0.15;
 
-    // Helper: center X of column i
-    const colCx = (i) => padding.left + colW * i + colW / 2;
-    // Trend line: from left edge of first bar to right edge of last bar
-    const firstBarLeft = colCx(0) - barDrawW / 2;
-    const lastBarRight = colCx(last7.length - 1) + barDrawW / 2;
-    const trendX = (i) => firstBarLeft + (lastBarRight - firstBarLeft) * i / (last7.length - 1);
-    const trendY = (v) => {
-      const norm = (v - minWeight) / weightRange;
-      return padding.top + chartHeight * 0.1 + (1 - norm) * (chartHeight * 0.4);
-    };
+    const barCx = (i) => padL + colW * i + colW / 2;
+    const lineLeft = barCx(0);
+    const lineRight = barCx(last7.length - 1);
+    const tx = (i) => lineLeft + (lineRight - lineLeft) * i / (last7.length - 1);
+    const ty = (v) => trendTop + ((tMax - v) / (tMax - tMin)) * trendAreaH;
 
-    // Draw variation bars
-    for (let i = 1; i < last7.length; i++) {
-      const change = last7[i].weight - last7[i - 1].weight;
-      const barH = Math.max(3, (Math.abs(change) / (maxChange || 0.1)) * barMaxH);
-      const bx = colCx(i) - barDrawW / 2;
-      const by = baseY - barH;
-      const isGreen = change <= 0;
-      const color = isGreen ? "#02C39A" : "#E85D4E";
-
-      // Rounded-top bar
-      const r = Math.min(4, barDrawW / 2);
-      ctx.beginPath();
-      ctx.moveTo(bx + r, by); ctx.lineTo(bx + barDrawW - r, by);
-      ctx.quadraticCurveTo(bx + barDrawW, by, bx + barDrawW, by + r);
-      ctx.lineTo(bx + barDrawW, baseY); ctx.lineTo(bx, baseY);
-      ctx.lineTo(bx, by + r); ctx.quadraticCurveTo(bx, by, bx + r, by);
-      ctx.closePath();
-
-      const bGrad = ctx.createLinearGradient(0, by, 0, baseY);
-      bGrad.addColorStop(0, color); bGrad.addColorStop(1, color + "70");
-      ctx.fillStyle = bGrad; ctx.fill();
-
-      // Value label above bar
-      ctx.fillStyle = color;
-      ctx.font = "bold 9px Inter, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(`${change > 0 ? "+" : ""}${change.toFixed(1)}`, colCx(i), by - 4);
-    }
-
-    // Draw area fill under trend
+    // Area fill under trend
     ctx.beginPath();
-    ctx.moveTo(trendX(0), trendY(minWeight));
-    for (let i = 0; i < last7.length; i++) {
-      const x = trendX(i), y = trendY(last7[i].trend);
-      if (i === 0) ctx.moveTo(x, y);
-      else {
-        const px = trendX(i - 1), py = trendY(last7[i - 1].trend);
-        ctx.bezierCurveTo((px + x) / 2, py, (px + x) / 2, y, x, y);
-      }
-    }
-    ctx.lineTo(trendX(last7.length - 1), baseY);
-    ctx.lineTo(trendX(0), baseY);
+    ctx.moveTo(tx(0), trendTop + trendAreaH);
+    trends.forEach((v, i) => ctx.lineTo(tx(i), ty(v)));
+    ctx.lineTo(tx(trends.length - 1), trendTop + trendAreaH);
     ctx.closePath();
-    const aGrad = ctx.createLinearGradient(0, padding.top, 0, baseY);
-    aGrad.addColorStop(0, "rgba(2,128,144,0.12)");
+    const aGrad = ctx.createLinearGradient(0, trendTop, 0, trendTop + trendAreaH);
+    aGrad.addColorStop(0, "rgba(2,128,144,0.1)");
     aGrad.addColorStop(1, "rgba(2,128,144,0)");
     ctx.fillStyle = aGrad; ctx.fill();
 
-    // Draw trend curve
-    ctx.strokeStyle = "#028090";
-    ctx.lineWidth = 2.5;
-    ctx.lineJoin = "round";
+    // Trend bezier curve
     ctx.beginPath();
-    for (let i = 0; i < last7.length; i++) {
-      const x = trendX(i), y = trendY(last7[i].trend);
+    trends.forEach((v, i) => {
+      const x = tx(i), y = ty(v);
       if (i === 0) ctx.moveTo(x, y);
       else {
-        const px = trendX(i - 1), py = trendY(last7[i - 1].trend);
+        const px = tx(i - 1), py = ty(trends[i - 1]);
         ctx.bezierCurveTo((px + x) / 2, py, (px + x) / 2, y, x, y);
       }
-    }
-    ctx.stroke();
+    });
+    ctx.strokeStyle = "#028090"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
 
-    // Draw dots on trend
-    ctx.fillStyle = "#028090";
-    for (let i = 0; i < last7.length; i++) {
+    // Dots on trend
+    trends.forEach((v, i) => {
+      const x = tx(i), y = ty(v), isLast = i === trends.length - 1;
+      ctx.beginPath(); ctx.arc(x, y, isLast ? 4 : 2, 0, Math.PI * 2);
+      ctx.fillStyle = isLast ? "#028090" : "rgba(2,128,144,0.45)"; ctx.fill();
+      if (isLast) {
+        ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(2,128,144,0.18)"; ctx.lineWidth = 2; ctx.stroke();
+      }
+    });
+
+    // Variation bars
+    const maxAbs = Math.max(...changes.map(Math.abs), 0.05);
+    const barW = Math.min(colW * 0.5, 24);
+
+    changes.forEach((ch, i) => {
+      if (i === 0) return; // no bar for first day
+      const cx = barCx(i);
+      const bx = cx - barW / 2;
+      const bH = Math.max(3, (Math.abs(ch) / maxAbs) * barMaxH);
+      const by = barTop + (barMaxH - bH);
+      const color = ch <= 0 ? "#02C39A" : "#E85D4E";
+
+      const r = 4;
       ctx.beginPath();
-      ctx.arc(trendX(i), trendY(last7[i].trend), 3, 0, 2 * Math.PI);
-      ctx.fill();
-    }
+      ctx.moveTo(bx + r, by); ctx.lineTo(bx + barW - r, by);
+      ctx.quadraticCurveTo(bx + barW, by, bx + barW, by + r);
+      ctx.lineTo(bx + barW, by + bH); ctx.lineTo(bx, by + bH);
+      ctx.lineTo(bx, by + r); ctx.quadraticCurveTo(bx, by, bx + r, by);
+      ctx.closePath();
+      const bGrad = ctx.createLinearGradient(0, by, 0, by + bH);
+      bGrad.addColorStop(0, color); bGrad.addColorStop(1, color + "70");
+      ctx.fillStyle = bGrad; ctx.fill();
+
+      ctx.font = "700 9px Inter, sans-serif";
+      ctx.fillStyle = color; ctx.textAlign = "center";
+      ctx.fillText((ch > 0 ? "+" : "") + ch.toFixed(1), cx, by - 3);
+    });
+
+    // Day labels
+    ctx.font = "600 9px Inter, sans-serif";
+    days.forEach((d, i) => {
+      const cx = barCx(i);
+      const isToday = i === days.length - 1;
+      ctx.fillStyle = isToday ? "#028090" : "#B0B8C8";
+      ctx.textAlign = "center";
+      ctx.fillText(d, cx, dayLabelTop + 10);
+    });
   }, [last7]);
 
   return (
     <div style={{
       background: "white",
-      borderRadius: 20,
-      padding: "20px",
-      boxShadow: T.shadow,
-      marginBottom: 16,
+      borderRadius: 22,
+      boxShadow: "0 2px 16px rgba(0,0,0,0.05)",
+      overflow: "hidden",
+      marginBottom: 14,
     }}>
-      {/* Current trend display */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ fontSize: 32, fontWeight: 800, color: "#1A2030" }}>
-            {currentTrend ?? "—"} <span style={{ fontSize: 14, color: "#9CA3AF", fontWeight: 600 }}>kg</span>
-          </div>
-        {vsYesterday != null && (
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 4,
-            padding: "4px 10px", borderRadius: 8,
-            background: vsYesterday < 0 ? "#02C39A12" : vsYesterday > 0 ? "#E85D4E12" : "#F0F0F0",
-            color: vsYesterday < 0 ? T.mint : vsYesterday > 0 ? T.coral : T.textMuted,
-            fontSize: 12, fontWeight: 700,
+      <div style={{ padding: "20px 20px 0" }}>
+        {/* Top row: TREND label + Storico + ? */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{
+            fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+            letterSpacing: 0.8, color: "#9CA3AF",
+          }}>Trend</span>
+          <span style={{ flex: 1 }} />
+          <button onClick={onShowHistory} style={{
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "6px 12px", borderRadius: 10, height: 30,
+            background: "#F0F8F8", border: "none", cursor: "pointer",
+            fontFamily: "inherit", fontSize: 11, fontWeight: 700, color: "#028090",
           }}>
-            {vsYesterday < 0 ? <ArrowDown size={12} /> : vsYesterday > 0 ? <ArrowUp size={12} /> : <Minus size={12} />}
-            {vsYesterday > 0 ? "+" : ""}{vsYesterday} kg vs ieri
-          </div>
-        )}
+            <Clock size={14} /> Storico
+          </button>
+          <button onClick={onShowInfo} style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 30, height: 30, borderRadius: 10,
+            background: "#F0F2F5", border: "none", cursor: "pointer",
+            fontSize: 12, fontWeight: 800, color: "#9CA3AF",
+          }}>?</button>
+        </div>
+
+        {/* Hero row: big number + kg + diff badge */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{
+            fontSize: 48, fontWeight: 900, color: "#1A2030",
+            letterSpacing: -2, lineHeight: 1,
+          }}>
+            {currentTrend ?? "—"}
+          </span>
+          <span style={{ fontSize: 17, fontWeight: 600, color: "#9CA3AF" }}>kg</span>
+          {vsYesterday != null && (
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 3,
+              padding: "4px 10px", borderRadius: 8, marginLeft: 4,
+              fontSize: 12, fontWeight: 700,
+              background: vsYesterday < 0 ? "rgba(2,195,154,0.1)" : vsYesterday > 0 ? "rgba(232,93,78,0.1)" : "#F0F0F0",
+              color: vsYesterday < 0 ? "#02C39A" : vsYesterday > 0 ? "#E85D4E" : "#9CA3AF",
+            }}>
+              {vsYesterday < 0 ? <ArrowDown size={10} /> : vsYesterday > 0 ? <ArrowUp size={10} /> : <Minus size={10} />}
+              {Math.abs(vsYesterday)} vs ieri
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Canvas chart */}
-      <canvas ref={canvasRef} style={{ width: "100%", height: 200, marginBottom: 12 }} />
-
-      {/* Bottom row: Trend label + Storico + ? */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: "#9CA3AF" }}>Trend 7gg</span>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={onShowHistory} style={{
-            height: 32, padding: "0 14px", borderRadius: 10, border: "none",
-            background: T.tealLight, color: T.teal, fontSize: 12, fontWeight: 700,
-            cursor: "pointer", fontFamily: "'Inter', sans-serif",
-            display: "flex", alignItems: "center", gap: 4,
-          }}>
-            <Clock size={13} /> Storico
-          </button>
-          <button onClick={onShowInfo} style={{
-            width: 32, height: 32, borderRadius: 10, border: "none",
-            background: T.tealLight, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <Info size={15} color={T.teal} />
-          </button>
-        </div>
+      {/* Canvas chart — full width, edge-to-edge */}
+      <div style={{ marginTop: 10 }}>
+        <canvas ref={canvasRef} style={{ width: "100%", display: "block" }} />
       </div>
     </div>
   );
@@ -673,48 +671,50 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
               <X size={14} color="#6B7280" />
             </button>
           </div>
-          {/* Column headers */}
-          <div style={{
-            display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
-            marginTop: 14, paddingBottom: 4,
-          }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase" }}>Data</span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", textAlign: "center" }}>Peso</span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", textAlign: "center" }}>Trend</span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", textAlign: "right" }}>Var</span>
-          </div>
         </div>
 
         {/* Scrollable content */}
-        <div style={{ overflow: "auto", flex: 1 }}>
+        <div style={{ overflow: "auto", flex: 1, padding: "10px 14px 40px", WebkitOverflowScrolling: "touch" }}>
           {groupedByMonth.map((group, groupIdx) => (
-            <div key={groupIdx}>
-              {/* Month header with variation */}
+            <div key={groupIdx} style={{ marginBottom: 12 }}>
+              {/* Month header with variation + count */}
               <div style={{
-                padding: "10px 20px",
-                background: "#F9FAFB",
-                borderBottom: `1px solid ${T.border}`,
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-                position: "sticky", top: 0, zIndex: 1,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                margin: "0 4px", padding: "0 10px", marginBottom: 4, marginTop: groupIdx > 0 ? 12 : 0,
               }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7280", textTransform: "capitalize" }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "#1A2030", textTransform: "capitalize" }}>
                   {group.month.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}
                 </span>
-                {group.monthVar != null && (
-                  <span style={{
-                    fontSize: 12, fontWeight: 700,
-                    color: group.monthVar < 0 ? "#02C39A" : group.monthVar > 0 ? "#E85D4E" : "#9CA3AF",
-                  }}>
-                    {group.monthVar > 0 ? "+" : ""}{group.monthVar} kg
-                  </span>
-                )}
+                <span style={{ fontSize: 10, fontWeight: 600, color: "#9CA3AF" }}>
+                  {group.monthVar != null && (
+                    <span style={{ color: group.monthVar < 0 ? "#02C39A" : group.monthVar > 0 ? "#E85D4E" : "#9CA3AF" }}>
+                      {group.monthVar > 0 ? "+" : ""}{group.monthVar} kg
+                    </span>
+                  )}
+                  {" · "}{group.entries.length} pesate
+                </span>
               </div>
 
-              {/* Entries as clickable rows: Data | Peso | Trend | Var */}
+              {/* Column sub-headers per month */}
+              <div style={{
+                display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 1fr",
+                padding: "4px 10px", marginBottom: 2, margin: "0 4px",
+              }}>
+                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5 }}>Data</span>
+                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Trend</span>
+                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Var</span>
+                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Peso</span>
+              </div>
+
+              {/* Entries: Data | Trend | Var | Peso */}
               {group.entries.map((entry, idx) => {
                 const dateObj = new Date(entry.date);
-                const dateStr = dateObj.toLocaleDateString("it-IT", { day: "numeric", weekday: "short" });
-                // Find variation vs previous entry in smoothed
+                const isToday = entry.date === today();
+                const isYesterday = (() => { const y = new Date(); y.setDate(y.getDate() - 1); return entry.date === toISO(y); })();
+                const mainLabel = isToday ? "Oggi" : isYesterday ? "Ieri" : dateObj.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+                const subLabel = (isToday || isYesterday) ? dateObj.toLocaleDateString("it-IT", { day: "numeric", month: "short" }) : "";
+
+                // Variation vs previous entry in smoothed
                 const smIdx = smoothed.findIndex(e => e.date === entry.date);
                 const prevTrend = smIdx > 0 ? smoothed[smIdx - 1].trend : null;
                 const variation = (entry.trend != null && prevTrend != null)
@@ -725,28 +725,32 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
                     key={entry.id || idx}
                     onClick={() => handleRowClick(entry)}
                     style={{
-                      display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                      padding: "12px 20px",
-                      borderBottom: `1px solid ${T.border}`,
-                      cursor: "pointer",
+                      display: "grid", gridTemplateColumns: "1.4fr 1fr 0.7fr 1fr",
                       alignItems: "center",
+                      padding: "10px 10px",
+                      background: "#F8F9FA",
+                      borderRadius: 11,
+                      marginBottom: 3,
+                      margin: "0 4px 3px",
+                      cursor: "pointer",
                     }}
                   >
-                    <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>{dateStr}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#1A2030", textAlign: "center" }}>{entry.weight}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: T.teal, textAlign: "center" }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#1A2030" }}>{mainLabel}</div>
+                      {subLabel && <div style={{ fontSize: 9, color: "#9CA3AF", fontWeight: 500 }}>{subLabel}</div>}
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "#028090", textAlign: "right" }}>
                       {entry.trend != null ? entry.trend.toFixed(1) : "—"}
                     </span>
-                    <div style={{ textAlign: "right" }}>
-                      {variation != null ? (
-                        <span style={{
-                          fontSize: 11, fontWeight: 700,
-                          color: variation < 0 ? "#02C39A" : variation > 0 ? "#E85D4E" : "#9CA3AF",
-                        }}>
-                          {variation > 0 ? "+" : ""}{variation}
-                        </span>
-                      ) : <span style={{ fontSize: 11, color: "#9CA3AF" }}>—</span>}
-                    </div>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, textAlign: "center",
+                      color: variation != null ? (variation < 0 ? "#02C39A" : variation > 0 ? "#E85D4E" : "#9CA3AF") : "#9CA3AF",
+                    }}>
+                      {variation != null ? ((variation > 0 ? "+" : "") + variation.toFixed(2)) : "—"}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7794", textAlign: "right" }}>
+                      {entry.weight}
+                    </span>
                   </div>
                 );
               })}
