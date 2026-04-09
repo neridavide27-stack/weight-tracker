@@ -3,6 +3,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import FoodSection from "./FoodSection";
 import FitnessSection from "./FitnessSection";
 import GymSection from "./GymSection";
+import CoachSection from "./CoachSection";
 import {
   getNutritionGoals, saveNutritionGoals, clearAllFoodData, populateDemoData,
   getSheetsUrl, saveSheetsUrl, pingSheets, fullSyncToSheets, restoreFromSheets,
@@ -611,32 +612,18 @@ const NutritionGoalsPanel = ({ nutritionGoals, onSave, goalEffectiveDate, setGoa
       <div style={cardStyle}>
         <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>Fabbisogno calorico</div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-          {[
-            { label: "Età", val: age, set: setAge, im: "numeric", suf: "" },
-            { label: "Altezza", val: height, set: setHeight, im: "numeric", suf: " cm" },
-            { label: "Peso", val: weight, set: setWeight, im: "decimal", suf: " kg" },
-          ].map((f) => (
-            <div key={f.label}>
-              <div style={labelStyle}>{f.label}</div>
-              <input type="text" inputMode={f.im} value={f.val}
-                onChange={(e) => {
-                  const v = e.target.value.replace(",", ".");
-                  if (v === "" || /^\d*\.?\d*$/.test(v)) f.set(v === "" ? 0 : (f.im === "decimal" ? parseFloat(v) || 0 : parseInt(v) || 0));
-                }}
-                style={{
-                  width: "100%", padding: "10px 10px", borderRadius: 10, border: "1.5px solid #E5E7EB",
-                  fontSize: 15, fontWeight: 700, color: T.text, fontFamily: "inherit", background: "#F9FAFB", outline: "none",
-                  textAlign: "center",
-                }}
-              />
-            </div>
-          ))}
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <div style={labelStyle}>Sesso</div>
-          <Segmented options={[{ label: "Maschio", value: "M" }, { label: "Femmina", value: "F" }]} value={sex} onChange={setSex} />
+        {/* Read-only profile summary */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#F3F4F6", borderRadius: 12, marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 12, fontSize: 12, fontWeight: 600, color: T.text }}>
+            <span>{age} anni</span>
+            <span style={{ color: "#D1D5DB" }}>·</span>
+            <span>{height} cm</span>
+            <span style={{ color: "#D1D5DB" }}>·</span>
+            <span>{weight} kg</span>
+            <span style={{ color: "#D1D5DB" }}>·</span>
+            <span>{sex === "M" ? "M" : "F"}</span>
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 600, color: "#028090" }}>da Profilo</span>
         </div>
 
         <div style={{ marginBottom: 12 }}>
@@ -1375,6 +1362,25 @@ export default function WeightTrackerApp() {
      ═══════════════════════════════════════ */
   if (screen === "gym") {
     return <GymSection onNavigate={goTo} />;
+  }
+
+  /* ═══════════════════════════════════════
+     SCREEN: COACH
+     ═══════════════════════════════════════ */
+  if (screen === "coach") {
+    return (
+      <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', -apple-system, sans-serif" }}>
+        <CoachSection
+          T={T}
+          settings={settings}
+          weightEntries={sorted}
+          nutritionGoals={nutritionGoals}
+          goalHistory={goalHistory}
+          goTo={goTo}
+        />
+        <BottomNav active="dashboard" onNavigate={goTo} onAdd={() => goTo("add")} />
+      </div>
+    );
   }
 
   /* ═══════════════════════════════════════
@@ -2288,6 +2294,60 @@ export default function WeightTrackerApp() {
               {summaryMessage.text}
             </div>
           </div>
+        </div>
+
+        {/* ══════════════════════════════════════════
+            COACH CARD (accesso al Coach)
+            ══════════════════════════════════════════ */}
+        <div
+          onClick={() => goTo("coach")}
+          style={{
+            background: "linear-gradient(135deg, #F0FDFA, #ECFEFF)",
+            borderRadius: 18, padding: "16px",
+            boxShadow: "0 2px 16px rgba(2,128,144,0.10)",
+            border: "1.5px solid rgba(2,128,144,0.15)",
+            cursor: "pointer",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: T.gradient,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: "0 3px 12px rgba(2,128,144,0.25)",
+              }}>
+                <Sparkles size={20} color="#fff" />
+              </div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.text, letterSpacing: -0.3 }}>Il tuo Coach</div>
+                <div style={{ fontSize: 10, color: T.teal, fontWeight: 600 }}>Analisi personalizzata</div>
+              </div>
+            </div>
+            <div style={{
+              width: 28, height: 28, borderRadius: 8,
+              background: "rgba(2,128,144,0.1)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <ChevronRight size={16} color={T.teal} />
+            </div>
+          </div>
+          {summaryMessage.mood !== "neutral" && (
+            <div style={{
+              background: "#fff", borderRadius: 12, padding: "10px 14px",
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: 8, background: "#FEF3C7",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                <Sparkles size={14} color="#D97706" />
+              </div>
+              <div style={{ fontSize: 11, color: T.text, fontWeight: 500, lineHeight: 1.5 }}>
+                Scopri cosa funziona e cosa migliorare nel tuo percorso
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ══════════════════════════════════════════
