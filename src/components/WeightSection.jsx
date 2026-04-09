@@ -2,13 +2,13 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine, Area, ComposedChart,
+  ResponsiveContainer, ReferenceLine, Area, ComposedChart, ReferenceArea,
 } from "recharts";
 import {
   Scale, Target, TrendingDown, TrendingUp, Calendar, Plus,
   ChevronLeft, Settings, Trash2, Award, Flame, ArrowDown,
   ArrowUp, Minus, Edit3, Check, X, ChevronRight, Activity,
-  AlertCircle, Info, Clock, BarChart3, Heart,
+  AlertCircle, Info, Clock, BarChart3, Heart, Eye, EyeOff,
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════
@@ -111,6 +111,21 @@ const CircularProgress = ({ percentage, size = 64, strokeWidth = 5, color }) => 
         strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
         style={{ transition: "stroke-dashoffset 1s ease-in-out" }} />
     </svg>
+  );
+};
+
+const CustomTooltip = ({ active, payload, T }) => {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  return (
+    <div style={{
+      background: T.card, borderRadius: 12, padding: "10px 14px",
+      boxShadow: T.shadowLg, border: `1px solid ${T.tealLight}`,
+    }}>
+      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>{d.dateLabel || formatDate(d.date)}</div>
+      {d.weight != null && <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Peso: {d.weight} kg</div>}
+      {d.trend != null && <div style={{ fontSize: 12, color: T.teal, fontWeight: 600 }}>Trend: {d.trend} kg</div>}
+    </div>
   );
 };
 
@@ -247,173 +262,73 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
     ctx.stroke();
 
     // Draw dots on trend
+    ctx.fillStyle = "#028090";
     for (let i = 0; i < last7.length; i++) {
-      const x = trendX(i), y = trendY(last7[i].trend);
-      const isLast = i === last7.length - 1;
-      ctx.beginPath(); ctx.arc(x, y, isLast ? 4 : 2, 0, Math.PI * 2);
-      ctx.fillStyle = isLast ? "#028090" : "rgba(2,128,144,0.45)"; ctx.fill();
-      if (isLast) {
-        ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(2,128,144,0.18)"; ctx.lineWidth = 2; ctx.stroke();
-      }
-    }
-
-    // Draw day labels
-    const dayNames = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
-    ctx.font = "600 9px Inter, sans-serif";
-    ctx.textAlign = "center";
-    for (let i = 0; i < last7.length; i++) {
-      const isToday = i === last7.length - 1;
-      ctx.fillStyle = isToday ? "#028090" : "#B0B8C8";
-      const label = isToday ? "Oggi" : dayNames[new Date(last7[i].date).getDay()];
-      ctx.fillText(label, colCx(i), height - 8);
+      ctx.beginPath();
+      ctx.arc(trendX(i), trendY(last7[i].trend), 3, 0, 2 * Math.PI);
+      ctx.fill();
     }
   }, [last7]);
-
-  // Canvas click/touch handler — find nearest day point
-  const handleCanvasClick = (e) => {
-    if (!canvasRef.current || last7.length === 0) return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const x = clientX - rect.left;
-    const w = rect.width;
-    const pad = { left: 10, right: 10 };
-    const cW = w - pad.left - pad.right;
-    const colW = cW / last7.length;
-    const barDrawW = Math.min(colW * 0.5, 24);
-    const colCx = (i) => pad.left + colW * i + colW / 2;
-    const fbl = colCx(0) - barDrawW / 2;
-    const lbr = colCx(last7.length - 1) + barDrawW / 2;
-    const trendXForIdx = (i) => fbl + (lbr - fbl) * i / (last7.length - 1);
-
-    let closestIdx = 0;
-    let minDist = Infinity;
-    for (let i = 0; i < last7.length; i++) {
-      const dist = Math.abs(x - trendXForIdx(i));
-      if (dist < minDist) { minDist = dist; closestIdx = i; }
-    }
-
-    setTooltipData(closestIdx);
-    // Auto-dismiss after 2s
-    setTimeout(() => setTooltipData(null), 2000);
-  };
 
   return (
     <div style={{
       background: "white",
-      borderRadius: 22,
-      padding: "20px 20px 16px",
+      borderRadius: 20,
+      padding: "20px",
       boxShadow: T.shadow,
       marginBottom: 16,
     }}>
-      {/* Header row */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, height: 30 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: "#9CA3AF", textTransform: "uppercase" }}>TREND</span>
-        <div style={{ flex: 1 }} />
-        <button onClick={onShowHistory} style={{
-          background: "#F0F8F8",
-          color: "#028090",
-          border: "none",
-          borderRadius: 15,
-          padding: "6px 12px",
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          height: 30,
-        }}>
-          <Clock size={14} />
-          Storico
-        </button>
-        <button onClick={onShowInfo} style={{
-          background: "#F0F2F5",
-          border: "none",
-          borderRadius: 8,
-          width: 30,
-          height: 30,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          marginLeft: 8,
-        }}>
-          <Info size={16} color="#6B7280" />
-        </button>
-      </div>
-
-      {/* Hero row */}
-      {currentTrend != null ? (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
-            <span style={{ fontSize: 48, fontWeight: 900, color: "#1A2030" }}>
-              {currentTrend.toFixed(1)}
-            </span>
-            <span style={{ fontSize: 17, color: "#6B7280" }}>kg</span>
+      {/* Current trend display */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 32, fontWeight: 800, color: "#1A2030" }}>
+            {currentTrend ?? "—"} <span style={{ fontSize: 14, color: "#9CA3AF", fontWeight: 600 }}>kg</span>
           </div>
-          {vsYesterday != null && (
-            <div style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              padding: "4px 10px",
-              borderRadius: 8,
-              background: vsYesterday < 0 ? "#02C39A12" : "#E85D4E12",
-              color: vsYesterday < 0 ? "#02C39A" : "#E85D4E",
-              fontSize: 13,
-              fontWeight: 700,
-            }}>
-              {vsYesterday < 0 ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
-              {Math.abs(vsYesterday).toFixed(1)} vs ieri
-            </div>
-          )}
-        </div>
-      ) : (
-        <div style={{ color: T.textMuted, marginBottom: 16 }}>Nessun dato disponibile</div>
-      )}
-
-      {/* Canvas chart */}
-      <div style={{ position: "relative", marginBottom: 8 }}>
-        <canvas
-          ref={canvasRef}
-          onClick={handleCanvasClick}
-          onTouchStart={handleCanvasClick}
-          style={{
-            width: "100%",
-            height: 130,
-            cursor: "pointer",
-            display: "block",
-          }}
-        />
-        {tooltipData != null && last7[tooltipData] && (
+        {vsYesterday != null && (
           <div style={{
-            position: "absolute",
-            top: 15,
-            left: `${(tooltipData / (last7.length - 1)) * 100}%`,
-            transform: "translateX(-50%)",
-            background: "white",
-            borderRadius: 8,
-            padding: "6px 10px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            fontSize: 12,
-            fontWeight: 600,
-            color: "#028090",
-            pointerEvents: "none",
-            whiteSpace: "nowrap",
+            display: "inline-flex", alignItems: "center", gap: 4,
+            padding: "4px 10px", borderRadius: 8,
+            background: vsYesterday < 0 ? "#02C39A12" : vsYesterday > 0 ? "#E85D4E12" : "#F0F0F0",
+            color: vsYesterday < 0 ? T.mint : vsYesterday > 0 ? T.coral : T.textMuted,
+            fontSize: 12, fontWeight: 700,
           }}>
-            <span style={{ color: "#9CA3AF", fontSize: 10 }}>{formatDate(last7[tooltipData].date)}</span>{" "}
-            <strong>{last7[tooltipData].trend.toFixed(1)}</strong> kg
+            {vsYesterday < 0 ? <ArrowDown size={12} /> : vsYesterday > 0 ? <ArrowUp size={12} /> : <Minus size={12} />}
+            {vsYesterday > 0 ? "+" : ""}{vsYesterday} kg vs ieri
           </div>
         )}
+        </div>
+      </div>
+
+      {/* Canvas chart */}
+      <canvas ref={canvasRef} style={{ width: "100%", height: 200, marginBottom: 12 }} />
+
+      {/* Bottom row: Trend label + Storico + ? */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: "#9CA3AF" }}>Trend 7gg</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={onShowHistory} style={{
+            height: 32, padding: "0 14px", borderRadius: 10, border: "none",
+            background: T.tealLight, color: T.teal, fontSize: 12, fontWeight: 700,
+            cursor: "pointer", fontFamily: "'Inter', sans-serif",
+            display: "flex", alignItems: "center", gap: 4,
+          }}>
+            <Clock size={13} /> Storico
+          </button>
+          <button onClick={onShowInfo} style={{
+            width: 32, height: 32, borderRadius: 10, border: "none",
+            background: T.tealLight, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <Info size={15} color={T.teal} />
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   CARD 2: OBIETTIVO (Goal tracking)
+   CARD 2: GOAL (Enhanced)
    ═══════════════════════════════════════════ */
 
 const GoalCard = ({ T, smoothed, settings, sorted }) => {
@@ -454,27 +369,90 @@ const GoalCard = ({ T, smoothed, settings, sorted }) => {
     }
   }
 
-  // Trajectory chart data
-  const chartDataRaw = [...smoothed];
-  if (reg && chartDataRaw.length > 0) {
-    const lastEntry = chartDataRaw[chartDataRaw.length - 1];
-    const lastDate = new Date(lastEntry.date);
-    const startDate = new Date(chartDataRaw[0].date);
-    const daysElapsed = (lastDate - startDate) / 86400000;
+  // Generate milestones for custom step
+  const generateMilestones = () => {
+    if (!settings.showCustomMilestones || !settings.milestoneStep) return [];
+    const step = settings.milestoneStep;
+    const start = settings.startWeight;
+    const goal = settings.goalWeight;
+    const direction = start > goal ? -1 : 1;
+    const milestones = [];
 
-    for (let i = 0; i < 60; i++) {
+    for (let w = start + direction * step;
+         direction > 0 ? w <= goal : w >= goal;
+         w += direction * step) {
+      const reached = direction > 0 ? currentWeight >= w : currentWeight <= w;
+      milestones.push({ weight: Math.round(w * 10) / 10, reached });
+    }
+
+    // Add goal itself
+    milestones.push({ weight: goal, reached: currentWeight === goal });
+    return milestones;
+  };
+
+  const milestones = generateMilestones();
+
+  // Get last reached, current, and up to 2 future
+  const displayMilestones = useMemo(() => {
+    const lastReached = milestones.filter(m => m.reached).pop();
+    const current = milestones.find(m => !m.reached);
+    const future = milestones.filter(m => !m.reached && m.weight !== current?.weight).slice(0, 2);
+    const result = [];
+    if (lastReached) result.push({ ...lastReached, reached: true });
+    if (current) result.push({ ...current, reached: false });
+    result.push(...future);
+    return result;
+  }, [milestones]);
+
+  // Trajectory chart data — actual trend + projected as separate keys
+  const chartDataRaw = smoothed.map(e => ({
+    ...e,
+    dateLabel: formatDate(e.date),
+    actual: e.trend,
+    projected: null,
+  }));
+  if (reg && chartDataRaw.length > 0) {
+    const lastEntry = smoothed[smoothed.length - 1];
+    const lastDate = new Date(lastEntry.date);
+    const startDate = new Date(smoothed[0].date);
+    const daysElapsed = (lastDate - startDate) / 86400000;
+    // Bridge: last actual point also gets a projected value
+    chartDataRaw[chartDataRaw.length - 1].projected = lastEntry.trend;
+
+    for (let i = 1; i <= 60; i++) {
       const futureDate = new Date(lastDate);
       futureDate.setDate(futureDate.getDate() + i);
       const daysSinceStart = daysElapsed + i;
-      const projectedValue = reg.intercept + reg.slope * daysSinceStart;
+      const projectedValue = Math.round((reg.intercept + reg.slope * daysSinceStart) * 100) / 100;
       chartDataRaw.push({
         date: toISO(futureDate),
-        trend: projectedValue,
-        projected: true,
         dateLabel: formatDate(futureDate),
+        actual: null,
+        projected: projectedValue,
+        trend: projectedValue,
       });
     }
   }
+
+  // BMI milestones if enabled
+  const bmiMilestones = useMemo(() => {
+    if (!settings.showBmiMilestones || !settings.height) return [];
+    const h = settings.height / 100;
+    const categories = [
+      { name: "Sottopeso", color: "#60A5FA", min: 0, max: 18.5 },
+      { name: "Normopeso", color: "#10B981", min: 18.5, max: 25 },
+      { name: "Sovrappeso", color: "#F59E0B", min: 25, max: 30 },
+      { name: "Obesità", color: "#EF4444", min: 30, max: 999 },
+    ];
+
+    return categories.map(cat => {
+      const weightAtMin = cat.min * h * h;
+      const weightAtMax = cat.max * h * h;
+      const currentBmi = calcBMI(currentWeight, settings.height);
+      const reached = settings.startWeight > weightAtMax || (settings.startWeight > weightAtMin && currentWeight <= weightAtMax);
+      return { ...cat, weightAtMin: Math.round(weightAtMin * 10) / 10, reached };
+    });
+  }, [settings, currentWeight]);
 
   return (
     <div style={{
@@ -486,66 +464,117 @@ const GoalCard = ({ T, smoothed, settings, sorted }) => {
     }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#6B7280" }}>Obiettivo</span>
-        <span style={{ fontSize: 18, fontWeight: 800, color: "#028090" }}>{settings.goalWeight} kg</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "#6B7280" }}>OBIETTIVO</span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: T.teal }}>{settings.goalWeight} kg</span>
       </div>
 
       {/* Progress ring + stats */}
       <div style={{ display: "flex", gap: 20, marginBottom: 24 }}>
-        <div style={{ flex: "0 0 auto" }}>
-          <CircularProgress percentage={progressPct} size={80} strokeWidth={5} color="#028090" />
+        <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <CircularProgress percentage={progressPct} size={90} strokeWidth={5} color={T.teal} />
+          <div style={{ fontSize: 24, fontWeight: 800, color: T.text, marginTop: 12 }}>
+            {Math.round(progressPct)}%
+          </div>
         </div>
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 12 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 14 }}>
           <div>
-            <div style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 600 }}>Mancanti</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#1A2030" }}>{kgMancanti} kg</div>
+            <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700 }}>Persi</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.teal }}>{kgPersi} kg</div>
           </div>
           <div>
-            <div style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 600 }}>Persi</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#028090" }}>{kgPersi} kg</div>
+            <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700 }}>Mancanti</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#1A2030" }}>{kgMancanti} kg</div>
           </div>
           <div>
-            <div style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 600 }}>Ritmo settimanale</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#1A2030" }}>
-              {weeklyRate != null ? `${weeklyRate.toFixed(2)} kg` : "—"}
+            <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700 }}>Ritmo</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#1A2030" }}>
+              {weeklyRate != null ? `${Math.abs(weeklyRate).toFixed(2)} kg/sett` : "—"}
             </div>
           </div>
-          {predictedDate && (
-            <div>
-              <div style={{ fontSize: 12, color: "#9CA3AF", fontWeight: 600 }}>Data prevista</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#028090" }}>{predictedDate}</div>
+          <div>
+            <div style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 700 }}>Previsione</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.teal }}>
+              {predictedDate ? formatDateFull(new Date(predictedDate)) : "—"}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
+      {/* Custom Milestones */}
+      {settings.showCustomMilestones && displayMilestones.length > 0 && (
+        <>
+          <div style={{ height: 1, background: T.border, marginBottom: 20 }} />
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 12 }}>Tappe</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
+              {/* Timeline line */}
+              <div style={{
+                position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: T.border, zIndex: 0,
+                transform: "translateY(-50%)"
+              }} />
+              {/* Dots */}
+              {displayMilestones.map((m, i) => {
+                const isCurrent = !m.reached && displayMilestones[i + 1]?.reached === false;
+                const color = m.reached ? "#10B981" : isCurrent ? "#028090" : "#D1D5DB";
+                return (
+                  <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, zIndex: 1 }}>
+                    <div style={{
+                      width: isCurrent ? 16 : 12, height: isCurrent ? 16 : 12,
+                      borderRadius: "50%", background: color, border: isCurrent ? `3px solid ${T.bg}` : "none",
+                      boxShadow: isCurrent ? `0 0 0 2px ${T.teal}` : "none"
+                    }} />
+                    <div style={{
+                      fontSize: 11, fontWeight: m.reached ? 600 : isCurrent ? 700 : 500,
+                      color: m.reached ? "#10B981" : isCurrent ? T.text : "#9CA3AF",
+                      marginTop: 8, textDecoration: m.reached ? "line-through" : "none"
+                    }}>
+                      {m.weight}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* BMI Milestones */}
+      {settings.showBmiMilestones && bmiMilestones.length > 0 && (
+        <>
+          <div style={{ height: 1, background: T.border, marginBottom: 20 }} />
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 12 }}>Traguardi BMI</div>
+            <div style={{ display: "flex", height: 20, borderRadius: 10, overflow: "hidden", gap: 0 }}>
+              {bmiMilestones.map((cat, i) => (
+                <div key={i} style={{
+                  flex: 1, background: cat.color, opacity: cat.reached ? 1 : 0.4,
+                  borderRight: i < bmiMilestones.length - 1 ? `2px solid white` : "none"
+                }} />
+              ))}
+            </div>
+            <div style={{ display: "flex", fontSize: 10, color: "#6B7280", marginTop: 8, gap: 2 }}>
+              {bmiMilestones.map((cat, i) => (
+                <div key={i} style={{ flex: 1, textAlign: "center" }}>
+                  {cat.weightAtMin} kg
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Trajectory chart */}
-      <ResponsiveContainer width="100%" height={200}>
-        <ComposedChart data={chartDataRaw}>
-          <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
-          <XAxis dataKey="dateLabel" tick={{ fontSize: 11 }} interval={Math.floor(chartDataRaw.length / 6)} />
-          <YAxis domain={["dataMin - 1", "dataMax + 1"]} tick={{ fontSize: 11 }} />
-          <Tooltip
-            contentStyle={{
-              background: T.card,
-              borderRadius: 12,
-              boxShadow: T.shadowLg,
-              border: `1px solid ${T.tealLight}`,
-            }}
-            cursor={false}
-          />
-          <ReferenceLine y={settings.goalWeight} stroke="#028090" strokeDasharray="4 4" name="Obiettivo" />
-          <Line type="monotone" dataKey="trend" stroke="#028090" strokeWidth={2} dot={false} isAnimationActive={false} />
-          <Line
-            type="monotone"
-            dataKey="trend"
-            stroke="#028090"
-            strokeWidth={2}
-            strokeDasharray="5 5"
-            dot={false}
-            isAnimationActive={false}
-            data={chartDataRaw.filter(d => d.projected)}
-          />
+      <div style={{ height: 1, background: T.border, marginBottom: 20 }} />
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#6B7280", marginBottom: 8 }}>Traiettoria</div>
+      <ResponsiveContainer width="100%" height={180}>
+        <ComposedChart data={chartDataRaw} margin={{ top: 5, right: 8, left: -15, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={T.border} vertical={false} />
+          <XAxis dataKey="dateLabel" tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} interval={Math.floor(chartDataRaw.length / 5)} />
+          <YAxis domain={["dataMin - 1", "dataMax + 1"]} tick={{ fontSize: 9, fill: "#9CA3AF" }} tickLine={false} axisLine={false} />
+          <Tooltip content={<CustomTooltip T={T} />} cursor={false} />
+          <ReferenceLine y={settings.goalWeight} stroke="#10B981" strokeDasharray="4 4" strokeWidth={1.5} />
+          <Line type="monotone" dataKey="actual" stroke={T.teal} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
+          <Line type="monotone" dataKey="projected" stroke={T.teal} strokeWidth={2} strokeDasharray="5 5" dot={false} isAnimationActive={false} connectNulls={false} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -560,22 +589,49 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
   const [editingEntry, setEditingEntry] = useState(null);
   const [editWeight, setEditWeight] = useState("");
 
-  // Group by month
+  // Group by month (most recent first) with monthly variation
   const groupedByMonth = useMemo(() => {
     const groups = {};
     [...smoothed].reverse().forEach(entry => {
       const dateObj = new Date(entry.date);
-      const monthKey = `${dateObj.getFullYear()}-${dateObj.getMonth()}`;
+      const monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth()).padStart(2, "0")}`;
       if (!groups[monthKey]) {
-        groups[monthKey] = { month: dateObj, entries: [] };
+        groups[monthKey] = { month: dateObj, entries: [], monthKey };
       }
       groups[monthKey].entries.push(entry);
     });
-    return Object.values(groups);
+
+    // Calculate monthly variation: trend last day - trend first day of month
+    const groupArr = Object.values(groups);
+    groupArr.forEach((g, gIdx) => {
+      // entries are in reverse order (most recent first), so first = last day, last = first day
+      const lastTrend = g.entries[0]?.trend;
+      // For "first of month" trend: use the first entry of previous month group as boundary,
+      // or the earliest entry in this month
+      const firstTrend = g.entries[g.entries.length - 1]?.trend;
+      g.monthVar = (lastTrend != null && firstTrend != null) ? Math.round((lastTrend - firstTrend) * 100) / 100 : null;
+    });
+
+    return groupArr;
   }, [smoothed]);
 
-  const handleDelete = (id) => {
-    setEntries(entries.filter(e => e.id !== id));
+  const handleRowClick = (entry) => {
+    setEditingEntry(entry);
+    setEditWeight(String(entry.weight));
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingEntry) return;
+    const w = parseFloat(editWeight.replace(",", "."));
+    if (isNaN(w) || w < 20 || w > 300) return;
+    setEntries(entries.map(e => e.id === editingEntry.id ? { ...e, weight: w } : e));
+    setEditingEntry(null);
+  };
+
+  const handleDeleteEdit = () => {
+    if (!editingEntry) return;
+    setEntries(entries.filter(e => e.id !== editingEntry.id));
+    setEditingEntry(null);
   };
 
   if (!show) return null;
@@ -604,113 +660,92 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
         {/* Handle + Header */}
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}` }}>
           <div style={{
-            width: 36,
-            height: 4,
-            borderRadius: 2,
-            background: "#D1D5DB",
-            margin: "0 auto 12px",
+            width: 36, height: 4, borderRadius: 2,
+            background: "#D1D5DB", margin: "0 auto 12px",
           }} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <span style={{ fontSize: 18, fontWeight: 800, color: "#1A2030" }}>Storico</span>
             <button onClick={onClose} style={{
-              background: "#F0F2F5",
-              border: "none",
-              borderRadius: 8,
-              width: 32,
-              height: 32,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              background: "#F0F2F5", border: "none", borderRadius: 8,
+              width: 28, height: 28, display: "flex", alignItems: "center",
+              justifyContent: "center", cursor: "pointer",
             }}>
-              <X size={16} color="#6B7280" />
+              <X size={14} color="#6B7280" />
             </button>
+          </div>
+          {/* Column headers */}
+          <div style={{
+            display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            marginTop: 14, paddingBottom: 4,
+          }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase" }}>Data</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", textAlign: "center" }}>Peso</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", textAlign: "center" }}>Trend</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", textAlign: "right" }}>Var</span>
           </div>
         </div>
 
         {/* Scrollable content */}
-        <div style={{ flex: 1, overflow: "auto", padding: "16px 20px" }}>
-          {groupedByMonth.map((group, gIdx) => (
-            <div key={gIdx} style={{ marginBottom: 24 }}>
-              {/* Month header with variation summary */}
-              {(() => {
-                const monthEntries = group.entries;
-                const firstTrend = monthEntries.length > 0 ? monthEntries[monthEntries.length - 1].trend : null;
-                const lastTrend = monthEntries.length > 0 ? monthEntries[0].trend : null;
-                const monthVar = (firstTrend != null && lastTrend != null)
-                  ? Math.round((lastTrend - firstTrend) * 100) / 100 : null;
-                return (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px" }}>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: "#1A2030", textTransform: "capitalize" }}>
-                      {group.month.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}
-                    </span>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: T.textMuted }}>
-                      {monthVar != null && (
-                        <span style={{ color: monthVar <= 0 ? "#02C39A" : "#E85D4E", fontWeight: 700 }}>
-                          {monthVar > 0 ? "+" : ""}{monthVar} kg
-                        </span>
-                      )}
-                      {" · "}{monthEntries.length} pesate
-                    </span>
-                  </div>
-                );
-              })()}
-
-              {/* Column headers */}
+        <div style={{ overflow: "auto", flex: 1 }}>
+          {groupedByMonth.map((group, groupIdx) => (
+            <div key={groupIdx}>
+              {/* Month header with variation */}
               <div style={{
-                display: "grid",
-                gridTemplateColumns: "1.2fr 1fr 1fr 1fr",
-                gap: 8,
-                fontSize: 11,
-                fontWeight: 700,
-                color: "#9CA3AF",
-                paddingBottom: 8,
-                marginBottom: 8,
+                padding: "10px 20px",
+                background: "#F9FAFB",
                 borderBottom: `1px solid ${T.border}`,
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                position: "sticky", top: 0, zIndex: 1,
               }}>
-                <div>Data</div>
-                <div>Peso</div>
-                <div>Trend</div>
-                <div>Var</div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7280", textTransform: "capitalize" }}>
+                  {group.month.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}
+                </span>
+                {group.monthVar != null && (
+                  <span style={{
+                    fontSize: 12, fontWeight: 700,
+                    color: group.monthVar < 0 ? "#02C39A" : group.monthVar > 0 ? "#E85D4E" : "#9CA3AF",
+                  }}>
+                    {group.monthVar > 0 ? "+" : ""}{group.monthVar} kg
+                  </span>
+                )}
               </div>
 
-              {/* Entries — click row to edit */}
-              {group.entries.map((entry, eIdx) => {
-                const rawEntry = entries.find(e => e.date === entry.date);
-                const prevEntry = eIdx < group.entries.length - 1 ? group.entries[eIdx + 1] : null;
-                const variation = prevEntry
-                  ? Math.round((entry.trend - prevEntry.trend) * 100) / 100
-                  : null;
+              {/* Entries as clickable rows: Data | Peso | Trend | Var */}
+              {group.entries.map((entry, idx) => {
+                const dateObj = new Date(entry.date);
+                const dateStr = dateObj.toLocaleDateString("it-IT", { day: "numeric", weekday: "short" });
+                // Find variation vs previous entry in smoothed
+                const smIdx = smoothed.findIndex(e => e.date === entry.date);
+                const prevTrend = smIdx > 0 ? smoothed[smIdx - 1].trend : null;
+                const variation = (entry.trend != null && prevTrend != null)
+                  ? Math.round((entry.trend - prevTrend) * 100) / 100 : null;
 
                 return (
-                  <div key={entry.date} onClick={() => {
-                    if (rawEntry) {
-                      setEditingEntry(entry.date);
-                      setEditWeight(String(rawEntry.weight));
-                    }
-                  }} style={{
-                    display: "grid",
-                    gridTemplateColumns: "1.2fr 1fr 1fr 1fr",
-                    gap: 8,
-                    alignItems: "center",
-                    padding: "10px 8px",
-                    marginBottom: 3,
-                    background: "#F8F9FA",
-                    borderRadius: 11,
-                    fontSize: 13,
-                    cursor: rawEntry ? "pointer" : "default",
-                    transition: "background 0.15s",
-                  }}>
-                    <div style={{ color: "#1A2030", fontWeight: 600 }}>
-                      {new Date(entry.date).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
-                    </div>
-                    <div style={{ color: "#1A2030", fontWeight: 700 }}>{rawEntry?.weight ?? entry.trend.toFixed(1)}</div>
-                    <div style={{ color: T.teal, fontWeight: 700 }}>{entry.trend.toFixed(1)}</div>
-                    <div style={{
-                      color: variation == null ? T.textMuted : variation < 0 ? "#02C39A" : "#E85D4E",
-                      fontWeight: 700,
-                    }}>
-                      {variation == null ? "—" : `${variation > 0 ? "+" : ""}${variation.toFixed(2)}`}
+                  <div
+                    key={entry.id || idx}
+                    onClick={() => handleRowClick(entry)}
+                    style={{
+                      display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
+                      padding: "12px 20px",
+                      borderBottom: `1px solid ${T.border}`,
+                      cursor: "pointer",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span style={{ fontSize: 12, color: "#6B7280", fontWeight: 600 }}>{dateStr}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#1A2030", textAlign: "center" }}>{entry.weight}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: T.teal, textAlign: "center" }}>
+                      {entry.trend != null ? entry.trend.toFixed(1) : "—"}
+                    </span>
+                    <div style={{ textAlign: "right" }}>
+                      {variation != null ? (
+                        <span style={{
+                          fontSize: 11, fontWeight: 700,
+                          color: variation < 0 ? "#02C39A" : variation > 0 ? "#E85D4E" : "#9CA3AF",
+                        }}>
+                          {variation > 0 ? "+" : ""}{variation}
+                        </span>
+                      ) : <span style={{ fontSize: 11, color: "#9CA3AF" }}>—</span>}
                     </div>
                   </div>
                 );
@@ -721,79 +756,98 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
       </div>
 
       {/* Edit sub-sheet */}
-      {editingEntry && (() => {
-        const rawEntry = entries.find(e => e.date === editingEntry);
-        if (!rawEntry) return null;
-        const dateLabel = new Date(editingEntry).toLocaleDateString("it-IT", { day: "numeric", month: "long" });
-        return (
-          <div onClick={() => setEditingEntry(null)} style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)",
-            zIndex: 45, display: "flex", alignItems: "flex-end",
-          }}>
-            <div onClick={e => e.stopPropagation()} style={{
-              background: "#fff", borderRadius: "20px 20px 0 0", width: "100%",
-              padding: "16px 20px 28px",
-              boxShadow: "0 -4px 20px rgba(0,0,0,0.1)",
-            }}>
-              <div style={{ width: 36, height: 4, borderRadius: 2, background: "#D1D5DB", margin: "0 auto 16px" }} />
-              <div style={{ fontSize: 15, fontWeight: 800, color: "#1A2030", marginBottom: 16 }}>Modifica — {dateLabel}</div>
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#9CA3AF", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4 }}>Peso (kg)</div>
-                <input type="number" step="0.1" value={editWeight} onChange={e => setEditWeight(e.target.value)}
-                  style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1.5px solid #E8ECEF", fontFamily: "inherit", fontSize: 18, fontWeight: 800, color: "#1A2030", textAlign: "center" }}
-                />
-              </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-                <button onClick={() => { handleDelete(rawEntry.id); setEditingEntry(null); }} style={{
-                  flex: 1, padding: 13, borderRadius: 12, border: "none", fontFamily: "inherit",
-                  fontSize: 14, fontWeight: 700, cursor: "pointer", background: "#FEF2F2", color: "#E85D4E",
-                }}>Elimina</button>
-                <button onClick={() => setEditingEntry(null)} style={{
-                  flex: 1, padding: 13, borderRadius: 12, border: "none", fontFamily: "inherit",
-                  fontSize: 14, fontWeight: 700, cursor: "pointer", background: "#F0F2F5", color: "#6B7794",
-                }}>Annulla</button>
-                <button onClick={() => {
-                  const w = parseFloat(editWeight);
-                  if (!isNaN(w) && w >= 20 && w <= 300) {
-                    setEntries(entries.map(e => e.id === rawEntry.id ? { ...e, weight: w } : e));
-                  }
-                  setEditingEntry(null);
-                }} style={{
-                  flex: 1, padding: 13, borderRadius: 12, border: "none", fontFamily: "inherit",
-                  fontSize: 14, fontWeight: 700, cursor: "pointer",
-                  background: "linear-gradient(135deg, #028090, #02A4B5)", color: "#fff",
-                  boxShadow: "0 3px 12px rgba(2,128,144,0.25)",
-                }}>Salva</button>
-              </div>
+      {editingEntry && (
+        <div
+          onClick={(e) => { e.stopPropagation(); setEditingEntry(null); }}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
+            zIndex: 50, display: "flex", alignItems: "flex-end",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "white", borderRadius: "20px 20px 0 0",
+              width: "100%", padding: "24px 20px 32px",
+            }}
+          >
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: "#D1D5DB", margin: "0 auto 16px" }} />
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#1A2030", marginBottom: 4 }}>
+              Modifica peso
+            </div>
+            <div style={{ fontSize: 12, color: "#9CA3AF", marginBottom: 20 }}>
+              {new Date(editingEntry.date).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })}
+            </div>
+            <input
+              type="number"
+              step="0.1"
+              value={editWeight}
+              onChange={(e) => setEditWeight(e.target.value)}
+              autoFocus
+              style={{
+                width: "100%", padding: "14px", borderRadius: 12,
+                border: `1.5px solid ${T.teal}`, fontSize: 22, fontWeight: 800,
+                textAlign: "center", color: T.text, fontFamily: "inherit", background: T.bg,
+                marginBottom: 20,
+              }}
+            />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={handleDeleteEdit}
+                style={{
+                  flex: 1, padding: "12px", borderRadius: 12, border: `1.5px solid #EF4444`,
+                  background: "white", color: "#EF4444", fontSize: 14, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Elimina
+              </button>
+              <button
+                onClick={() => setEditingEntry(null)}
+                style={{
+                  flex: 1, padding: "12px", borderRadius: 12, border: `1.5px solid ${T.border}`,
+                  background: "white", color: "#6B7280", fontSize: 14, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Annulla
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                style={{
+                  flex: 1, padding: "12px", borderRadius: 12, border: "none",
+                  background: T.gradient, color: "#fff", fontSize: 14, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Salva
+              </button>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
     </div>
   );
 };
 
 /* ═══════════════════════════════════════════
-   INFO OVERLAY
+   OVERLAY: INFO
    ═══════════════════════════════════════════ */
 
 const InfoOverlay = ({ T, show, onClose }) => {
   if (!show) return null;
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 50,
-        padding: 20,
-      }}
-    >
+    <div onClick={onClose} style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.4)",
+      zIndex: 40,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+    }}>
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -834,7 +888,7 @@ const InfoOverlay = ({ T, show, onClose }) => {
             <span style={{ fontSize: 14, fontWeight: 700, color: "#1A2030" }}>Cos'è il Trend?</span>
           </div>
           <p style={{ fontSize: 13, color: "#6B7280", lineHeight: 1.5, margin: 0 }}>
-            Il trend è una media mobile esponenziale (EMA) che filtro le fluttuazioni quotidiane e rivela il vero andamento del tuo peso.
+            Il trend è una media mobile esponenziale (EMA) che filtra le fluttuazioni quotidiane e rivela il vero andamento del tuo peso.
           </p>
           <div style={{
             background: "#F0F8F8",
@@ -893,6 +947,10 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
   const [newDate, setNewDate] = useState(today());
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [chartRange, setChartRange] = useState("1M");
+  const [chartSettings, setChartSettings] = useState({ showObjective: true, showBMIZones: false, showScale: true, showTrend: true });
+  const [showChartSettings, setShowChartSettings] = useState(false);
+  const [compTab, setCompTab] = useState("week");
   const [settingsForm, setSettingsForm] = useState({
     name: settings.name || "",
     height: settings.height || "",
@@ -906,6 +964,76 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
   // Core computations
   const sorted = useMemo(() => [...entries].sort((a, b) => a.date.localeCompare(b.date)), [entries]);
   const smoothed = useMemo(() => calcEMA(sorted), [sorted]);
+
+  // Chart data filtered by range
+  const chartData = useMemo(() => {
+    const now = new Date();
+    const cutoff = new Date();
+    if (chartRange === "1W") cutoff.setDate(now.getDate() - 7);
+    else if (chartRange === "1M") cutoff.setDate(now.getDate() - 30);
+    else if (chartRange === "3M") cutoff.setMonth(now.getMonth() - 3);
+    else if (chartRange === "6M") cutoff.setMonth(now.getMonth() - 6);
+    else cutoff.setFullYear(2000);
+    return smoothed.filter(e => new Date(e.date) >= cutoff).map(e => ({ ...e, dateLabel: formatDate(e.date) }));
+  }, [smoothed, chartRange]);
+
+  const weightDomain = useMemo(() => {
+    if (chartData.length === 0) return [60, 90];
+    const weights = chartData.flatMap(d => [d.weight, d.trend].filter(v => v != null));
+    return [Math.floor(Math.min(...weights) - 1), Math.ceil(Math.max(...weights) + 1)];
+  }, [chartData]);
+
+  const bmiZones = useMemo(() => {
+    if (!settings.height) return [];
+    const h = settings.height / 100; const h2 = h * h;
+    return [
+      { name: "Sottopeso", y1: 0, y2: Math.round(18.5 * h2 * 10) / 10, color: "#3B82F6" },
+      { name: "Normopeso", y1: Math.round(18.5 * h2 * 10) / 10, y2: Math.round(25 * h2 * 10) / 10, color: "#02C39A" },
+      { name: "Sovrappeso", y1: Math.round(25 * h2 * 10) / 10, y2: Math.round(30 * h2 * 10) / 10, color: "#F0B429" },
+      { name: "Obesità", y1: Math.round(30 * h2 * 10) / 10, y2: 200, color: "#E85D4E" },
+    ];
+  }, [settings.height]);
+
+  const comparisons = useMemo(() => {
+    const mondays = getMondays(4);
+    const firsts = getFirstOfMonths(4);
+    const weeklyData = mondays.map((date, i) => {
+      const trend = getTrendAtDate(smoothed, date);
+      const prevTrend = i < mondays.length - 1 ? getTrendAtDate(smoothed, mondays[i + 1]) : null;
+      const diff = (trend != null && prevTrend != null) ? Math.round((trend - prevTrend) * 100) / 100 : null;
+      const label = i === 0 ? "Questa settimana" : i === 1 ? "Settimana scorsa" : `-${i} settimane`;
+      const end = new Date(date); end.setDate(end.getDate() + 6);
+      const dl = `${formatDate(date)} — ${formatDate(toISO(end))}`;
+      return { date, dateLabel: dl, trend: trend != null ? Math.round(trend * 10) / 10 : null, diff, label, isCurrent: i === 0 };
+    });
+    const monthlyData = firsts.map((date, i) => {
+      const trend = getTrendAtDate(smoothed, date);
+      const prevTrend = i < firsts.length - 1 ? getTrendAtDate(smoothed, firsts[i + 1]) : null;
+      const diff = (trend != null && prevTrend != null) ? Math.round((trend - prevTrend) * 100) / 100 : null;
+      const mName = new Date(date).toLocaleDateString("it-IT", { month: "long" });
+      const label = i === 0 ? `${mName} (corrente)` : mName;
+      return { date, dateLabel: formatDate(date), trend: trend != null ? Math.round(trend * 10) / 10 : null, diff, label, isCurrent: i === 0 };
+    });
+    return { weeklyData, monthlyData };
+  }, [smoothed]);
+
+  const recentWithRitmo = useMemo(() => {
+    const recent = [...sorted].reverse().slice(0, 5);
+    return recent.map((entry, idx) => {
+      const smoothedIdx = smoothed.findIndex(e => e.date === entry.date);
+      let ritmo = null;
+      if (smoothedIdx > 0) {
+        const curr = smoothed[smoothedIdx], prev = smoothed[smoothedIdx - 1];
+        if (curr && prev) {
+          const dBetween = Math.max(1, (new Date(curr.date) - new Date(prev.date)) / 86400000);
+          ritmo = Math.round((curr.trend - prev.trend) / dBetween * 7 * 100) / 100;
+        }
+      }
+      const next = idx < recent.length - 1 ? recent[idx + 1] : null;
+      const diff = next != null ? Math.round((entry.weight - next.weight) * 100) / 100 : null;
+      return { ...entry, ritmo, diff };
+    });
+  }, [sorted, smoothed]);
 
   // Entry actions
   const addEntry = useCallback(() => {
@@ -931,6 +1059,34 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
     }
     setScreen("main");
   }, [settingsForm, setSettings]);
+
+  // Settings computed values (must be before early returns for hooks rules)
+  const previewMilestones = useMemo(() => {
+    if (!settingsForm.showCustomMilestones || !settingsForm.startWeight || !settingsForm.goalWeight) return [];
+    const step = settingsForm.milestoneStep || 2;
+    const start = settingsForm.startWeight;
+    const goal = settingsForm.goalWeight;
+    const direction = start > goal ? -1 : 1;
+    const result = [];
+    for (let w = start + direction * step;
+         direction > 0 ? w <= goal : w >= goal;
+         w += direction * step) {
+      result.push({ weight: Math.round(w * 10) / 10 });
+    }
+    result.push({ weight: goal });
+    return result.slice(0, 5);
+  }, [settingsForm]);
+
+  const bmiCategoryWeights = useMemo(() => {
+    if (!settingsForm.showBmiMilestones || !settingsForm.height) return [];
+    const h = settingsForm.height / 100;
+    return [
+      { name: "Sottopeso", color: "#60A5FA", maxBMI: 18.5, maxWeight: 18.5 * h * h },
+      { name: "Normopeso", color: "#10B981", maxBMI: 25, maxWeight: 25 * h * h },
+      { name: "Sovrappeso", color: "#F59E0B", maxBMI: 30, maxWeight: 30 * h * h },
+      { name: "Obesità", color: "#EF4444", maxBMI: 999, maxWeight: 999 },
+    ];
+  }, [settingsForm]);
 
   /* ═══════════════════════════════════════
      SCREEN: ADD WEIGHT
@@ -990,8 +1146,7 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
                   padding: "12px 14px",
                   borderRadius: 12,
                   border: `1.5px solid ${T.border}`,
-                  fontSize: 15,
-                  fontWeight: 600,
+                  fontSize: 14,
                   color: T.text,
                   fontFamily: "inherit",
                   background: T.bg,
@@ -1208,8 +1363,10 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
           {/* Obiettivo Card */}
           <div style={{ background: T.card, borderRadius: 20, padding: "20px", marginBottom: 16, boxShadow: T.shadow }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, color: T.textSec, marginBottom: 16 }}>Obiettivo</h3>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+
+            {/* Tappe intermedie */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Tappe intermedie</span>
                 <input
                   type="checkbox"
@@ -1219,30 +1376,45 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
                 />
               </div>
               {settingsForm.showCustomMilestones && (
-                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-                  {[1, 2, 3, 5].map((step) => (
-                    <button
-                      key={step}
-                      onClick={() => setSettingsForm({ ...settingsForm, milestoneStep: step })}
-                      style={{
-                        padding: "6px 12px",
-                        borderRadius: 8,
-                        border: settingsForm.milestoneStep === step ? "none" : `1.5px solid ${T.border}`,
-                        background: settingsForm.milestoneStep === step ? T.gradient : T.bg,
-                        color: settingsForm.milestoneStep === step ? "#fff" : T.text,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {step} kg
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    {[1, 2, 3, 5].map((step) => (
+                      <button
+                        key={step}
+                        onClick={() => setSettingsForm({ ...settingsForm, milestoneStep: step })}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: 10,
+                          border: settingsForm.milestoneStep === step ? "none" : `1.5px solid ${T.border}`,
+                          background: settingsForm.milestoneStep === step ? T.gradient : T.bg,
+                          color: settingsForm.milestoneStep === step ? "#fff" : T.text,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {step} kg
+                      </button>
+                    ))}
+                  </div>
+                  {previewMilestones.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.textMuted }}>
+                      <span>Preview:</span>
+                      {previewMilestones.map((m, i) => (
+                        <div key={i} style={{
+                          width: 8, height: 8, borderRadius: "50%", background: T.teal, opacity: 0.6
+                        }} />
+                      ))}
+                      {previewMilestones.length < 10 && <span>...</span>}
+                    </div>
+                  )}
+                </>
               )}
             </div>
+
+            {/* Traguardi BMI */}
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>Traguardi BMI</span>
                 <input
                   type="checkbox"
@@ -1251,14 +1423,33 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
                   style={{ width: 18, height: 18, cursor: "pointer" }}
                 />
               </div>
+              {settingsForm.showBmiMilestones && bmiCategoryWeights.length > 0 && (
+                <div>
+                  <div style={{ display: "flex", height: 16, borderRadius: 8, overflow: "hidden", gap: 0, marginBottom: 10 }}>
+                    {bmiCategoryWeights.map((cat, i) => (
+                      <div key={i} style={{
+                        flex: 1, background: cat.color
+                      }} />
+                    ))}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, fontSize: 11 }}>
+                    {bmiCategoryWeights.map((cat, i) => (
+                      <div key={i} style={{ textAlign: "center" }}>
+                        <div style={{ fontWeight: 700, color: cat.color, marginBottom: 4 }}>{cat.name}</div>
+                        <div style={{ color: T.textMuted }}>{Math.round(cat.maxWeight)} kg</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Reminders Card */}
           <div style={{ background: T.card, borderRadius: 20, padding: "20px", marginBottom: 24, boxShadow: T.shadow }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: T.textSec }}>Promemoria</h3>
-            <p style={{ fontSize: 12, color: T.textMuted, margin: "8px 0 0 0" }}>
-              Impostazioni per i promemoria saranno disponibili presto.
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: T.textSec, marginBottom: 8 }}>Promemoria</h3>
+            <p style={{ fontSize: 13, color: T.textMuted, margin: "0" }}>
+              Prossimamente
             </p>
           </div>
 
@@ -1346,31 +1537,203 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
           <GoalCard T={T} smoothed={smoothed} settings={settings} sorted={sorted} />
         )}
 
-        {/* Add Weight Button */}
-        <button
-          onClick={() => setScreen("add")}
-          style={{
-            width: "100%",
-            padding: "16px",
-            borderRadius: 16,
-            border: "none",
-            background: T.gradient,
-            color: "#fff",
-            fontSize: 16,
-            fontWeight: 800,
-            cursor: "pointer",
-            fontFamily: "inherit",
-            boxShadow: "0 4px 16px rgba(2,128,144,0.3)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            marginBottom: 20,
-          }}
-        >
-          <Plus size={20} />
-          Registra Peso
-        </button>
+        {/* GRAFICO ANDAMENTO */}
+        {chartData.length > 0 && (
+          <div style={{ background: T.card, borderRadius: 18, padding: "16px 14px 8px", boxShadow: T.shadow, marginTop: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, padding: "0 4px" }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Andamento</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ display: "flex", gap: 3 }}>
+                  {["1W", "1M", "3M", "ALL"].map(r => (
+                    <button key={r} onClick={() => setChartRange(r)} style={{
+                      padding: "4px 9px", borderRadius: 7, border: "none", fontSize: 10, fontWeight: 700,
+                      background: chartRange === r ? T.teal : T.tealLight, color: chartRange === r ? "#fff" : T.teal,
+                      cursor: "pointer", fontFamily: "'Inter', sans-serif",
+                    }}>{r}</button>
+                  ))}
+                </div>
+                <button onClick={() => setShowChartSettings(p => !p)} style={{
+                  width: 28, height: 28, borderRadius: 8, border: "none",
+                  background: showChartSettings ? T.tealLight : T.bg, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}><Settings size={14} color={showChartSettings ? T.teal : T.textMuted} /></button>
+              </div>
+            </div>
+            {showChartSettings && (
+              <div style={{ background: T.bg, borderRadius: 12, padding: "2px 14px", margin: "8px 4px" }}>
+                {[
+                  { key: "showObjective", label: "Mostra obiettivo" },
+                  { key: "showBMIZones", label: "Mostra zone BMI" },
+                  { key: "showScale", label: "Mostra peso bilancia" },
+                  { key: "showTrend", label: "Mostra trend" },
+                ].map(({ key, label }, i, arr) => (
+                  <div key={key} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "9px 0", borderBottom: i < arr.length - 1 ? `1px solid ${T.border}` : "none",
+                  }}>
+                    <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{label}</span>
+                    <button onClick={() => setChartSettings(prev => ({ ...prev, [key]: !prev[key] }))} style={{
+                      width: 40, height: 22, borderRadius: 11, border: "none",
+                      background: chartSettings[key] ? T.teal : "#D1D5DB", position: "relative", cursor: "pointer", flexShrink: 0,
+                    }}>
+                      <div style={{
+                        position: "absolute", top: 2, left: chartSettings[key] ? 20 : 2,
+                        width: 18, height: 18, borderRadius: 9, background: "#fff",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.15)", transition: "left 0.2s",
+                      }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: T.textMuted, padding: "4px 4px 8px" }}>
+              {[
+                chartSettings.showScale ? "Grigio = bilancia" : null,
+                chartSettings.showTrend ? "Teal = trend" : null,
+                chartSettings.showObjective && settings.goalWeight ? "Verde = obiettivo" : null,
+              ].filter(Boolean).join("  ·  ")}
+            </div>
+            <ResponsiveContainer width="100%" height={190}>
+              <ComposedChart data={chartData} margin={{ top: 5, right: 8, left: -15, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="areaGradWeight" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={T.teal} stopOpacity={0.12} />
+                    <stop offset="95%" stopColor={T.teal} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E8ECEF" vertical={false} />
+                <XAxis dataKey="dateLabel" tick={{ fontSize: 9, fill: T.textMuted }} tickLine={false} axisLine={false} />
+                <YAxis domain={weightDomain} tick={{ fontSize: 9, fill: T.textMuted }} tickLine={false} axisLine={false} />
+                <Tooltip content={<CustomTooltip T={T} />} />
+                {chartSettings.showBMIZones && settings.height && bmiZones.map(zone => (
+                  <ReferenceArea key={zone.name} y1={zone.y1} y2={zone.y2} fill={zone.color} fillOpacity={0.07} />
+                ))}
+                {chartSettings.showObjective && settings.goalWeight && (
+                  <ReferenceLine y={settings.goalWeight} stroke={T.mint} strokeDasharray="6 4" strokeWidth={1.5} />
+                )}
+                {chartSettings.showTrend && <Area type="monotone" dataKey="trend" fill="url(#areaGradWeight)" stroke="none" />}
+                {chartSettings.showScale && (
+                  <Line type="monotone" dataKey="weight" stroke="#C5D0D0" strokeWidth={1.5}
+                    dot={{ r: 2.5, fill: "#C5D0D0", strokeWidth: 0 }} activeDot={{ r: 5, fill: T.teal }} />
+                )}
+                {chartSettings.showTrend && <Line type="monotone" dataKey="trend" stroke={T.teal} strokeWidth={2.5} dot={false} />}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* CONFRONTI */}
+        {smoothed.length > 1 && (
+          <div style={{ background: T.card, borderRadius: 18, padding: "16px", boxShadow: T.shadow, marginTop: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 12 }}>Confronti</div>
+            <div style={{ display: "flex", gap: 0, background: "#E8ECEF", borderRadius: 10, padding: 3, marginBottom: 14 }}>
+              {[["week", "Settimane"], ["month", "Mesi"]].map(([key, label]) => (
+                <button key={key} onClick={() => setCompTab(key)} style={{
+                  flex: 1, padding: "7px 0", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  background: compTab === key ? "#fff" : "transparent", color: compTab === key ? T.teal : T.textMuted,
+                  boxShadow: compTab === key ? "0 1px 4px rgba(0,0,0,0.08)" : "none", transition: "all 0.2s", fontFamily: "'Inter', sans-serif",
+                }}>{label}</button>
+              ))}
+            </div>
+            {(compTab === "week" ? comparisons.weeklyData : comparisons.monthlyData).slice(0, 3).map((w) => (
+              <div key={w.date} style={{
+                background: T.card, borderRadius: 14, padding: "14px 16px", boxShadow: "0 1px 8px rgba(0,0,0,0.04)",
+                display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8,
+                borderLeft: w.isCurrent ? `3px solid ${T.teal}` : "3px solid transparent",
+              }}>
+                <div>
+                  <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.3 }}>{w.label}</div>
+                  {w.trend != null ? (
+                    <>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginTop: 3 }}>
+                        <span style={{ fontSize: 20, fontWeight: 900, color: T.text }}>{w.trend}</span>
+                        <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 500 }}>kg trend</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: T.textMuted, marginTop: 1 }}>{w.dateLabel}</div>
+                    </>
+                  ) : <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>Dati non disponibili</div>}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  {w.diff != null && (
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8,
+                      display: "inline-flex", alignItems: "center", gap: 3,
+                      background: w.diff <= 0 ? "#02C39A12" : "#E85D4E12", color: w.diff <= 0 ? T.mint : T.coral,
+                    }}>{w.diff <= 0 ? "↓" : "↑"} {w.diff > 0 ? "+" : ""}{w.diff} kg</div>
+                  )}
+                </div>
+              </div>
+            ))}
+            <button onClick={() => setShowHistory(true)} style={{
+              width: "100%", padding: "10px", border: `1px dashed ${T.border}`, borderRadius: 12,
+              background: "transparent", fontSize: 12, fontWeight: 700, color: T.teal,
+              cursor: "pointer", fontFamily: "'Inter', sans-serif",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 2,
+            }}>
+              Vedi cronologia <ChevronRight size={13} />
+            </button>
+          </div>
+        )}
+
+        {/* ULTIME REGISTRAZIONI */}
+        {recentWithRitmo.length > 0 && (
+          <div style={{ background: T.card, borderRadius: 18, padding: "14px 16px", boxShadow: T.shadow, marginTop: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Ultime registrazioni</span>
+              <button onClick={() => setShowHistory(true)} style={{
+                background: T.tealLight, border: "none", fontSize: 11, color: T.teal, fontWeight: 700, cursor: "pointer",
+                padding: "5px 12px", borderRadius: 8, display: "flex", alignItems: "center", gap: 3, fontFamily: "'Inter', sans-serif",
+              }}>Tutte <ChevronRight size={13} /></button>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 6, marginBottom: 2 }}>
+              <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: "uppercase" }}>Data</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", width: 44, textAlign: "center" }}>Diff</span>
+                <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", width: 50, textAlign: "center" }}>Ritmo</span>
+                <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 600, textTransform: "uppercase", width: 60, textAlign: "right" }}>Peso</span>
+              </div>
+            </div>
+            {recentWithRitmo.map((entry) => {
+              const isToday = entry.date === today();
+              const isYesterday = (() => { const y = new Date(); y.setDate(y.getDate() - 1); return entry.date === toISO(y); })();
+              const dateLabel = isToday ? "Oggi" : isYesterday ? "Ieri" : formatDate(entry.date);
+              return (
+                <div key={entry.id} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: isToday ? "8px 4px" : "8px 0", borderTop: `1px solid ${T.border}`,
+                  background: isToday ? `${T.teal}06` : "transparent", borderRadius: isToday ? 8 : 0,
+                  margin: isToday ? "0 -4px" : 0,
+                }}>
+                  <div>
+                    <span style={{ fontSize: 12, color: isToday ? T.teal : T.text, fontWeight: isToday ? 700 : 600 }}>{dateLabel}</span>
+                    {(isToday || isYesterday) && <span style={{ fontSize: 10, color: T.textMuted, marginLeft: 4 }}>{formatDate(entry.date)}</span>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 44, display: "flex", justifyContent: "center" }}>
+                      {entry.diff != null ? (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6,
+                          background: entry.diff < 0 ? "#02C39A12" : entry.diff > 0 ? "#E85D4E12" : "#F0F0F0",
+                          color: entry.diff < 0 ? T.mint : entry.diff > 0 ? T.coral : T.textMuted,
+                        }}>{entry.diff > 0 ? "+" : ""}{entry.diff}</span>
+                      ) : <span style={{ fontSize: 10, color: T.textMuted }}>—</span>}
+                    </div>
+                    <div style={{ width: 50, textAlign: "center" }}>
+                      {entry.ritmo != null ? (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: entry.ritmo < 0 ? T.mint : entry.ritmo > 0 ? T.coral : T.textMuted }}>
+                          {entry.ritmo > 0 ? "+" : ""}{entry.ritmo}
+                        </span>
+                      ) : <span style={{ fontSize: 10, color: T.textMuted }}>—</span>}
+                    </div>
+                    <div style={{ width: 60, textAlign: "right" }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>{entry.weight} kg</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Empty state */}
         {sorted.length === 0 && (
