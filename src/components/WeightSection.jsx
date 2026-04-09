@@ -138,32 +138,26 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
   const tooltipRef = useRef(null);
   const chartGeoRef = useRef(null);
 
-  // Always show Mon-Sun of current week
+  // Always show full Mon–Sun of current week (7 slots, future days = empty)
   const last7 = useMemo(() => {
     if (smoothed.length === 0) return [];
-    // Find current week's Monday
     const now = new Date();
-    const day = now.getDay() || 7; // Sun=7
+    const todayStr = toISO(now);
+    const day = now.getDay() || 7; // Mon=1…Sun=7
     const monday = new Date(now);
     monday.setDate(now.getDate() - day + 1);
     monday.setHours(0, 0, 0, 0);
 
-    const weekData = [];
-    for (let i = 0; i < 7; i++) {
+    return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
       const dateStr = toISO(d);
-      // Only include days up to today
-      if (d > now) break;
+      const isFuture = dateStr > todayStr;
       const entry = smoothed.find(e => e.date === dateStr);
-      if (entry) weekData.push(entry);
-      else {
-        // Interpolate trend for missing days
-        const trend = getTrendAtDate(smoothed, dateStr);
-        if (trend != null) weekData.push({ date: dateStr, weight: trend, trend, interpolated: true });
-      }
-    }
-    return weekData;
+      if (entry) return { ...entry, isFuture: false, empty: false };
+      const trend = isFuture ? null : getTrendAtDate(smoothed, dateStr);
+      return { date: dateStr, weight: trend, trend, interpolated: true, isFuture, empty: trend == null };
+    });
   }, [smoothed]);
 
   const currentTrend = last7[last7.length - 1]?.trend ?? null;
@@ -173,7 +167,7 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
 
   const DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
-  // Draw canvas — 140px, Lun-Dom, line from bar edge to bar edge, touch
+  // Draw canvas — 140px, always Lun–Dom, no area fill, handles empty/future slots
   useEffect(() => {
     if (!canvasRef.current || last7.length === 0) return;
 
@@ -186,14 +180,14 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
     canvas.style.width = w + "px"; canvas.style.height = h + "px";
     ctx.scale(dpr, dpr);
 
-    const trends = last7.map(e => e.trend);
-    const changes = last7.map((e, i) => i === 0 ? 0 : Math.round((e.weight - last7[i - 1].weight) * 100) / 100);
-    const n = last7.length;
+    const n = 7; // always 7 slots
+    const trends = last7.map(e => e.trend); // nulls for future/empty
+    const dataIndices = last7.map((e, i) => e.empty ? null : i).filter(i => i !== null);
 
-    const padL = 10, padR = 10, padTop = 6, padBot = 16;
+    const padL = 6, padR = 6, padTop = 8, padBot = 16;
     const chartW = w - padL - padR;
     const colW = chartW / n;
-    const barValH = 13, barMaxH = 28, dayLabelH = 14;
+    const barValH = 13, barMaxH = 26, dayLabelH = 14;
     const trendAreaH = h - padTop - padBot - barValH - barMaxH - dayLabelH - 6;
 
     const trendTop = padTop;
@@ -201,46 +195,49 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
     const barTop = barValTop + barValH;
     const dayLabelTop = barTop + barMaxH + 2;
 
-    const tMin = Math.min(...trends) - 0.15;
-    const tMax = Math.max(...trends) + 0.15;
+    const validTrends = dataIndices.map(i => trends[i]);
+    const tMin = validTrends.length > 0 ? Math.min(...validTrends) - 0.15 : 0;
+    const tMax = validTrends.length > 0 ? Math.max(...validTrends) + 0.15 : 1;
 
     const barCx = (i) => padL + colW * i + colW / 2;
-    const barW = Math.min(colW * 0.5, 24);
-    // Line from LEFT edge of first bar to RIGHT edge of last bar
+    const barW = Math.min(colW * 0.48, 22);
     const lineLeft = barCx(0) - barW / 2;
     const lineRight = barCx(n - 1) + barW / 2;
-    const tx = (i) => n === 1 ? (lineLeft + lineRight) / 2 : lineLeft + (lineRight - lineLeft) * i / (n - 1);
+    const lineSpan = lineRight - lineLeft;
+    const tx = (i) => lineLeft + lineSpan * i / (n - 1);
     const ty = (v) => trendTop + ((tMax - v) / (tMax - tMin)) * trendAreaH;
 
-    // Store geometry for touch
-    chartGeoRef.current = { tx, ty, trends, n, barCx };
+    chartGeoRef.current = { tx, ty, trends, n, barCx, dataIndices };
 
-    // Area fill
-    ctx.beginPath();
-    ctx.moveTo(tx(0), trendTop + trendAreaH);
-    trends.forEach((v, i) => ctx.lineTo(tx(i), ty(v)));
-    ctx.lineTo(tx(n - 1), trendTop + trendAreaH);
-    ctx.closePath();
-    const aGrad = ctx.createLinearGradient(0, trendTop, 0, trendTop + trendAreaH);
-    aGrad.addColorStop(0, "rgba(2,128,144,0.10)");
-    aGrad.addColorStop(1, "rgba(2,128,144,0)");
-    ctx.fillStyle = aGrad; ctx.fill();
+    // Bezier curve — only connecting non-empty points, skip gaps
+    if (dataIndices.length >= 2) {
+      ctx.beginPath();
+      let penDown = false;
+      dataIndices.forEach((i, di) => {
+        const x = tx(i), y = ty(trends[i]);
+        if (!penDown) { ctx.moveTo(x, y); penDown = true; }
+        else {
+          // check if consecutive (no gap)
+          const prevI = dataIndices[di - 1];
+          if (i - prevI <= 2) {
+            const px = tx(prevI), py = ty(trends[prevI]);
+            ctx.bezierCurveTo((px + x) / 2, py, (px + x) / 2, y, x, y);
+          } else {
+            ctx.moveTo(x, y); // gap — lift pen
+          }
+        }
+      });
+      ctx.strokeStyle = "#028090"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
+    } else if (dataIndices.length === 1) {
+      const i = dataIndices[0];
+      ctx.beginPath(); ctx.arc(tx(i), ty(trends[i]), 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#028090"; ctx.fill();
+    }
 
-    // Bezier curve
-    ctx.beginPath();
-    trends.forEach((v, i) => {
-      const x = tx(i), y = ty(v);
-      if (i === 0) ctx.moveTo(x, y);
-      else {
-        const px = tx(i - 1), py = ty(trends[i - 1]);
-        ctx.bezierCurveTo((px + x) / 2, py, (px + x) / 2, y, x, y);
-      }
-    });
-    ctx.strokeStyle = "#028090"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
-
-    // Dots
-    trends.forEach((v, i) => {
-      const x = tx(i), y = ty(v), isLast = i === n - 1;
+    // Dots — only for data indices
+    dataIndices.forEach((i) => {
+      const x = tx(i), y = ty(trends[i]);
+      const isLast = i === dataIndices[dataIndices.length - 1];
       ctx.beginPath(); ctx.arc(x, y, isLast ? 4 : 2.5, 0, Math.PI * 2);
       ctx.fillStyle = isLast ? "#028090" : "rgba(2,128,144,0.45)"; ctx.fill();
       if (isLast) {
@@ -249,15 +246,23 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
       }
     });
 
-    // Bars
-    const maxAbs = Math.max(...changes.map(Math.abs), 0.05);
-    changes.forEach((ch, i) => {
+    // Bars — only for non-empty, non-future days
+    const changes = last7.map((e, i) => {
+      if (e.empty) return 0;
+      const prevDataIdx = dataIndices.filter(di => di < i);
+      if (prevDataIdx.length === 0) return 0;
+      const prev = last7[prevDataIdx[prevDataIdx.length - 1]];
+      return Math.round(((e.weight ?? 0) - (prev.weight ?? 0)) * 100) / 100;
+    });
+    const maxAbs = Math.max(...dataIndices.map(i => Math.abs(changes[i])), 0.05);
+    dataIndices.forEach((i) => {
+      const ch = changes[i];
       const cx = barCx(i);
       const bx = cx - barW / 2;
       const bH = Math.max(3, (Math.abs(ch) / maxAbs) * barMaxH);
       const by = barTop + (barMaxH - bH);
       const color = ch <= 0 ? "#02C39A" : "#E85D4E";
-      const r = 4;
+      const r = Math.min(4, bH / 2);
       ctx.beginPath();
       ctx.moveTo(bx + r, by); ctx.lineTo(bx + barW - r, by);
       ctx.quadraticCurveTo(bx + barW, by, bx + barW, by + r);
@@ -267,37 +272,41 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
       const bGrad = ctx.createLinearGradient(0, by, 0, by + bH);
       bGrad.addColorStop(0, color); bGrad.addColorStop(1, color + "70");
       ctx.fillStyle = bGrad; ctx.fill();
-      ctx.font = "700 9px Inter, sans-serif";
-      ctx.fillStyle = color; ctx.textAlign = "center";
-      ctx.fillText((ch > 0 ? "+" : "") + ch.toFixed(2), cx, by - 3);
+      if (i > 0 && Math.abs(ch) >= 0.01) {
+        ctx.font = "700 9px Inter, sans-serif";
+        ctx.fillStyle = color; ctx.textAlign = "center";
+        ctx.fillText((ch > 0 ? "+" : "") + ch.toFixed(2), cx, by - 3);
+      }
     });
 
-    // Day labels — always Mon-Sun
+    // Day labels — ALL 7 days, always
+    const todayStr = today();
     ctx.font = "600 9px Inter, sans-serif";
     last7.forEach((entry, i) => {
       const cx = barCx(i);
       const dayOfWeek = (new Date(entry.date).getDay() + 6) % 7; // 0=Mon
-      const isToday = entry.date === today();
-      ctx.fillStyle = isToday ? "#028090" : "#B0B8C8";
+      const isToday = entry.date === todayStr;
+      const isFut = entry.isFuture;
+      ctx.fillStyle = isToday ? "#028090" : isFut ? "#D1D5DB" : "#B0B8C8";
       ctx.textAlign = "center";
       ctx.fillText(isToday ? "Oggi" : DAYS[dayOfWeek], cx, dayLabelTop + 10);
     });
   }, [last7]);
 
-  // Touch / click handler
+  // Touch / click handler — only snaps to slots with data
   const handleInteraction = useCallback((e) => {
     if (!canvasRef.current || !chartGeoRef.current || !tooltipRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const x = clientX - rect.left;
-    const { tx, ty, trends, n } = chartGeoRef.current;
+    const { tx, ty, trends, n, dataIndices } = chartGeoRef.current;
 
-    let closest = 0, minDist = Infinity;
-    for (let i = 0; i < n; i++) {
+    let closest = -1, minDist = Infinity;
+    (dataIndices || Array.from({ length: n }, (_, i) => i)).forEach(i => {
       const dist = Math.abs(tx(i) - x);
-      if (dist < minDist) { minDist = dist; closest = i; }
-    }
-    if (minDist > 30) { tooltipRef.current.style.opacity = "0"; return; }
+      if (dist < minDist && trends[i] != null) { minDist = dist; closest = i; }
+    });
+    if (closest === -1 || minDist > 36) { tooltipRef.current.style.opacity = "0"; return; }
 
     const dayOfWeek = (new Date(last7[closest].date).getDay() + 6) % 7;
     tooltipRef.current.textContent = trends[closest].toFixed(2) + " kg — " + DAYS[dayOfWeek];
@@ -317,11 +326,10 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
       overflow: "hidden", marginBottom: 14,
     }}>
       <div style={{ padding: "20px 20px 0" }}>
-        {/* Top row: TREND label (14px, same height as buttons) + Storico + ? */}
+        {/* Top row: TREND label + Storico + ? */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
           <span style={{
-            fontSize: 14, fontWeight: 800, textTransform: "uppercase",
-            letterSpacing: 0.6, color: "#9CA3AF", lineHeight: "30px",
+            fontSize: 14, fontWeight: 800, color: T.text, lineHeight: "30px",
           }}>Trend</span>
           <span style={{ flex: 1 }} />
           <button onClick={onShowHistory} style={{
@@ -457,10 +465,11 @@ const GoalCard = ({ T, smoothed, settings, sorted }) => {
   const currentBmi = settings.height ? calcBMI(currentWeight, settings.height) : null;
   const currentBmiCat = bmiCategory(currentBmi);
   const BMI_CATS = [
-    { name: "Sottopeso", short: "Sotto", color: "#60A5FA", min: 0, max: 18.5 },
-    { name: "Normopeso", short: "Normo", color: "#10B981", min: 18.5, max: 25 },
-    { name: "Sovrappeso", short: "Sovra", color: "#F59E0B", min: 25, max: 30 },
-    { name: "Obesità", short: "Obeso", color: "#EF4444", min: 30, max: 999 },
+    { name: "Sottopeso",   short: "Sotto",    color: "#60A5FA", min: 0,    max: 18.5 },
+    { name: "Normopeso",   short: "Normo",    color: "#10B981", min: 18.5, max: 25   },
+    { name: "Sovrappeso",  short: "Sovra",    color: "#F59E0B", min: 25,   max: 30   },
+    { name: "Obeso I",     short: "Ob.I",     color: "#EF4444", min: 30,   max: 35   },
+    { name: "Obeso II",    short: "Ob.II",    color: "#B91C1C", min: 35,   max: 999  },
   ];
   const BMI_MIN = 15, BMI_MAX = 40;
   const bmiNeedlePct = currentBmi
@@ -491,22 +500,23 @@ const GoalCard = ({ T, smoothed, settings, sorted }) => {
 
       {/* ── GRADIENT BANNER ── */}
       <div style={{
-        background: "linear-gradient(135deg, #028090 0%, #02A4B5 55%, #01C5A0 100%)",
+        background: T.gradient,
         padding: "18px 20px 18px", position: "relative", overflow: "hidden",
       }}>
-        <div style={{ position: "absolute", top: -30, right: -20, width: 130, height: 130, borderRadius: "50%", background: "rgba(255,255,255,0.06)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", bottom: -40, right: 30, width: 90, height: 90, borderRadius: "50%", background: "rgba(255,255,255,0.04)", pointerEvents: "none" }} />
+        {/* Subtle decorative circles — positioned away from badge */}
+        <div style={{ position: "absolute", bottom: -50, left: -30, width: 130, height: 130, borderRadius: "50%", background: "rgba(255,255,255,0.06)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", top: -20, left: 60, width: 80, height: 80, borderRadius: "50%", background: "rgba(255,255,255,0.04)", pointerEvents: "none" }} />
 
         {/* Top row: label + goal badge */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, position: "relative", zIndex: 1 }}>
           <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "rgba(255,255,255,0.6)" }}>Obiettivo</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, background: "rgba(255,255,255,0.15)", borderRadius: 10, padding: "5px 11px", fontSize: 13, fontWeight: 800, color: "#fff" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, background: "rgba(255,255,255,0.18)", borderRadius: 10, padding: "5px 11px", fontSize: 13, fontWeight: 800, color: "#fff" }}>
             🎯 {settings.goalWeight} kg
           </div>
         </div>
 
-        {/* Ring + 2×2 stats */}
-        <div style={{ display: "flex", alignItems: "center", gap: 18, position: "relative" }}>
+        {/* Ring + 3-col stats row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 18, position: "relative", zIndex: 1 }}>
           <div style={{ position: "relative", width: 88, height: 88, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="88" height="88" style={{ transform: "rotate(-90deg)", position: "absolute" }}>
               <circle cx="44" cy="44" r={RING_R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="6" />
@@ -520,26 +530,25 @@ const GoalCard = ({ T, smoothed, settings, sorted }) => {
             </div>
           </div>
 
-          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px" }}>
+          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px 8px" }}>
             {[
-              { label: "Persi", value: `−${kgPersi} kg`, accent: true },
+              { label: "Persi",    value: `−${kgPersi} kg`,   accent: true  },
               { label: "Mancanti", value: `${kgMancanti} kg`, accent: false },
-              { label: "Ritmo", value: weeklyRate != null ? `${Math.abs(weeklyRate).toFixed(2)} kg/sett` : "—", small: true },
-              { label: "Arrivo", value: predictedDate ? predictedDate.toLocaleDateString("it-IT", { day: "numeric", month: "short" }) : "—", small: true },
+              { label: "Ritmo",    value: weeklyRate != null ? `${Math.abs(weeklyRate).toFixed(2)} kg/w` : "—", small: true },
             ].map(({ label, value, accent, small }) => (
               <div key={label}>
                 <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.55)", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 }}>{label}</div>
-                <div style={{ fontSize: small ? 13 : 15, fontWeight: 800, color: accent ? "#A7F3E4" : "#fff", lineHeight: 1.1 }}>{value}</div>
+                <div style={{ fontSize: small ? 12 : 14, fontWeight: 800, color: accent ? "#A7F3E4" : "#fff", lineHeight: 1.1 }}>{value}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ETA slim strip */}
+        {/* ETA strip — single source of truth for arrival date */}
         {predictedDate && weeksToGoal && (
-          <div style={{ marginTop: 14, padding: "8px 12px", borderRadius: 10, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
+          <div style={{ marginTop: 14, padding: "8px 12px", borderRadius: 10, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", gap: 8, position: "relative", zIndex: 1 }}>
             <span style={{ fontSize: 12 }}>📅</span>
-            <span style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>
+            <span style={{ fontSize: 12, color: "#fff", fontWeight: 700 }}>
               {predictedDate.toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })}
             </span>
             <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginLeft: "auto" }}>
@@ -635,32 +644,33 @@ const GoalCard = ({ T, smoothed, settings, sorted }) => {
                 <span style={{ fontSize: 12, fontWeight: 800, color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.6 }}>Traguardi BMI</span>
               </div>
 
-              {/* Colored bar */}
-              <div style={{ display: "flex", height: 22, borderRadius: 7, overflow: "hidden", marginBottom: 2 }}>
-                {BMI_CATS.map((cat, i) => {
-                  const isCurrent = currentBmi >= cat.min && (cat.max === 999 || currentBmi < cat.max);
-                  const isPassed = cat.max !== 999 && currentBmi >= cat.max;
-                  return (
-                    <div key={i} style={{
-                      flex: 1, background: cat.color,
-                      opacity: isPassed ? 0.65 : isCurrent ? 1 : 0.2,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      <span style={{ fontSize: 8, fontWeight: 700, color: "#fff" }}>{cat.short}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Needle */}
-              <div style={{ position: "relative", height: 14, marginBottom: 8 }}>
-                <div style={{
-                  position: "absolute", left: `${bmiNeedlePct}%`, top: 0,
-                  transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center",
-                }}>
-                  <div style={{ width: 1.5, height: 6, background: "#1A2030" }} />
-                  <div style={{ width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "6px solid #1A2030" }} />
+              {/* Colored bar + vertical line marker */}
+              <div style={{ position: "relative", marginBottom: 10 }}>
+                <div style={{ display: "flex", height: 20, borderRadius: 7, overflow: "hidden" }}>
+                  {BMI_CATS.map((cat, i) => {
+                    const isCurrent = currentBmi >= cat.min && (cat.max === 999 || currentBmi < cat.max);
+                    const isPassed = cat.max !== 999 && currentBmi >= cat.max;
+                    return (
+                      <div key={i} style={{
+                        flex: 1, background: cat.color,
+                        opacity: isPassed ? 0.55 : isCurrent ? 1 : 0.18,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <span style={{ fontSize: 7, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{cat.short}</span>
+                      </div>
+                    );
+                  })}
                 </div>
+                {/* Vertical line marker — overlaps bar top and extends below */}
+                {bmiNeedlePct != null && (
+                  <div style={{
+                    position: "absolute", top: -3, bottom: -8,
+                    left: `${bmiNeedlePct}%`,
+                    transform: "translateX(-50%)",
+                    width: 2.5, background: "#111827", borderRadius: 2,
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+                  }} />
+                )}
               </div>
 
               {/* Info line */}
@@ -788,32 +798,43 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
         <div style={{ overflow: "auto", flex: 1, padding: "10px 14px 40px", WebkitOverflowScrolling: "touch" }}>
           {groupedByMonth.map((group, groupIdx) => (
             <div key={groupIdx} style={{ marginBottom: 12 }}>
-              {/* Month header with variation + count */}
+              {/* Month header — prominent with colored badge for variation */}
               <div style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
-                margin: "0 4px", padding: "0 10px", marginBottom: 4, marginTop: groupIdx > 0 ? 12 : 0,
+                margin: groupIdx > 0 ? "16px 4px 8px" : "0 4px 8px", padding: "0 6px",
               }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: "#1A2030", textTransform: "capitalize" }}>
+                <span style={{ fontSize: 14, fontWeight: 800, color: "#1A2030", textTransform: "capitalize" }}>
                   {group.month.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}
                 </span>
-                <span style={{ fontSize: 10, fontWeight: 600, color: "#9CA3AF" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   {group.monthVar != null && (
-                    <span style={{ color: group.monthVar < 0 ? "#02C39A" : group.monthVar > 0 ? "#E85D4E" : "#9CA3AF" }}>
+                    <div style={{
+                      display: "inline-flex", alignItems: "center", gap: 3,
+                      padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 800,
+                      background: group.monthVar < 0 ? "rgba(2,195,154,0.1)" : group.monthVar > 0 ? "rgba(232,93,78,0.1)" : "#F0F0F0",
+                      color: group.monthVar < 0 ? "#02C39A" : group.monthVar > 0 ? "#E85D4E" : "#9CA3AF",
+                    }}>
+                      {group.monthVar < 0 ? "▼" : group.monthVar > 0 ? "▲" : "="}{" "}
                       {group.monthVar > 0 ? "+" : ""}{group.monthVar} kg
-                    </span>
+                    </div>
                   )}
-                  {" · "}{group.entries.length} pesate
-                </span>
+                  <div style={{
+                    padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                    background: "#F0F2F5", color: "#6B7280",
+                  }}>
+                    {group.entries.length} pesate
+                  </div>
+                </div>
               </div>
 
               {/* Column sub-headers per month */}
               <div style={{
-                display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 0.7fr",
+                display: "grid", gridTemplateColumns: "1.3fr 0.9fr 0.9fr 0.8fr",
                 padding: "4px 10px", marginBottom: 2, margin: "0 4px",
               }}>
                 <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5 }}>Data</span>
-                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Peso</span>
-                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Trend</span>
+                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Peso</span>
+                <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Trend</span>
                 <span style={{ fontSize: 8, fontWeight: 700, color: "#B0B8C8", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Var</span>
               </div>
 
@@ -836,7 +857,7 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
                     key={entry.id || idx}
                     onClick={() => handleRowClick(entry)}
                     style={{
-                      display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 0.7fr",
+                      display: "grid", gridTemplateColumns: "1.3fr 0.9fr 0.9fr 0.8fr",
                       alignItems: "center",
                       padding: "10px 10px",
                       background: "#F8F9FA",
@@ -850,10 +871,10 @@ const HistoryBottomSheet = ({ T, show, onClose, smoothed, sorted, entries, setEn
                       <div style={{ fontSize: 12, fontWeight: 700, color: "#1A2030" }}>{mainLabel}</div>
                       {subLabel && <div style={{ fontSize: 9, color: "#9CA3AF", fontWeight: 500 }}>{subLabel}</div>}
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7794", textAlign: "right" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#6B7794", textAlign: "center" }}>
                       {entry.weight}
                     </span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: "#028090", textAlign: "right" }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "#028090", textAlign: "center" }}>
                       {entry.trend != null ? entry.trend.toFixed(1) : "—"}
                     </span>
                     <span style={{
@@ -1206,10 +1227,11 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
     if (!settingsForm.showBmiMilestones || !settingsForm.height) return [];
     const h = settingsForm.height / 100;
     return [
-      { name: "Sottopeso", color: "#60A5FA", maxBMI: 18.5, maxWeight: 18.5 * h * h },
-      { name: "Normopeso", color: "#10B981", maxBMI: 25, maxWeight: 25 * h * h },
-      { name: "Sovrappeso", color: "#F59E0B", maxBMI: 30, maxWeight: 30 * h * h },
-      { name: "Obesità", color: "#EF4444", maxBMI: 999, maxWeight: 999 },
+      { name: "Sottopeso",  color: "#60A5FA", maxBMI: 18.5, maxWeight: Math.round(18.5 * h * h * 10) / 10 },
+      { name: "Normopeso",  color: "#10B981", maxBMI: 25,   maxWeight: Math.round(25   * h * h * 10) / 10 },
+      { name: "Sovrappeso", color: "#F59E0B", maxBMI: 30,   maxWeight: Math.round(30   * h * h * 10) / 10 },
+      { name: "Obeso I",    color: "#EF4444", maxBMI: 35,   maxWeight: Math.round(35   * h * h * 10) / 10 },
+      { name: "Obeso II",   color: "#B91C1C", maxBMI: 999,  maxWeight: 999 },
     ];
   }, [settingsForm]);
 
@@ -1770,42 +1792,47 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
 
               {settingsForm.showBmiMilestones && bmiCategoryWeights.length > 0 && (
                 <div style={{ background: T.bg, borderRadius: 14, padding: "16px" }}>
-                  {/* BMI bar */}
-                  <div style={{ display: "flex", height: 20, borderRadius: 7, overflow: "hidden", marginBottom: 4 }}>
-                    {bmiCategoryWeights.map((cat, i) => (
-                      <div key={i} style={{ flex: 1, background: cat.color }} />
-                    ))}
-                  </div>
-
-                  {/* Needle + BMI attuale */}
+                  {/* BMI bar + vertical line marker */}
                   {(() => {
                     const currW = sorted.length > 0 ? sorted[sorted.length - 1]?.weight : null;
                     const bmi = currW && settingsForm.height ? calcBMI(currW, settingsForm.height) : null;
-                    if (!bmi) return null;
-                    const pct = Math.min(Math.max((bmi - 15) / (40 - 15) * 100, 1), 99);
-                    const cat = bmiCategory(bmi);
+                    const pct = bmi ? Math.min(Math.max((bmi - 15) / (40 - 15) * 100, 1), 99) : null;
+                    const catName = bmi ? bmiCategory(bmi) : null;
                     return (
-                      <div>
-                        <div style={{ position: "relative", height: 14, marginBottom: 10 }}>
-                          <div style={{ position: "absolute", left: `${pct}%`, top: 0, transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                            <div style={{ width: 1.5, height: 6, background: "#1A2030" }} />
-                            <div style={{ width: 0, height: 0, borderLeft: "4px solid transparent", borderRight: "4px solid transparent", borderTop: "6px solid #1A2030" }} />
+                      <>
+                        <div style={{ position: "relative", marginBottom: 10 }}>
+                          <div style={{ display: "flex", height: 20, borderRadius: 7, overflow: "hidden" }}>
+                            {bmiCategoryWeights.map((cat, i) => (
+                              <div key={i} style={{ flex: 1, background: cat.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <span style={{ fontSize: 7, fontWeight: 700, color: "#fff" }}>{cat.name.split(" ")[0]}</span>
+                              </div>
+                            ))}
                           </div>
+                          {pct != null && (
+                            <div style={{
+                              position: "absolute", top: -3, bottom: -8,
+                              left: `${pct}%`, transform: "translateX(-50%)",
+                              width: 2.5, background: "#111827", borderRadius: 2,
+                              boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+                            }} />
+                          )}
                         </div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "#028090", marginBottom: 10 }}>
-                          BMI {bmi} · <span style={{ fontWeight: 600, color: "#1A2030" }}>{cat}</span>
-                        </div>
-                      </div>
+                        {bmi && (
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#028090", marginBottom: 12 }}>
+                            BMI {bmi} · <span style={{ fontWeight: 600, color: "#1A2030" }}>{catName}</span>
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
 
                   {/* Categorie in griglia 2 colonne */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                    {bmiCategoryWeights.map((cat, i) => (
+                    {bmiCategoryWeights.filter(c => c.maxBMI !== 999).map((cat, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "center", gap: 7 }}>
                         <div style={{ width: 8, height: 8, borderRadius: "50%", background: cat.color, flexShrink: 0 }} />
                         <span style={{ fontSize: 11, color: T.textSec, fontWeight: 600 }}>
-                          {cat.name} <span style={{ color: T.textMuted, fontWeight: 500 }}>≤ {Math.round(cat.maxWeight * 10) / 10} kg</span>
+                          {cat.name} <span style={{ color: T.textMuted, fontWeight: 500 }}>≤ {cat.maxWeight} kg</span>
                         </span>
                       </div>
                     ))}

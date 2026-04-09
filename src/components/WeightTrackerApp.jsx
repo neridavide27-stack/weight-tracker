@@ -837,6 +837,7 @@ export default function WeightTrackerApp() {
   const weightAddRef = useRef(null);
   const [settings, setSettings] = useState({
     height: 175, goalWeight: 78, startWeight: 85.5, name: "Davide",
+    showCustomMilestones: false, showBmiMilestones: false, milestoneStep: 2, emaAlpha: 0.25,
   });
   const [nutritionGoals, setNutritionGoals] = useState({
     kcalTarget: 2000, proteinPct: 30, carbsPct: 40, fatPct: 30,
