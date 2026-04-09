@@ -160,8 +160,10 @@ const TrendCard = ({ T, smoothed, settings, onShowHistory, onShowInfo }) => {
     });
   }, [smoothed]);
 
-  const currentTrend = last7[last7.length - 1]?.trend ?? null;
-  const prevTrendValue = last7.length >= 2 ? last7[last7.length - 2]?.trend : null;
+  // Use last entry with actual data (not future/empty slots)
+  const filledEntries = last7.filter(e => !e.empty);
+  const currentTrend = filledEntries[filledEntries.length - 1]?.trend ?? null;
+  const prevTrendValue = filledEntries.length >= 2 ? filledEntries[filledEntries.length - 2]?.trend : null;
   const vsYesterday = (currentTrend != null && prevTrendValue != null)
     ? Math.round((currentTrend - prevTrendValue) * 100) / 100 : null;
 
@@ -405,10 +407,11 @@ const GoalCard = ({ T, smoothed, settings, sorted }) => {
 
   // All useMemo hooks must be unconditional
   const allMilestones = useMemo(() => {
-    if (!settings.showCustomMilestones || !settings.milestoneStep || !settings.startWeight || !settings.goalWeight || !currentWeight) return [];
-    const step = settings.milestoneStep;
-    const start = settings.startWeight;
-    const goal = settings.goalWeight;
+    const step  = Number(settings.milestoneStep) || 0;
+    const start = Number(settings.startWeight)   || 0;
+    const goal  = Number(settings.goalWeight)    || 0;
+    if (!settings.showCustomMilestones || step <= 0 || start <= 0 || goal <= 0 || !currentWeight) return [];
+    if (start === goal) return [];
     const direction = start > goal ? -1 : 1;
     const ms = [];
     for (let w = start + direction * step; direction > 0 ? w <= goal : w >= goal; w += direction * step) {
@@ -437,7 +440,7 @@ const GoalCard = ({ T, smoothed, settings, sorted }) => {
     };
   }, [allMilestones]);
 
-  if (!settings.goalWeight || !settings.startWeight || !currentWeight || !currentTrend) return null;
+  if (!Number(settings.goalWeight) || !Number(settings.startWeight) || !currentWeight || !currentTrend) return null;
 
   const total = Math.abs(settings.startWeight - settings.goalWeight);
   const done = Math.abs(settings.startWeight - currentWeight);
@@ -1104,6 +1107,23 @@ export default function WeightSection({ T, entries, setEntries, settings, setSet
     emaAlpha: settings.emaAlpha ?? 0.25,
   });
   const [showEmaInfo, setShowEmaInfo] = useState(false);
+
+  // Re-sync settingsForm every time the user opens the settings screen
+  useEffect(() => {
+    if (screen === "settings") {
+      setSettingsForm({
+        name: settings.name || "",
+        height: settings.height || "",
+        startWeight: settings.startWeight || "",
+        goalWeight: settings.goalWeight || "",
+        showCustomMilestones: settings.showCustomMilestones ?? false,
+        milestoneStep: settings.milestoneStep ?? 2,
+        showBmiMilestones: settings.showBmiMilestones ?? false,
+        emaAlpha: settings.emaAlpha ?? 0.25,
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
 
   // Core computations
   const sorted = useMemo(() => [...entries].sort((a, b) => a.date.localeCompare(b.date)), [entries]);
