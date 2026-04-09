@@ -318,6 +318,9 @@ function GoalCard({ smoothed, sorted, settings, T }) {
 
   const goalReached = kgMancanti !== null && kgMancanti <= 0;
 
+  // Position of the current-trend dot on the bar (clamped 5%–95% so it's always visible)
+  const dotPct = Math.min(95, Math.max(5, progress));
+
   return (
     <div style={{
       background: T.card,
@@ -326,104 +329,161 @@ function GoalCard({ smoothed, sorted, settings, T }) {
       boxShadow: T.shadow,
       marginBottom: 12,
     }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+
+      {/* ── Header row ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: `${T.teal}22`,
+            width: 34, height: 34, borderRadius: 10,
+            background: `${T.teal}18`,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <Target size={18} color={T.teal} />
+            <Target size={17} color={T.teal} />
           </div>
           <span style={{ fontSize: 16, fontWeight: 700, color: T.text }}>Obiettivo</span>
         </div>
-        {goalReached && (
+
+        {/* Progress % badge */}
+        {goalReached ? (
           <span style={{
             fontSize: 12, fontWeight: 700, color: T.green,
-            background: `${T.green}22`, padding: "4px 10px", borderRadius: 20,
+            background: `${T.green}18`, padding: "5px 12px", borderRadius: 20,
           }}>🎉 Raggiunto!</span>
+        ) : (
+          <span style={{
+            fontSize: 13, fontWeight: 800,
+            color: T.teal,
+            background: `${T.teal}14`,
+            padding: "5px 12px", borderRadius: 20,
+          }}>{progress}%</span>
         )}
       </div>
 
-      {/* Progress bar */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-          <span style={{ fontSize: 12, color: T.sub }}>
-            Inizio: <strong style={{ color: T.text }}>{startWeight ?? "—"} kg</strong>
-          </span>
-          <span style={{ fontSize: 12, color: T.sub }}>
-            Obiettivo: <strong style={{ color: T.teal }}>{goalWeight ?? "—"} kg</strong>
-          </span>
-        </div>
-        <div style={{ height: 10, borderRadius: 10, background: T.border, overflow: "hidden" }}>
+      {/* ── Progress visual ── */}
+      <div style={{ marginBottom: 18 }}>
+
+        {/* Track with floating dot */}
+        <div style={{ position: "relative", marginBottom: 8 }}>
+          {/* Background track */}
+          <div style={{ height: 8, borderRadius: 8, background: T.border }} />
+          {/* Filled portion */}
           <div style={{
-            height: "100%", width: `${progress}%`,
+            position: "absolute", top: 0, left: 0,
+            height: 8, width: `${dotPct}%`,
             background: `linear-gradient(90deg, ${T.teal}, ${T.green})`,
-            borderRadius: 10,
+            borderRadius: 8,
             transition: "width 0.5s ease",
           }} />
+          {/* Current-position dot */}
+          <div style={{
+            position: "absolute", top: "50%",
+            left: `${dotPct}%`,
+            transform: "translate(-50%, -50%)",
+            width: 16, height: 16, borderRadius: 8,
+            background: T.green,
+            border: `2.5px solid ${T.card}`,
+            boxShadow: `0 0 0 2px ${T.green}55`,
+            transition: "left 0.5s ease",
+          }} />
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-          <span style={{ fontSize: 12, color: T.green }}>
-            {kgPersi > 0 ? `−${kgPersi} kg persi` : "Nessun progresso ancora"}
-          </span>
-          <span style={{ fontSize: 12, color: T.sub }}>{progress}%</span>
+
+        {/* Anchor labels: start · current · goal */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div style={{ textAlign: "left" }}>
+            <div style={{ fontSize: 11, color: T.sub }}>Inizio</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{startWeight ?? "—"} kg</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 11, color: T.sub }}>Adesso</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.green }}>
+              {currentTrend !== null ? currentTrend.toFixed(1) : "—"} kg
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 11, color: T.sub }}>Obiettivo</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.teal }}>{goalWeight ?? "—"} kg</div>
+          </div>
         </div>
       </div>
 
-      {/* Kg mancanti */}
-      {kgMancanti !== null && kgMancanti > 0 && (
+      {/* ── Stat chips: kg persi + kg mancanti ── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <div style={{
-          textAlign: "center", padding: "10px", borderRadius: 12,
-          background: T.pill, marginBottom: 14,
+          flex: 1, borderRadius: 12, padding: "10px 14px",
+          background: kgPersi > 0 ? `${T.green}12` : T.pill,
+          border: `1px solid ${kgPersi > 0 ? T.green + "33" : T.border}`,
         }}>
-          <span style={{ fontSize: 13, color: T.sub }}>Ancora </span>
-          <span style={{ fontSize: 18, fontWeight: 800, color: T.text }}>{kgMancanti} kg</span>
-          <span style={{ fontSize: 13, color: T.sub }}> all'obiettivo</span>
+          <div style={{ fontSize: 10, fontWeight: 700, color: kgPersi > 0 ? T.green : T.sub, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 2 }}>
+            Persi
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: kgPersi > 0 ? T.green : T.sub }}>
+            {kgPersi > 0 ? `−${kgPersi}` : "—"}
+            <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 3 }}>kg</span>
+          </div>
         </div>
-      )}
 
-      {/* Dual ETA strip */}
+        <div style={{
+          flex: 1, borderRadius: 12, padding: "10px 14px",
+          background: kgMancanti !== null && kgMancanti > 0 ? `${T.teal}10` : T.pill,
+          border: `1px solid ${kgMancanti !== null && kgMancanti > 0 ? T.teal + "30" : T.border}`,
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.teal, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 2 }}>
+            Ancora
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: T.text }}>
+            {kgMancanti !== null && kgMancanti > 0 ? kgMancanti : "—"}
+            <span style={{ fontSize: 12, fontWeight: 600, color: T.sub, marginLeft: 3 }}>kg</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Dual ETA ── */}
       {kgMancanti !== null && kgMancanti > 0 && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+
           {/* Actual pace */}
           <div style={{
-            flex: 1, borderRadius: 12, padding: "10px 12px",
+            flex: 1, borderRadius: 12, padding: "12px 14px",
             background: T.pill, border: `1px solid ${T.border}`,
           }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.sub, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 3 }}>
-              Al tuo ritmo
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+              <TrendingDown size={12} color={T.sub} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: T.sub, textTransform: "uppercase", letterSpacing: 0.7 }}>
+                Al tuo ritmo
+              </span>
             </div>
             {predictedDateActual ? (
               <>
-                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
-                  {predictedDateActual.toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })}
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.text, lineHeight: 1.1 }}>
+                  {predictedDateActual.toLocaleDateString("it-IT", { day: "numeric", month: "short" })}
                 </div>
-                <div style={{ fontSize: 10, color: T.sub, marginTop: 1 }}>
-                  {weeklyRateActual !== null ? `${weeklyRateActual > 0 ? "+" : ""}${weeklyRateActual} kg/sett` : ""}
+                <div style={{ fontSize: 10, color: T.sub, marginTop: 3 }}>
+                  {predictedDateActual.getFullYear()} · {weeklyRateActual !== null ? `${weeklyRateActual} kg/sett` : ""}
                 </div>
               </>
             ) : (
-              <div style={{ fontSize: 12, color: T.sub }}>Dati insufficienti</div>
+              <div style={{ fontSize: 12, color: T.sub }}>Dati insuff.</div>
             )}
           </div>
 
           {/* Target pace */}
           <div style={{
-            flex: 1, borderRadius: 12, padding: "10px 12px",
-            background: `${T.teal}12`, border: `1px solid ${T.teal}30`,
+            flex: 1, borderRadius: 12, padding: "12px 14px",
+            background: `${T.teal}0d`, border: `1px solid ${T.teal}28`,
           }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.teal, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 3 }}>
-              All'obiettivo sett.
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+              <Target size={12} color={T.teal} />
+              <span style={{ fontSize: 10, fontWeight: 700, color: T.teal, textTransform: "uppercase", letterSpacing: 0.7 }}>
+                Obiet. sett.
+              </span>
             </div>
             {predictedDateTarget ? (
               <>
-                <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
-                  {predictedDateTarget.toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" })}
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.text, lineHeight: 1.1 }}>
+                  {predictedDateTarget.toLocaleDateString("it-IT", { day: "numeric", month: "short" })}
                 </div>
-                <div style={{ fontSize: 10, color: T.teal, marginTop: 1 }}>
-                  −{weeklyTarget} kg/sett
+                <div style={{ fontSize: 10, color: T.teal, marginTop: 3 }}>
+                  {predictedDateTarget.getFullYear()} · −{weeklyTarget} kg/sett
                 </div>
               </>
             ) : (
@@ -433,70 +493,74 @@ function GoalCard({ smoothed, sorted, settings, T }) {
         </div>
       )}
 
-      {/* BMI current */}
-      {bmiNow && (
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "8px 12px", borderRadius: 10, background: T.pill, marginBottom: 14,
-        }}>
-          <span style={{ fontSize: 12, color: T.sub }}>BMI attuale</span>
-          <span style={{
-            fontSize: 12, fontWeight: 700,
-            color: bmiColor(bmiNow),
-            padding: "2px 10px", borderRadius: 20,
-            background: `${bmiColor(bmiNow)}22`,
-          }}>{bmiNow} · {catNow}</span>
-        </div>
-      )}
-
-      {/* Milestones toggle */}
+      {/* ── Milestones toggle ── */}
       {allMilestones.length > 1 && (
         <button
           onClick={() => setShowMilestones((v) => !v)}
           style={{
-            width: "100%", padding: "10px", borderRadius: 10,
+            width: "100%", padding: "10px 14px", borderRadius: 12,
             background: "transparent", border: `1px solid ${T.border}`,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
             cursor: "pointer", fontFamily: "inherit",
           }}
         >
-          <Award size={14} color={T.orange} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: T.sub }}>
-            {showMilestones ? "Nascondi tappe" : `Tappe intermedie (${allMilestones.length})`}
-          </span>
-          <ChevronRight size={14} color={T.sub} style={{ transform: showMilestones ? "rotate(90deg)" : "none", transition: "transform 0.2s" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <Award size={14} color={T.orange} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>
+              Tappe intermedie
+            </span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, color: T.orange,
+              background: `${T.orange}18`, padding: "1px 7px", borderRadius: 10,
+            }}>{allMilestones.length}</span>
+          </div>
+          <ChevronRight
+            size={15} color={T.sub}
+            style={{ transform: showMilestones ? "rotate(90deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }}
+          />
         </button>
       )}
 
-      {/* Milestones list */}
+      {/* ── Milestones list ── */}
       {showMilestones && (
-        <div style={{ marginTop: 10 }}>
+        <div style={{ marginTop: 8 }}>
           {allMilestones.map((m, i) => {
             const done = currentTrend !== null && currentTrend <= m.target;
+            const isGoal = m.target === goalWeight;
             return (
               <div key={i} style={{
                 display: "flex", alignItems: "center", gap: 10,
-                padding: "8px 0",
+                padding: "9px 0",
                 borderBottom: i < allMilestones.length - 1 ? `1px solid ${T.divider}` : "none",
               }}>
                 <div style={{
-                  width: 28, height: 28, borderRadius: 8,
-                  background: done ? `${T.green}22` : T.pill,
+                  width: 26, height: 26, borderRadius: 8, flexShrink: 0,
+                  background: done ? `${T.green}22` : isGoal ? `${T.teal}18` : T.pill,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  flexShrink: 0,
                 }}>
-                  {done ? <Check size={14} color={T.green} /> : <Target size={14} color={T.sub} />}
+                  {done
+                    ? <Check size={13} color={T.green} />
+                    : isGoal
+                    ? <Target size={13} color={T.teal} />
+                    : <Minus size={13} color={T.sub} />}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: done ? T.green : T.text }}>{m.label}</div>
-                  {m.desc && <div style={{ fontSize: 11, color: T.sub }}>{m.desc}</div>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: done ? T.green : T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {m.label}
+                  </div>
+                  {m.desc && <div style={{ fontSize: 10, color: T.sub }}>{m.desc}</div>}
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 700, color: done ? T.green : T.sub }}>{m.target} kg</span>
+                <span style={{
+                  fontSize: 13, fontWeight: 700,
+                  color: done ? T.green : isGoal ? T.teal : T.sub,
+                  flexShrink: 0,
+                }}>{m.target} kg</span>
               </div>
             );
           })}
         </div>
       )}
+
     </div>
   );
 }
